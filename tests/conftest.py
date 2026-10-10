@@ -77,6 +77,14 @@ def evidence_store(store: Path) -> Path:
         store=store,
     )
     write_parquet(
+        "ligands",
+        pdb.normalize_chem_comps(json.loads((FIXTURES / "rcsb_chem_comps.json").read_text())),
+        source=pdb.SOURCE,
+        source_version="RCSB chemical components fixture",
+        retrieved_at="2026-10-09",
+        store=store,
+    )
+    write_parquet(
         "predicted_structures",
         alphafold.normalize(json.loads((FIXTURES / "alphafold_predictions.json").read_text())),
         source=alphafold.SOURCE,

@@ -1402,6 +1402,125 @@
      }
     }
    }
+  },
+  {
+   "hasResults": false,
+   "protocolSection": {
+    "armsInterventionsModule": {
+     "armGroups": [
+      {
+       "interventionNames": [
+        "Drug: Isoniazid Aminosalicylate Tablets"
+       ],
+       "label": "arm A: super-short retreatment regimen",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Drug: Streptomycin injectable"
+       ],
+       "label": "arm B:standardized retreatment regimen",
+       "type": "ACTIVE_COMPARATOR"
+      }
+     ],
+     "interventions": [
+      {
+       "armGroupLabels": [
+        "arm A: super-short retreatment regimen"
+       ],
+       "name": "Isoniazid Aminosalicylate Tablets",
+       "otherNames": [
+        "ethambutol tablets",
+        "pyrazinamide tablets",
+        "rifabutin capsules",
+        "moxifloxacin tablets"
+       ],
+       "type": "DRUG"
+      },
+      {
+       "armGroupLabels": [
+        "arm B:standardized retreatment regimen"
+       ],
+       "name": "Streptomycin injectable",
+       "otherNames": [
+        "isoniazid tablets",
+        "ethambutol tablets",
+        "rifampicin capsules",
+        "pyrazinamide tablets"
+       ],
+       "type": "DRUG"
+      }
+     ]
+    },
+    "conditionsModule": {
+     "conditions": [
+      "Reinfection Pulmonary Tuberculosis"
+     ]
+    },
+    "contactsLocationsModule": {
+     "locations": [
+      {
+       "country": "China"
+      }
+     ]
+    },
+    "designModule": {
+     "designInfo": {
+      "allocation": "RANDOMIZED",
+      "primaryPurpose": "TREATMENT"
+     },
+     "enrollmentInfo": {
+      "count": 864
+     },
+     "phases": [
+      "PHASE4"
+     ],
+     "studyType": "INTERVENTIONAL"
+    },
+    "identificationModule": {
+     "briefTitle": "Research on New Regimens for Retreatment Pulmonary Tuberculosis",
+     "nctId": "NCT02331823",
+     "officialTitle": "New Super-short Course Regimen for Retreatment Pulmonary Tuberculosis"
+    },
+    "sponsorCollaboratorsModule": {
+     "collaborators": [
+      {
+       "name": "Shanghai Center for Disease Control and Prevention"
+      },
+      {
+       "name": "Jiangsu Province Centers for Disease Control and Prevention"
+      },
+      {
+       "name": "Zhejiang University"
+      },
+      {
+       "name": "Centers for Disease Control and Prevention"
+      }
+     ],
+     "leadSponsor": {
+      "class": "OTHER",
+      "name": "Shanghai Pulmonary Hospital, Shanghai, China"
+     }
+    },
+    "statusModule": {
+     "completionDateStruct": {
+      "date": "2016-12"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2015-01-06"
+     },
+     "overallStatus": "UNKNOWN",
+     "primaryCompletionDateStruct": {
+      "date": "2015-12"
+     },
+     "startDateStruct": {
+      "date": "2013-06"
+     },
+     "studyFirstPostDateStruct": {
+      "date": "2015-01-06"
+     }
+    }
+   }
   }
  ],
  "version": {

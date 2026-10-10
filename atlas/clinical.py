@@ -18,6 +18,11 @@ page, a drug page and the agent have to agree on that.
 * `who_resistance` -- the WHO catalogue grades variants in this gene as
   associated with resistance to the drug. **Resistance is not engagement**:
   katG activates isoniazid, Rv0678 is a regulator of an efflux pump.
+* `structure` -- the drug is modelled on this protein's own chain in a PDB
+  entry. Physical evidence that the two meet, and the only link that reaches
+  rpoB for rifampicin, whose ChEMBL target is an *E. coli* RNA polymerase. It
+  is still not a claim about the mechanism: EthR binds many ligands in soaking
+  studies, so a co-crystal is shown and never counted as the drug's target.
 
 A mechanism target from another organism links no Mtb gene. Rifampicin's
 ChEMBL target is a generic bacterial RNA polymerase built from *E. coli*
@@ -30,6 +35,8 @@ references (`via_chembl_ref`), and an exact match of an intervention name to a
 ChEMBL synonym (`via_intervention_name`). An intervention's other names are
 consulted only when its own name matches nothing, because sponsors list class
 names there -- NCT02651259 gives rifapentine the other name "Rifamycin".
+`matched_names` records the string that actually matched, which for a fallback
+is the other name rather than the intervention's own.
 """
 
 from __future__ import annotations
@@ -40,6 +47,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
+from .sources.chembl import MTB_TAXA
 from .store import provenance, records, write_parquet
 
 # Links that say the drug acts on the gene itself. The others are shown, not counted.
@@ -101,6 +109,9 @@ def drug_gene_links(
     vulnerability: Iterable[Mapping[str, Any]],
     resistance: Iterable[Mapping[str, Any]],
     index: Mapping[str, str],
+    structures: Iterable[Mapping[str, Any]] = (),
+    ligands: Iterable[Mapping[str, Any]] = (),
+    drugs: Iterable[Mapping[str, Any]] = (),
 ) -> list[dict[str, Any]]:
     walk = list(walk)
     genes_of_acc: dict[str, list[str]] = defaultdict(list)
@@ -122,7 +133,8 @@ def drug_gene_links(
                 "link": link,
                 "target_chembl_id": None,
                 "target_name": None,
-                "n_target_components": None,
+                "n_target_accessions": None,
+                "target_type": None,
                 "shared_accession": False,
                 "source_text": None,
                 "n_variants": None,
@@ -131,6 +143,11 @@ def drug_gene_links(
         )
 
     for mechanism in mechanisms:
+        # Only an Mtb target reaches an Mtb gene. Today the accessions alone
+        # decide it -- no non-Mtb target has one in this proteome -- but a
+        # shared accession would otherwise make that silently untrue.
+        if mechanism["target_tax_id"] not in MTB_TAXA:
+            continue
         components = mechanism["component_accessions"] or []
         single = mechanism["target_type"] == "SINGLE PROTEIN"
         for accession in components:
@@ -144,7 +161,10 @@ def drug_gene_links(
                     "mechanism" if single else "mechanism_complex",
                     target_chembl_id=mechanism["target_chembl_id"],
                     target_name=mechanism["target_name"],
-                    n_target_components=len(components),
+                    # Accessions, not components: a ribosome's rRNA chains have
+                    # none, so this undercounts what ChEMBL lists.
+                    n_target_accessions=len(components),
+                    target_type=mechanism["target_type"],
                     shared_accession=len(rv_ids) > 1,
                     source_text=mechanism["mechanism_of_action"],
                 )
@@ -162,6 +182,26 @@ def drug_gene_links(
             graded[(molecule, rv_id, row["drug"])] += 1
     for (molecule, rv_id, drug), n in graded.items():
         add(molecule, rv_id, "who_resistance", source_text=drug, n_variants=n)
+
+    # A PDB component is a three-letter code; RCSB's own ChEMBL cross-reference
+    # or the InChIKey says which molecule it is.
+    molecule_of_comp: dict[str, str] = {}
+    by_chembl = {d["molecule_chembl_id"]: d["molecule_chembl_id"] for d in drugs}
+    by_inchikey = {d["inchi_key"]: d["molecule_chembl_id"] for d in drugs if d["inchi_key"]}
+    for ligand in ligands:
+        molecule = by_chembl.get(ligand["chembl_id"]) or by_inchikey.get(ligand["inchikey"])
+        if molecule:
+            molecule_of_comp[ligand["comp_id"]] = molecule
+    entries: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for structure in structures:
+        # Only the ligands on this protein's own chains: in 5UHB rifampicin is
+        # rpoB's, not rpoC's. See atlas/sources/pdb.py.
+        for comp_id in structure["ligand_ids"] or []:
+            molecule = molecule_of_comp.get(comp_id)
+            for rv_id in genes_of_acc.get(structure["uniprot_acc"], []) if molecule else []:
+                entries[(molecule, rv_id)].add(structure["pdb_id"])
+    for (molecule, rv_id), pdb_ids in entries.items():
+        add(molecule, rv_id, "structure", source_text=" ".join(sorted(pdb_ids)))
 
     return list(links.values())
 
@@ -196,14 +236,20 @@ def trial_drug_links(
 
     for trial in trials:
         for intervention in trial["interventions"] or []:
-            found = matches(intervention["name"], index)
+            name = intervention["name"]
+            # The string recorded is the one that actually matched. Citing the
+            # intervention's own name for a match found in its other names
+            # would make "Isoniazid Aminosalicylate Tablets" the sole evidence
+            # that NCT02331823 tested pyrazinamide.
+            found = {molecule: name for molecule in matches(name, index)}
             if not found:
                 for other in intervention["other_names"] or []:
-                    found |= matches(other, index)
-            for molecule in found:
+                    for molecule in matches(other, index):
+                        found.setdefault(molecule, f'{other} (listed under "{name}")')
+            for molecule, matched in found.items():
                 row = link(trial["nct_id"], molecule)
                 row["via_intervention_name"] = True
-                row["matched_names"] = sorted({*row["matched_names"], intervention["name"]})
+                row["matched_names"] = sorted({*row["matched_names"], matched})
 
     return list(links.values())
 
@@ -217,12 +263,15 @@ def build(*, store: Path | None = None) -> list[Path]:
         records("vulnerability", store=store),
         records("resistance", store=store),
         index,
+        structures=records("structures", store=store),
+        ligands=records("ligands", store=store),
+        drugs=drugs,
     )
     trial_links = trial_drug_links(drugs, records("trials", store=store), index)
 
     inputs = {
         name: provenance(name, store=store)
-        for name in ("drugs", "trials", "crosswalk", "vulnerability", "resistance")
+        for name in ("drugs", "trials", "crosswalk", "vulnerability", "resistance", "ligands")
     }
     stamp = {
         "source": "atlas-clinical",

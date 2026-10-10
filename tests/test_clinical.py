@@ -198,7 +198,8 @@ def test_complex_membership_is_labelled_not_promoted(links: list[dict]) -> None:
     """ChEMBL files bedaquiline against all of ATP synthase, not against atpE."""
     pair = (BEDAQUILINE, "Rv1305")
     atpe = {r["link"]: r for r in links if (r["molecule_chembl_id"], r["rv_id"]) == pair}
-    assert atpe["mechanism_complex"]["n_target_components"] == 8
+    assert atpe["mechanism_complex"]["n_target_accessions"] == 8
+    assert atpe["mechanism_complex"]["target_type"] == "PROTEIN COMPLEX"
     assert "mechanism" not in atpe
 
 
@@ -219,6 +220,25 @@ def test_non_mtb_mechanism_targets_reach_no_gene(links: list[dict]) -> None:
         r for r in links if r["molecule_chembl_id"] == RIFAMPICIN and r["link"].startswith("mech")
     ]
     assert not [r for r in links if r["molecule_chembl_id"] == DELAMANID]  # organism-level
+
+
+def test_a_co_crystal_links_the_drug_to_the_gene(links: list[dict]) -> None:
+    """5UHB holds rifampicin on rpoB's chain -- which ChEMBL's mechanism cannot say."""
+    assert (RIFAMPICIN, "Rv0667", "structure") in kinds(links)
+    want = (RIFAMPICIN, "Rv0667", "structure")
+    link = next(r for r in links if (r["molecule_chembl_id"], r["rv_id"], r["link"]) == want)
+    assert "5UHB" in link["source_text"]
+
+
+def test_a_co_crystal_is_not_counted_as_a_target(links: list[dict]) -> None:
+    """Binding in a crystal is physical evidence; it is not a claim about the mechanism."""
+    assert "structure" not in clinical.TARGET_LINKS
+    assert (RIFAMPICIN, "Rv0667", "mechanism") not in kinds(links)
+
+
+def test_a_neighbours_ligand_is_not_a_co_crystal_here(links: list[dict]) -> None:
+    """Rifampicin sits on rpoB's chain in 5UHB, so rpoC gets no structural link."""
+    assert (RIFAMPICIN, "Rv0668", "structure") not in kinds(links)
 
 
 def test_resistance_is_its_own_link_and_not_a_target(links: list[dict]) -> None:
@@ -275,3 +295,20 @@ def test_references_outside_the_trial_set_are_dropped(
     """ChEMBL cites dozens of bedaquiline trials; only the ones in the store may link."""
     in_store = {t["nct_id"] for t in records("trials", store=evidence_store)}
     assert {nct for nct, _ in trial_links} <= in_store
+
+
+def test_the_name_recorded_is_the_name_that_matched(trial_links: dict) -> None:
+    """NCT02331823 lists rifampicin only as an other name of "Streptomycin injectable".
+
+    Recording the intervention's own name here would cite a string that does
+    not name the drug, as the only evidence for the link.
+    """
+    (matched,) = trial_links[("NCT02331823", RIFAMPICIN)]["matched_names"]
+    assert matched.startswith("rifampicin capsules")
+    assert "Streptomycin injectable" in matched  # where it was listed
+
+
+def test_a_direct_name_match_records_the_intervention_itself(trial_links: dict) -> None:
+    names = trial_links[("NCT03036163", MACOZINONE)]["matched_names"]
+    assert names and all(n.startswith("PBTZ169") for n in names)
+    assert not any("listed under" in n for n in names)

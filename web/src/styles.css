@@ -437,3 +437,26 @@ td:has(> .struct) { padding: 4px 8px; }
   font-size: 9px; color: var(--fg-faint); margin-right: 7px; min-width: 7px;
 }
 .seg.rings button[aria-pressed="true"]::before { color: #fff; }
+
+/* ---- hover trace ---------------------------------------------------------- */
+
+/* The spoke sits over the rings and must never eat the pointer events the
+   base canvas needs to know what you are hovering. */
+.tracelayer { position: absolute; inset: 0; margin: auto; pointer-events: none; }
+
+/* The tooltip is the spoke's annotation, so it carries the same eight stages
+   in the same order. Only where there is room: in the rail it stays a name. */
+.tooltip.pipeline {
+  background: var(--fg); color: var(--bg);
+  padding: 7px 9px; min-width: 232px; white-space: normal; text-align: left;
+}
+.tooltip .who { font-family: var(--mono); font-weight: 600; }
+.tooltip .what {
+  font-size: 10.5px; opacity: 0.72; margin-top: 1px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.tooltip dl { margin: 6px 0 0; display: grid; gap: 1px 10px; font-size: 10.5px; }
+.tooltip dl > div { display: flex; justify-content: space-between; gap: 10px; }
+.tooltip dt { opacity: 0.6; }
+.tooltip dd { margin: 0; font-family: var(--mono); text-align: right; }
+.tooltip dl > div.absent { opacity: 0.33; }

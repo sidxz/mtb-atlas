@@ -136,6 +136,76 @@ export const RINGS: { key: ColourBy; label: string; on: (g: TargetSummary) => bo
 // frames and says nothing a plain colour would not.
 const GLOW_LIMIT = 1200;
 
+const angleOf = (g: TargetSummary) =>
+  (((g.start + g.stop) / 2 / GENOME_LENGTH) * Math.PI * 2) - Math.PI / 2;
+
+/** Where the rings sit, shared by the base canvas and the hover overlay.
+ *
+ * The outer ring has to leave room for the Mb labels, which sit beyond it and
+ * are centred: at 3 and 9 o'clock half the text runs outward, so a ring any
+ * further out puts the label past the canvas edge.
+ */
+const layout = (size: number) => {
+  const inner = size * 0.185;
+  const outer = size * 0.42;
+  return { inner, outer, pitch: (outer - inner) / (RINGS.length - 1) };
+};
+
+const phase = (n: number) => (n >= 4 ? "approved" : n < 1 ? "early phase 1" : `phase ${n}`);
+
+/**
+ * What the rings say about one gene, in ring order.
+ *
+ * `null` is a stage the gene does not reach, and the tooltip shows it as a
+ * dash rather than dropping the row — the gaps are the point, and they are
+ * the same gaps the ring draws nothing for.
+ */
+export function pipelineOf(g: TargetSummary): { label: string; value: string | null }[] {
+  return [
+    { label: "What it is", value: g.category ?? null },
+    { label: "Essential", value: g.essentiality_label ?? g.essentiality ?? null },
+    {
+      label: "Vulnerable",
+      value:
+        g.vulnerability_index != null && g.vulnerability_certain
+          ? g.vulnerability_index.toFixed(1)
+          : null,
+    },
+    {
+      label: "Structure",
+      value: g.n_pdb > 0 ? `${g.n_pdb} in the PDB` : g.has_predicted ? "predicted only" : null,
+    },
+    {
+      label: "Protein assay",
+      value: g.n_protein_assays ? `${g.n_protein_assays} published` : null,
+    },
+    {
+      label: "Chemical matter",
+      value: g.n_compounds
+        ? `${g.n_compounds} compound${g.n_compounds === 1 ? "" : "s"}` +
+          (g.chembl_evidence === "orthologue" ? ", orthologue only" : "")
+        : null,
+    },
+    {
+      label: "Clinical",
+      value:
+        g.best_drug_phase != null
+          ? phase(g.best_drug_phase)
+          : (g.n_complex_drugs ?? 0) > 0
+            ? "complex member only"
+            : null,
+    },
+    {
+      label: "Resistance",
+      value: g.n_variants_associated
+        ? `${g.n_variants_associated} graded variant${g.n_variants_associated === 1 ? "" : "s"}`
+        : g.in_who_catalogue
+          ? "in the catalogue, none graded"
+          : null,
+    },
+  ];
+}
+
 interface Props {
   genes: TargetSummary[];
   matching: Set<string>;
@@ -157,6 +227,7 @@ export function GenomeCanvas({
   maxSize = 680,
 }: Props) {
   const canvas = useRef<HTMLCanvasElement | null>(null);
+  const trace = useRef<HTMLCanvasElement | null>(null);
   const wrap = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState(520);
   const [hover, setHover] = useState<{ gene: TargetSummary; x: number; y: number } | null>(null);
@@ -220,12 +291,7 @@ export function GenomeCanvas({
     // The pipeline laid out radially: innermost is what the gene is,
     // outermost is resistance seen in patients. Evenly pitched so the order
     // reads as a sequence rather than a hierarchy of importance.
-    // The outer ring has to leave room for the Mb labels, which sit beyond it
-    // and are centred: at 3 and 9 o'clock half the text runs outward, so a
-    // ring at 0.465 put the label past the canvas edge and clipped it.
-    const inner = size * 0.185;
-    const outer = size * 0.42;
-    const pitch = (outer - inner) / (RINGS.length - 1);
+    const { inner, outer, pitch } = layout(size);
     const geometry = RINGS.map((ring, index) => ({
       ...ring,
       r: inner + pitch * index,
@@ -245,8 +311,6 @@ export function GenomeCanvas({
     const filtered = matching.size !== genes.length;
     const glowing = filtered && matching.size <= GLOW_LIMIT;
     const width = Math.max(1, ((Math.PI * 2 * outer) / genes.length) * 0.95);
-    const angleOf = (g: TargetSummary) =>
-      (((g.start + g.stop) / 2) / GENOME_LENGTH) * Math.PI * 2 - Math.PI / 2;
     const radial = (angle: number, r0: number, r1: number) => {
       context.beginPath();
       context.moveTo(cx + Math.cos(angle) * r0, cy + Math.sin(angle) * r0);
@@ -324,6 +388,89 @@ export function GenomeCanvas({
     );
   }, [genes, matching, colourBy, selected, size, theme]);
 
+  /** The hover trace, on its own canvas.
+   *
+   * Redrawing the base means 4,173 genes across eight rings, which is tens of
+   * thousands of strokes and nowhere near a pointer-move budget. This layer
+   * holds one spoke and one label, so it can be cleared and redrawn freely.
+   */
+  useEffect(() => {
+    const element = trace.current;
+    if (!element) return;
+    const context = element.getContext("2d");
+    if (!context) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    element.width = size * dpr;
+    element.height = size * dpr;
+    element.style.width = `${size}px`;
+    element.style.height = `${size}px`;
+    context.setTransform(dpr, 0, 0, dpr, 0, 0);
+    context.clearRect(0, 0, size, size);
+
+    const gene = hover?.gene;
+    if (!gene) return;
+    const { inner, outer, pitch } = layout(size);
+    const cx = size / 2;
+    const cy = size / 2;
+    const angle = angleOf(gene);
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const at = (r: number) => [cx + cos * r, cy + sin * r] as const;
+
+    // Core outward: the spoke starts clear of the centre readout and runs past
+    // the last ring, so you can follow one gene through every stage at once.
+    const tail = outer + pitch * 0.5 + size * 0.03;
+    context.strokeStyle = token("--fg");
+    context.globalAlpha = 0.5;
+    context.lineWidth = 1;
+    context.beginPath();
+    context.moveTo(...at(size * 0.135));
+    context.lineTo(...at(tail));
+    context.stroke();
+
+    // The gene's own marks, redrawn solid, so the spoke visibly passes through
+    // the stages it reaches and skips the ones it does not.
+    context.globalAlpha = 1;
+    const markWidth = Math.max(2.5, size * 0.006);
+    context.lineWidth = markWidth;
+    for (const [index, ring] of RINGS.entries()) {
+      if (!ring.on(gene)) continue;
+      const r = inner + pitch * index;
+      const h = pitch * 0.95;
+      context.strokeStyle = colourOf(gene, ring.key);
+      context.beginPath();
+      context.moveTo(...at(r - h / 2));
+      context.lineTo(...at(r + h / 2));
+      context.stroke();
+    }
+
+    const name =
+      gene.gene_name && gene.gene_name !== gene.rv_id
+        ? `${gene.rv_id} · ${gene.gene_name}`
+        : gene.rv_id;
+    const fontSize = Math.max(9, Math.round(size * 0.023));
+    context.font = `600 ${fontSize}px ${token("--mono")}`;
+    const padX = fontSize * 0.5;
+    const padY = fontSize * 0.34;
+    const boxWidth = context.measureText(name).width + padX * 2;
+    const boxHeight = fontSize + padY * 2;
+    const [ex, ey] = at(tail + size * 0.022);
+    // Centred on the end of the spoke, then pulled back inside the canvas:
+    // at 3 and 9 o'clock a long name would otherwise run off the edge.
+    const bx = Math.max(1, Math.min(ex - boxWidth / 2, size - boxWidth - 1));
+    const by = Math.max(1, Math.min(ey - boxHeight / 2, size - boxHeight - 1));
+    context.fillStyle = token("--fg");
+    context.beginPath();
+    context.roundRect(bx, by, boxWidth, boxHeight, 3);
+    context.fill();
+    context.fillStyle = token("--bg");
+    context.textAlign = "left";
+    context.textBaseline = "middle";
+    context.fillText(name, bx + padX, by + boxHeight / 2);
+  }, [hover, size, theme]);
+
+  const detailed = size >= 320;
+
   return (
     <div className="canvaswrap" ref={wrap}>
       <canvas
@@ -344,18 +491,43 @@ export function GenomeCanvas({
         }}
         aria-label="Circular map of the H37Rv chromosome; each tick is one gene"
       />
+      {/* Purely decorative: the spoke repeats what the tooltip says in words. */}
+      <canvas className="tracelayer" ref={trace} aria-hidden="true" />
       {hover && (
         <div
-          className="tooltip"
+          className={`tooltip${detailed ? " pipeline" : ""}`}
+          // Placed on the inward side of the cursor, which is the one side the
+          // spoke's end label can never be on: the label sits beyond the last
+          // ring, so anything toward the centre is clear of it.
           style={{
             left: (canvas.current?.offsetLeft ?? 0) + hover.x,
             top: (canvas.current?.offsetTop ?? 0) + hover.y,
+            transform: `translate(${
+              Math.cos(angleOf(hover.gene)) >= 0 ? "calc(-100% - 12px)" : "12px"
+            }, ${Math.sin(angleOf(hover.gene)) >= 0 ? "calc(-100% - 12px)" : "12px"})`,
           }}
         >
-          {hover.gene.rv_id}
-          {hover.gene.gene_name && hover.gene.gene_name !== hover.gene.rv_id
-            ? ` · ${hover.gene.gene_name}`
-            : ""}
+          <div className="who">
+            {hover.gene.rv_id}
+            {hover.gene.gene_name && hover.gene.gene_name !== hover.gene.rv_id
+              ? ` · ${hover.gene.gene_name}`
+              : ""}
+          </div>
+          {detailed && (
+            <>
+              {hover.gene.product && <div className="what">{hover.gene.product}</div>}
+              {/* The same eight stages the rings draw, in the same order, so
+                  the tooltip reads as the spoke it is attached to. */}
+              <dl>
+                {pipelineOf(hover.gene).map(({ label, value }) => (
+                  <div key={label} className={value ? undefined : "absent"}>
+                    <dt>{label}</dt>
+                    <dd>{value ?? "—"}</dd>
+                  </div>
+                ))}
+              </dl>
+            </>
+          )}
         </div>
       )}
     </div>

@@ -106,7 +106,8 @@ export function colourOf(gene: TargetSummary, by: ColourBy): string {
  * drug. `on` is "does this gene reach this stage at all"; `colourOf` grades it.
  */
 export const RINGS: { key: ColourBy; label: string; on: (g: TargetSummary) => boolean }[] = [
-  { key: "category", label: "What it is", on: (g) => Boolean(g.category) },
+  // Every gene belongs to the baseline ring; category only determines its colour.
+  { key: "category", label: "Genes", on: () => true },
   { key: "essentiality", label: "Essential", on: (g) => Boolean(g.essentiality) },
   {
     key: "vulnerability",
@@ -162,7 +163,7 @@ const phase = (n: number) => (n >= 4 ? "approved" : n < 1 ? "early phase 1" : `p
  */
 export function pipelineOf(g: TargetSummary): { label: string; value: string | null }[] {
   return [
-    { label: "What it is", value: g.category ?? null },
+    { label: "Functional category", value: g.category ?? null },
     { label: "Essential", value: g.essentiality_label ?? g.essentiality ?? null },
     {
       label: "Vulnerable",
@@ -240,7 +241,7 @@ export function GenomeCanvas({
       // The floor is low enough for the rail, where the ring sits beside the
       // colour control it is the legend for. Everything below scales off
       // `size`, so the only thing that breaks small is the Mb axis text.
-      setSize(Math.max(180, Math.min(box.width - 16, box.height - 16, maxSize)));
+      setSize(Math.max(96, Math.min(box.width - 16, box.height - 16, maxSize)));
     });
     observer.observe(element);
     return () => observer.disconnect();
@@ -373,18 +374,22 @@ export function GenomeCanvas({
     context.fillStyle = token("--fg");
     // Floored: the centre readout is the one thing that must stay legible when
     // the ring is small, since it carries the live match count.
-    context.font = `600 ${Math.max(11, Math.round(size * 0.052))}px ${token("--mono")}`;
+    const countFontSize = Math.max(12, Math.round(size * 0.052));
+    const labelFontSize = Math.max(9, Math.round(size * 0.025));
+    const labelGap = Math.max(4, Math.round(size * 0.012));
+    context.textBaseline = "middle";
+    context.font = `600 ${countFontSize}px ${token("--mono")}`;
     context.fillText(
       chosen ? chosen.rv_id : matching.size.toLocaleString("en-US"),
       cx,
-      cy - size * 0.012,
+      cy - (labelFontSize + labelGap) / 2,
     );
     context.fillStyle = token("--fg-dim");
-    context.font = `400 ${Math.max(9, Math.round(size * 0.025))}px ${token("--sans")}`;
+    context.font = `400 ${labelFontSize}px ${token("--sans")}`;
     context.fillText(
       chosen ? (chosen.gene_name ?? "unnamed") : filtered ? "genes match" : "genes",
       cx,
-      cy + size * 0.032,
+      cy + (countFontSize + labelGap) / 2,
     );
   }, [genes, matching, colourBy, selected, size, theme]);
 

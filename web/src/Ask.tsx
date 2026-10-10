@@ -7,6 +7,7 @@
  */
 
 import { useState } from "react";
+import { InterfaceIcon } from "./InterfaceIcon";
 
 const EXAMPLES = [
   "Which essential genes have a structure, no ligands, and no close human homolog?",
@@ -61,10 +62,12 @@ export function Ask({ base }: { base: string }) {
           void submit(question);
         }}
       >
+        <label className="ask-label" htmlFor="atlas-question"><InterfaceIcon name="ask" />Ask the atlas</label>
         <input
+          id="atlas-question"
           className="search"
           value={question}
-          placeholder="Ask the atlas — answers cite the records they came from"
+          placeholder="Ask a research question · answers link to evidence"
           onChange={(event) => setQuestion(event.target.value)}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}

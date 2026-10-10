@@ -24,7 +24,8 @@ import rdkitWasm from "@rdkit/rdkit/RDKit_minimal.wasm?url";
 
 interface Mol {
   is_valid: () => boolean;
-  get_svg: (width: number, height: number) => string;
+  get_svg_with_highlights: (details: string) => string;
+  set_new_coords: (useCoordGen: boolean) => boolean;
   delete: () => void;
 }
 interface RDKit {
@@ -95,13 +96,31 @@ export function Structure({
   useEffect(() => {
     if (!near || !smiles) return;
     let cancelled = false;
+    setSvg(null);
+    setFailed(false);
     rdkit()
       .then((library) => {
         if (cancelled) return;
         const mol = library.get_mol(smiles);
         try {
           if (!mol || !mol.is_valid()) setFailed(true);
-          else setSvg(mol.get_svg(width, height));
+          else {
+            // CoordGen handles crowded rings well; the renderer still preserves
+            // the molecule's atom identities, charges and stereochemistry.
+            mol.set_new_coords(true);
+            const compact = height <= 94;
+            setSvg(mol.get_svg_with_highlights(JSON.stringify({
+              width, height,
+              padding: 0.1,
+              bondLineWidth: compact ? 1 : 1.3,
+              scaleBondWidth: false,
+              fixedBondLength: compact ? 16 : 24,
+              minFontSize: compact ? 6 : 9,
+              maxFontSize: compact ? 10 : 14,
+              multipleBondOffset: 0.16,
+              additionalAtomLabelPadding: 0.08,
+            })));
+          }
         } finally {
           // WebAssembly memory is not garbage collected: a molecule that is
           // not deleted leaks, and this table draws hundreds.
@@ -124,7 +143,7 @@ export function Structure({
           height={height}
         />
       ) : (
-        <span className="faint">{!smiles ? "no SMILES" : failed ? "unparsed" : ""}</span>
+        <span className="structure-placeholder">{!smiles ? "No structure" : failed ? "Unavailable" : "Drawing…"}</span>
       )}
     </div>
   );

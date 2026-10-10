@@ -7,6 +7,10 @@
  * shown, never promoted: resistance is not engagement (katG activates isoniazid).
  */
 
+import { FilterRail } from "./FilterRail";
+import { InterfaceIcon } from "./InterfaceIcon";
+import { TableControls, useTablePreferences, type Column } from "./TableControls";
+import { cellFormatting, numericValue, scaleRanges } from "./table-formatting";
 import { useEffect, useMemo, useState } from "react";
 // Clinical.tsx cannot import from TargetDetail.tsx -- that is the wrong way
 // round -- so both views share the chemistry presentation module.
@@ -296,249 +300,173 @@ const PHASES: [number, string][] = [
   [1, "Phase 1"],
 ];
 
-export function DrugsAndTrials({
-  meta,
-  focus,
-  onFocus,
-  onSelectGene,
-}: {
-  meta: Meta | null;
-  focus: Focus;
-  onFocus: (focus: Focus) => void;
-  onSelectGene: (rv: string) => void;
+const DRUG_COLUMNS: Column[] = [
+  ["structure", "Structure", false], ["pref_name", "Drug", false],
+  ["max_phase_tb", "TB phase", true], ["first_approval", "First approval", true], ["n_trials", "Trials", true],
+  ["genes", "Mtb genes", false], ["mechanisms_of_action", "Mechanism", false],
+];
+const DRUG_GROUPS = [
+  { label: "Compound", keys: ["structure", "pref_name"] },
+  { label: "Clinical evidence", keys: ["max_phase_tb", "first_approval", "n_trials"] },
+  { label: "Target evidence", keys: ["genes", "mechanisms_of_action"] },
+];
+const TRIAL_COLUMNS: Column[] = [
+  ["nct_id", "NCT", false], ["brief_title", "Study title", false],
+  ["phase_max", "Phase", true], ["status", "Status", false],
+  ["start_date", "Start", false], ["enrollment", "Enrollment", true], ["drugs", "Drugs", false],
+];
+const TRIAL_GROUPS = [
+  { label: "Study", keys: ["nct_id", "brief_title"] },
+  { label: "Clinical stage", keys: ["phase_max", "status"] },
+  { label: "Recruitment", keys: ["start_date", "enrollment"] },
+  { label: "Treatment", keys: ["drugs"] },
+];
+type ClinicalSort = { key: string; order: "asc" | "desc" } | null;
+function sortClinical<T extends DrugSummary | Trial>(rows: T[], sort: ClinicalSort): T[] {
+  if (!sort) return rows;
+  const value = (row: T): string | number | undefined => {
+    const numeric = numericValue(row, sort.key);
+    if (numeric !== undefined) return numeric;
+    if (["max_phase_tb", "phase_max", "first_approval", "n_trials", "enrollment"].includes(sort.key)) return undefined;
+    if (sort.key === "pref_name" && "pref_name" in row) return row.pref_name ?? row.molecule_chembl_id;
+    if (sort.key === "genes" && "genes" in row) return row.genes.map(g => g.gene_name ?? g.rv_id).join(", ");
+    if (sort.key === "drugs" && "drugs" in row) return row.drugs.map(d => d.pref_name ?? d.molecule_chembl_id).join(", ");
+    const raw = (row as unknown as Record<string, unknown>)[sort.key];
+    return Array.isArray(raw) ? raw.join("; ") : typeof raw === "string" ? raw : undefined;
+  };
+  return [...rows].sort((a, b) => {
+    const av = value(a), bv = value(b);
+    if (av === undefined || bv === undefined) return av === bv ? 0 : av === undefined ? 1 : -1;
+    const comparison = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv), undefined, { numeric: true });
+    return sort.order === "asc" ? comparison : -comparison;
+  });
+}
+
+export function DrugsAndTrials({ meta, focus, onFocus, onSelectGene }: {
+  meta: Meta | null; focus: Focus; onFocus: (focus: Focus) => void; onSelectGene: (rv: string) => void;
 }) {
   const [tab, setTab] = useState<"drugs" | "trials">(focus?.kind === "trial" ? "trials" : "drugs");
   const [drugs, setDrugs] = useState<DrugSummary[]>([]);
   const [trials, setTrials] = useState<Trial[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
   const [phases, setPhases] = useState<Set<number>>(new Set());
   const [flags, setFlags] = useState<Set<DrugFlag>>(new Set(["on_gene"]));
   const [statuses, setStatuses] = useState<Set<string>>(new Set());
   const [linkedOnly, setLinkedOnly] = useState(true);
+  const [drugSort, setDrugSort] = useState<ClinicalSort>(null);
+  const [trialSort, setTrialSort] = useState<ClinicalSort>(null);
+  const drugSettings = useTablePreferences(DRUG_COLUMNS, "atlas.drug-table.v1", "pref_name");
+  const trialSettings = useTablePreferences(TRIAL_COLUMNS, "atlas.trial-table.v1", "nct_id");
 
   useEffect(() => {
-    Promise.all([api.drugs(), api.trials()])
-      .then(([d, t]) => {
-        setDrugs(d.items);
-        setTrials(t.items);
-      })
-      .catch((e: unknown) => setError(String(e)));
+    Promise.all([api.drugs(), api.trials()]).then(([d, t]) => {
+      setDrugs(d.items); setTrials(t.items);
+    }).catch((e: unknown) => setError(String(e))).finally(() => setLoading(false));
   }, []);
+  useEffect(() => { if (focus) setTab(focus.kind === "trial" ? "trials" : "drugs"); }, [focus]);
 
-  useEffect(() => {
-    if (focus) setTab(focus.kind === "trial" ? "trials" : "drugs");
-  }, [focus]);
-
-  const text = query.trim().toLowerCase();
-  const shownDrugs = useMemo(
-    () =>
-      drugs.filter((d) => {
-        if (phases.size && !phases.has(Math.floor(d.max_phase_tb ?? -1))) return false;
-        for (const [key, , test] of DRUG_FLAGS) if (flags.has(key) && !test(d)) return false;
-        if (!text) return true;
-        return [d.pref_name, d.molecule_chembl_id, ...d.synonyms, ...d.mechanisms_of_action, ...d.genes.map((g) => g.gene_name ?? g.rv_id)]
-          .some((v) => (v ?? "").toLowerCase().includes(text));
-      }),
-    [drugs, phases, flags, text],
-  );
-
+  const shownDrugs = useMemo(() => drugs.filter(d => {
+    if (phases.size && !phases.has(Math.floor(d.max_phase_tb ?? -1))) return false;
+    return DRUG_FLAGS.every(([key, , test]) => !flags.has(key) || test(d));
+  }), [drugs, phases, flags]);
+  const shownTrials = useMemo(() => trials.filter(t =>
+    (!linkedOnly || t.drugs.length > 0) && (!statuses.size || statuses.has(t.status ?? "UNKNOWN")) &&
+    (!phases.size || phases.has(Math.floor(t.phase_max ?? -1)))
+  ), [trials, linkedOnly, statuses, phases]);
   const trialStatuses = useMemo(() => {
     const counts = new Map<string, number>();
     for (const t of trials) counts.set(t.status ?? "UNKNOWN", (counts.get(t.status ?? "UNKNOWN") ?? 0) + 1);
     return [...counts.entries()].sort((a, b) => b[1] - a[1]);
   }, [trials]);
-
-  const shownTrials = useMemo(
-    () =>
-      trials.filter((t) => {
-        if (linkedOnly && !t.drugs.length) return false;
-        if (statuses.size && !statuses.has(t.status ?? "UNKNOWN")) return false;
-        if (phases.size && !phases.has(Math.floor(t.phase_max ?? -1))) return false;
-        if (!text) return true;
-        return [t.nct_id, t.brief_title, t.acronym, t.lead_sponsor, ...t.interventions.map((i) => i.name), ...t.drugs.map((d) => d.pref_name)]
-          .some((v) => (v ?? "").toLowerCase().includes(text));
-      }),
-    [trials, linkedOnly, statuses, phases, text],
-  );
-
+  const sortedDrugs = useMemo(() => sortClinical(shownDrugs, drugSort), [shownDrugs, drugSort]);
+  const sortedTrials = useMemo(() => sortClinical(shownTrials, trialSort), [shownTrials, trialSort]);
+  const drugRanges = useMemo(() => scaleRanges(shownDrugs, drugSettings.preferences.scales), [shownDrugs, drugSettings.preferences.scales]);
+  const trialRanges = useMemo(() => scaleRanges(shownTrials, trialSettings.preferences.scales), [shownTrials, trialSettings.preferences.scales]);
+  const isDrug = tab === "drugs";
+  const settings = isDrug ? drugSettings : trialSettings;
+  const allColumns = isDrug ? DRUG_COLUMNS : TRIAL_COLUMNS;
+  const groups = isDrug ? DRUG_GROUPS : TRIAL_GROUPS;
+  const columns = allColumns.filter(([key]) => !settings.preferences.visible || settings.preferences.visible.includes(key));
+  const sort = isDrug ? drugSort : trialSort;
+  const setSort = isDrug ? setDrugSort : setTrialSort;
+  const count = isDrug ? shownDrugs.length : shownTrials.length;
   const toggle = <T,>(set: Set<T>, value: T, apply: (next: Set<T>) => void) => {
-    const next = new Set(set);
-    next.has(value) ? next.delete(value) : next.add(value);
-    apply(next);
+    const next = new Set(set); next.has(value) ? next.delete(value) : next.add(value); apply(next);
   };
-
+  function clearFilters() { setPhases(new Set()); if (isDrug) setFlags(new Set()); else { setStatuses(new Set()); setLinkedOnly(false); } }
+  function drugCell(d: DrugSummary, key: string) {
+    switch (key) {
+      case "structure": return <Structure smiles={d.smiles} title={d.pref_name ?? d.molecule_chembl_id} width={112} height={60} />;
+      case "pref_name": return <><button className="row-open" type="button" onClick={event => { event.stopPropagation(); onFocus({ kind: "drug", id: d.molecule_chembl_id }); }}>{d.pref_name ?? d.molecule_chembl_id}</button><div className="clinical-id"><ChemblLink kind="compound" id={d.molecule_chembl_id} /></div></>;
+      case "max_phase_tb": return phaseLabel(d.max_phase_tb);
+      case "first_approval": return d.first_approval ?? "—";
+      case "n_trials": return d.n_trials.toLocaleString();
+      case "genes": return <span className="chips">{d.genes.length ? d.genes.map(g => <GeneChip key={g.rv_id} rv={g.rv_id} name={g.gene_name} onSelect={onSelectGene} />) : "—"}</span>;
+      case "mechanisms_of_action": return <span className="clinical-clamp" title={d.mechanisms_of_action.join("; ")}>{d.mechanisms_of_action.join("; ") || "None recorded"}</span>;
+    }
+  }
+  function trialCell(t: Trial, key: string) {
+    switch (key) {
+      case "nct_id": return <button className="row-open mono" type="button" onClick={event => { event.stopPropagation(); onFocus({ kind: "trial", id: t.nct_id }); }}>{t.nct_id}</button>;
+      case "brief_title": return <span className="clinical-clamp" title={t.brief_title ?? undefined}>{t.acronym && <strong>{t.acronym} · </strong>}{t.brief_title ?? "—"}</span>;
+      case "phase_max": return trialPhase(t.phases);
+      case "status": return <span className="clinical-status">{status(t.status)}</span>;
+      case "start_date": return t.start_date ?? "—";
+      case "enrollment": return t.enrollment?.toLocaleString() ?? "—";
+      case "drugs": { const names = t.drugs.map(d => d.pref_name ?? d.molecule_chembl_id).join(", "); return <span className="clinical-clamp" title={names}>{names || "—"}</span>; }
+    }
+  }
   if (error) return <div className="errbox">{error}</div>;
-
   return (
     <div className={`body clinical${focus ? " detail-open" : ""}`}>
-      <aside className="col col-pad">
-        <div className="group">
-          <p className="lab">Search</p>
-          <input
-            className="search"
-            type="search"
-            value={query}
-            placeholder={tab === "drugs" ? "bedaquiline, TMC207, dprE1" : "NCT02333799, Nix-TB, sponsor"}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </div>
-
-        <div className="group">
-          <p className="lab">{tab === "drugs" ? "Highest phase for TB" : "Phase"}</p>
+      <FilterRail label="Clinical filters">
+        <div className="rail-heading"><InterfaceIcon name="clinical" /><h2>Clinical explorer</h2></div>
+        <p className="clinical-count" aria-live="polite"><strong>{count.toLocaleString()}</strong> / {(isDrug ? drugs : trials).length.toLocaleString()} {isDrug ? "drugs & candidates" : "trials"}</p>
+        <div className="group clinical-phases">
+          <p className="lab">{isDrug ? "Highest phase for TB" : "Study phase"}</p>
           <div className="seg">
-            {PHASES.map(([phase, label]) => (
-              <button key={phase} type="button" aria-pressed={phases.has(phase)} onClick={() => toggle(phases, phase, setPhases)}>
-                <span className="name">{tab === "drugs" ? label : label.replace("Approved for TB", "Phase 4")}</span>
-                <span className="c">
-                  {tab === "drugs"
-                    ? drugs.filter((d) => Math.floor(d.max_phase_tb ?? -1) === phase).length
-                    : trials.filter((t) => Math.floor(t.phase_max ?? -1) === phase).length}
-                </span>
-              </button>
-            ))}
+            {PHASES.map(([phase, label]) => <button key={phase} type="button" aria-pressed={phases.has(phase)} onClick={() => toggle(phases, phase, setPhases)}>
+              <span className="name">{isDrug ? label : label.replace("Approved for TB", "Phase 4")}</span>
+              <span className="c">{isDrug ? drugs.filter(d => Math.floor(d.max_phase_tb ?? -1) === phase).length : trials.filter(t => Math.floor(t.phase_max ?? -1) === phase).length}</span>
+            </button>)}
           </div>
         </div>
-
-        {tab === "drugs" ? (
-          <div className="group">
-            <p className="lab">Restrict to</p>
-            <div className="seg">
-              {DRUG_FLAGS.map(([key, label, test]) => (
-                <button key={key} type="button" aria-pressed={flags.has(key)} onClick={() => toggle(flags, key, setFlags)}>
-                  <span className="name">{label}</span>
-                  <span className="c">{drugs.filter(test).length}</span>
-                </button>
-              ))}
-            </div>
-            <p className="note">
-              ChEMBL&rsquo;s TB indications, unedited: they include host-directed adjuncts, HIV
-              co-medications and placebo excipients, because ChEMBL reads indications off trial
-              records. &ldquo;Placed on an Mtb gene&rdquo; is on by default.
-            </p>
-          </div>
-        ) : (
-          <>
-            <div className="group">
-              <p className="lab">Restrict to</p>
-              <div className="seg">
-                <button type="button" aria-pressed={linkedOnly} onClick={() => setLinkedOnly((v) => !v)}>
-                  <span className="name">Linked to a TB drug</span>
-                  <span className="c">{trials.filter((t) => t.drugs.length).length}</span>
-                </button>
-              </div>
-            </div>
-            <div className="group">
-              <p className="lab">Status</p>
-              <div className="seg">
-                {trialStatuses.map(([value, count]) => (
-                  <button key={value} type="button" aria-pressed={statuses.has(value)} onClick={() => toggle(statuses, value, setStatuses)}>
-                    <span className="name">{status(value)}</span>
-                    <span className="c">{count}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
-      </aside>
-
+        <details className="group filtergroup" open>
+          <summary>Restrict to <span className="filtercount">{isDrug ? flags.size ? `${flags.size} selected` : "" : linkedOnly ? "1 selected" : ""}</span></summary>
+          <div className="seg">{isDrug ? DRUG_FLAGS.map(([key, label, test]) => <button key={key} type="button" aria-pressed={flags.has(key)} onClick={() => toggle(flags, key, setFlags)}><span className="name">{label}</span><span className="c">{drugs.filter(test).length}</span></button>) : <button type="button" aria-pressed={linkedOnly} onClick={() => setLinkedOnly(v => !v)}><span className="name">Linked to a TB drug</span><span className="c">{trials.filter(t => t.drugs.length).length}</span></button>}</div>
+        </details>
+        {!isDrug && <details className="group filtergroup"><summary>Status <span className="filtercount">{statuses.size ? `${statuses.size} selected` : ""}</span></summary><div className="seg">{trialStatuses.map(([value, n]) => <button key={value} type="button" aria-pressed={statuses.has(value)} onClick={() => toggle(statuses, value, setStatuses)}><span className="name">{status(value)}</span><span className="c">{n}</span></button>)}</div></details>}
+        <details className="group sources filtergroup"><summary>Sources & coverage</summary><p className="note">{isDrug ? chemblSource(meta) : trialSource(meta)}</p>{isDrug && <p className="note">ChEMBL’s TB indications include host-directed adjuncts, HIV co-medications and placebo excipients from trial records. “Placed on an Mtb gene” is on by default.</p>}</details>
+        <button className="clear-filters" type="button" disabled={!phases.size && (isDrug ? !flags.size : !statuses.size && !linkedOnly)} onClick={clearFilters}>Clear filters</button>
+      </FilterRail>
       <main className="col canvascol">
-        <div className="tabs">
-          <button type="button" aria-pressed={tab === "drugs"} onClick={() => setTab("drugs")}>
-            Drugs and candidates<span className="badge">{drugs.length}</span>
-          </button>
-          <button type="button" aria-pressed={tab === "trials"} onClick={() => setTab("trials")}>
-            Trials<span className="badge">{trials.length}</span>
-          </button>
+        <div className="clinical-toolbar">
+          <div className="tabs" aria-label="Clinical datasets">
+            <button type="button" aria-pressed={isDrug} onClick={() => setTab("drugs")}>Drugs & candidates</button>
+            <button type="button" aria-pressed={!isDrug} onClick={() => setTab("trials")}>Trials</button>
+          </div>
+          <TableControls key={tab} columns={allColumns} groups={groups} visible={columns} preferences={settings.preferences} saved={settings.saved} onChange={settings.change} identity={isDrug ? "pref_name" : "nct_id"} recordLabel={tab} defaultNote="" />
         </div>
-        <div className="listhead">
-          <h2>{tab === "drugs" ? "TB drugs and candidates (ChEMBL)" : "Interventional TB trials (ClinicalTrials.gov)"}</h2>
-          <span className="count">
-            {(tab === "drugs" ? shownDrugs : shownTrials).length.toLocaleString()} of{" "}
-            {(tab === "drugs" ? drugs : trials).length.toLocaleString()}
-            {tab === "trials" && shownTrials.length > TRIAL_ROWS ? ` · showing first ${TRIAL_ROWS}` : ""}
-          </span>
+        <div className="scroller clinical-scroller" key={tab}>
+          <table className={`clinical-table ${isDrug ? "drug-table" : "trial-table"}`} aria-label={isDrug ? "TB drugs and candidates" : "TB clinical trials"}>
+            <thead>
+              <tr className="column-groups">{groups.map(group => { const span = columns.filter(([key]) => group.keys.includes(key)).length; return span ? <th key={group.label} scope="colgroup" colSpan={span}>{group.label}</th> : null; })}</tr>
+              <tr>{columns.map(([key, label, numeric]) => <th key={key} scope="col" className={numeric ? "n" : undefined} aria-sort={sort?.key === key ? sort.order === "asc" ? "ascending" : "descending" : undefined}>
+                {key === "structure" ? label : <button className="sortbutton" type="button" onClick={() => setSort(current => ({ key, order: current?.key === key ? current.order === "asc" ? "desc" : "asc" : numeric ? "desc" : "asc" }))}>{label}<span className="sorticon" aria-hidden="true">{sort?.key === key ? sort.order === "asc" ? "↑" : "↓" : "↕"}</span></button>}
+              </th>)}</tr>
+            </thead>
+            <tbody>
+              {isDrug ? sortedDrugs.map(d => <tr key={d.molecule_chembl_id} aria-selected={focus?.kind === "drug" && focus.id === d.molecule_chembl_id} onClick={() => onFocus({ kind: "drug", id: d.molecule_chembl_id })}>
+                {columns.map(([key, , numeric]) => <td key={key} data-column={key} className={numeric ? "n" : undefined} style={cellFormatting(d, key, settings.preferences.rules, drugRanges)}>{drugCell(d, key)}</td>)}
+              </tr>) : sortedTrials.slice(0, TRIAL_ROWS).map(t => <tr key={t.nct_id} aria-selected={focus?.kind === "trial" && focus.id === t.nct_id} onClick={() => onFocus({ kind: "trial", id: t.nct_id })}>
+                {columns.map(([key, , numeric]) => <td key={key} data-column={key} className={numeric ? "n" : undefined} style={cellFormatting(t, key, settings.preferences.rules, trialRanges)}>{trialCell(t, key)}</td>)}
+              </tr>)}
+              {!count && <tr><td className="clinical-empty" colSpan={columns.length}>{loading ? "Loading clinical evidence…" : "No matching records. Clear filters to see all records."}</td></tr>}
+            </tbody>
+          </table>
         </div>
-        <div className="scroller" style={{ flex: 1 }}>
-          {tab === "drugs" ? (
-            <table>
-              <thead>
-                <tr>
-                  <th>Structure</th>
-                  <th>Drug</th>
-                  <th>TB phase</th>
-                  <th className="n">Approved</th>
-                  <th>Mtb genes</th>
-                  <th className="n">Trials</th>
-                  <th>Mechanism (ChEMBL)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {shownDrugs.map((d) => (
-                  <tr
-                    key={d.molecule_chembl_id}
-                    aria-selected={focus?.kind === "drug" && focus.id === d.molecule_chembl_id}
-                    onClick={() => onFocus({ kind: "drug", id: d.molecule_chembl_id })}
-                  >
-                    <td>
-                      <Structure
-                        smiles={d.smiles}
-                        title={d.pref_name ?? d.molecule_chembl_id}
-                      />
-                    </td>
-                    <td className="id">
-                      {d.pref_name && <div>{d.pref_name}</div>}
-                      <ChemblLink kind="compound" id={d.molecule_chembl_id} />
-                    </td>
-                    <td className="dim">{phaseLabel(d.max_phase_tb)}</td>
-                    <td className="n">{d.first_approval ?? "—"}</td>
-                    <td>
-                      <span className="chips">
-                        {d.genes.length
-                          ? d.genes.map((g) => <GeneChip key={g.rv_id} rv={g.rv_id} name={g.gene_name} onSelect={onSelectGene} />)
-                          : <span className="absent">—</span>}
-                      </span>
-                    </td>
-                    <td className="n">{d.n_trials || "—"}</td>
-                    <td className="prodcell">
-                      {d.mechanisms_of_action.join("; ") || <span className="absent">none recorded</span>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>NCT</th>
-                  <th>Phase</th>
-                  <th>Status</th>
-                  <th>Start</th>
-                  <th>Drugs</th>
-                  <th>Title</th>
-                </tr>
-              </thead>
-              <tbody>
-                {shownTrials.slice(0, TRIAL_ROWS).map((t) => (
-                  <tr
-                    key={t.nct_id}
-                    aria-selected={focus?.kind === "trial" && focus.id === t.nct_id}
-                    onClick={() => onFocus({ kind: "trial", id: t.nct_id })}
-                  >
-                    <td className="id">{t.nct_id}</td>
-                    <td className="dim">{trialPhase(t.phases)}</td>
-                    <td className="dim">{status(t.status)}</td>
-                    <td className="mono dim">{t.start_date ?? "—"}</td>
-                    <td className="mono">{t.drugs.map((d) => d.pref_name).join(", ") || <span className="absent">—</span>}</td>
-                    <td className="prodcell">{t.acronym ? `${t.acronym} · ` : ""}{t.brief_title}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+        {!isDrug && count > TRIAL_ROWS && <div className="clinical-limit">Showing the first {TRIAL_ROWS} of {count.toLocaleString()} matching trials. Use filters or sort to narrow the view.</div>}
       </main>
 
       <aside className="col detailcol">
@@ -754,7 +682,7 @@ function DrugPanel({
                 <div>
                   <b>{m.mechanism_of_action ?? "—"}</b>{" "}
                   {m.target_type && m.target_type !== "SINGLE PROTEIN" && (
-                    <span className="chip warn">{m.target_type.toLowerCase()}</span>
+                    <span className="chip">{m.target_type.toLowerCase()}</span>
                   )}
                 </div>
                 <div className="note">

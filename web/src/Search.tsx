@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { InterfaceIcon } from "./InterfaceIcon";
 import { api, type Hit, type SearchResults } from "./api";
 
 type Kind = keyof SearchResults;
@@ -76,11 +77,12 @@ export function Search({
 
   return (
     <div className="globalsearch" ref={box}>
+      <InterfaceIcon name="search" />
       <input
         className="search"
         type="search"
         value={query}
-        placeholder="Search everything — Rv3790, bedaquiline, NCT02333799"
+        placeholder="Search the atlas…"
         aria-label="Search genes, drugs, trials and compounds"
         onChange={(event) => {
           setQuery(event.target.value);

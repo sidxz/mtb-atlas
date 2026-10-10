@@ -373,7 +373,7 @@ function Evidence({ detail }: { detail: Detail }) {
       <Row label="Human homolog" source={SOURCES.homology}>
         {detail.human_homolog ? (
           <>
-            <span className={`chip ${detail.close_human_homolog ? "warn" : "ortho"}`}>
+            <span className="chip homology">
               {detail.human_homolog_gene ?? detail.human_homolog_acc}
             </span>{" "}
             <span className="mono">

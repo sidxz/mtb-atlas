@@ -141,7 +141,15 @@ export function ClinicalTab({
                         {phaseLabel(drug.max_phase_tb)}
                       </span>
                     </td>
-                    <td className="dim">{links.map((l) => LINK_LABEL[l.link]).join(" · ")}</td>
+                    <td className="dim">
+                      {links
+                        .map((l) =>
+                          l.link === "bosch_2021" && l.source_text
+                            ? `${LINK_LABEL[l.link]}: “${l.source_text}”`
+                            : LINK_LABEL[l.link],
+                        )
+                        .join(" · ")}
+                    </td>
                   </tr>
                 );
               })}
@@ -154,7 +162,11 @@ export function ClinicalTab({
             single molecule in ChEMBL&rsquo;s TB indications, so it is not counted here.
           </p>
         )}
-        <div className="note">Phase is the highest ChEMBL records for a tuberculosis indication.</div>
+        <div className="note">
+          Phase is the highest ChEMBL records for a tuberculosis indication. Bosch 2021&rsquo;s
+          column names the drug associated with a gene, which is usually its target but can be
+          the enzyme that activates it &mdash; as folC is for PAS.
+        </div>
       </Section>
 
       {complex.length > 0 && (

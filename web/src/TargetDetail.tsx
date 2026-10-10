@@ -17,10 +17,13 @@ const SOURCES = {
   alphafold: "AlphaFold DB v6 · CC BY 4.0",
   chembl: "ChEMBL 37 · CC BY-SA 3.0",
   who: "WHO catalogue 2nd ed. 2023 · ODC-By 1.0",
+  vulnerability: "Bosch et al. 2021, Cell · Table S3 · CC BY 4.0",
+  string: "STRING v12.5 · CC BY 4.0",
+  homology: "UniRef co-membership vs reviewed human proteome · CC BY 4.0",
   identity: "Mycobrowser release 5 (licence not stated) · UniProt · CC BY 4.0",
 };
 
-type Tab = "evidence" | "structure" | "chemistry" | "resistance";
+type Tab = "evidence" | "structure" | "chemistry" | "resistance" | "network";
 
 const number = (value: number | null | undefined, digits = 2) =>
   value === null || value === undefined ? "—" : value.toFixed(digits);
@@ -80,6 +83,7 @@ export function TargetDetailPanel({ detail }: { detail: Detail }) {
             ["structure", "Structure", detail.n_pdb + (detail.has_predicted ? 1 : 0)],
             ["chemistry", "Chemistry", detail.n_compounds],
             ["resistance", "Resistance", detail.n_variants_associated],
+            ["network", "Network", detail.n_partners],
           ] as [Tab, string, number | null][]
         ).map(([key, label, badge]) => (
           <button key={key} type="button" aria-pressed={tab === key} onClick={() => setTab(key)}>
@@ -162,6 +166,8 @@ export function TargetDetailPanel({ detail }: { detail: Detail }) {
 
         {tab === "chemistry" && <Chemistry detail={detail} />}
 
+        {tab === "network" && <Network detail={detail} />}
+
         {tab === "resistance" && (
           <Resistance detail={detail} onFocus={(position) => {
             setTab("structure");
@@ -191,6 +197,71 @@ function Evidence({ detail }: { detail: Detail }) {
           </>
         ) : (
           <span className="absent">no call in this dataset</span>
+        )}
+      </Row>
+
+      <Row label="Vulnerability (CRISPRi)" source={SOURCES.vulnerability}>
+        {detail.vulnerability_index === null ? (
+          <span className="absent">not measured</span>
+        ) : (
+          <>
+            <span
+              className="big"
+              style={{ color: detail.vulnerability_certain ? "var(--accent)" : "var(--fg-dim)" }}
+            >
+              {detail.vulnerability_index.toFixed(2)}
+            </span>{" "}
+            <span className="dim">
+              {detail.vi_lower !== null && detail.vi_upper !== null
+                ? `(${detail.vi_lower.toFixed(1)} to ${detail.vi_upper.toFixed(1)})`
+                : ""}
+            </span>
+            <div className="note">
+              More negative is more vulnerable: how far expression has to fall before fitness
+              suffers, which is the question an inhibitor poses. Essentiality only says whether the
+              gene can be deleted.
+            </div>
+            {!detail.vulnerability_certain && (
+              <p className="caveat">
+                This estimate did not meet the study&rsquo;s own criteria for confidence — only ~600
+                genes do. Treat it as indicative.
+              </p>
+            )}
+            {detail.antibacterial && (
+              <div className="note" style={{ color: "var(--fg)" }}>
+                Already targeted by <b>{detail.antibacterial}</b>.
+              </div>
+            )}
+          </>
+        )}
+      </Row>
+
+      <Row label="Human homolog" source={SOURCES.homology}>
+        {detail.human_homolog ? (
+          <>
+            <span className={`chip ${detail.close_human_homolog ? "warn" : "ortho"}`}>
+              {detail.human_homolog_gene ?? detail.human_homolog_acc}
+            </span>{" "}
+            <span className="mono">
+              {Math.round((detail.human_homolog_identity ?? 0) * 100)}% identity
+            </span>{" "}
+            <span className="dim">
+              E = {detail.human_homolog_evalue?.toExponential(1)}
+            </span>
+            <div className="note">
+              {detail.close_human_homolog
+                ? "Close enough to be a selectivity liability worth checking early."
+                : "A detectable but distant relative. Below the 30% line this atlas draws for a close homolog — that line is a convention here, not a fact of biology."}
+            </div>
+          </>
+        ) : (
+          <>
+            <span className="chip ok">none detected</span>
+            <div className="note">
+              No reviewed human protein matches at E ≤ 1e-5 (phmmer over the whole human
+              proteome).
+            </div>
+          </>
         )}
       </Row>
 
@@ -294,6 +365,16 @@ function Evidence({ detail }: { detail: Detail }) {
           </div>
         )}
         <div className="note">{detail.category}</div>
+        {(detail.pfam_ids.length > 0 || detail.ec_numbers.length > 0) && (
+          <div className="ids" style={{ marginTop: 6 }}>
+            {detail.ec_numbers.map((e) => (
+              <span key={e}>EC {e}</span>
+            ))}
+            {detail.pfam_ids.map((f) => (
+              <span key={f}>{f}</span>
+            ))}
+          </div>
+        )}
       </Row>
 
       {detail.absences.length > 0 && (
@@ -506,6 +587,54 @@ function Resistance({ detail, onFocus }: { detail: Detail; onFocus: (position: n
                 </tr>
               );
             })}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+
+function Network({ detail }: { detail: Detail }) {
+  if (!detail.partners.length) {
+    return (
+      <p className="absent">
+        No high-confidence STRING partners. Edges below a combined score of 700 are left out: the
+        full network is mostly low-confidence text mining and would bury the real links.
+      </p>
+    );
+  }
+  return (
+    <>
+      <p className="note" style={{ marginTop: 0 }}>
+        STRING functional partners, combined score ≥ 700. A score built only from text mining is a
+        much weaker claim than one with experimental support, so the channels are shown separately.
+      </p>
+      <div className="scroller">
+        <table>
+          <thead>
+            <tr>
+              <th>Partner</th>
+              <th>Gene</th>
+              <th className="n">Score</th>
+              <th className="n">Experimental</th>
+              <th className="n">Database</th>
+              <th className="n">Co-expr.</th>
+              <th className="n">Text</th>
+            </tr>
+          </thead>
+          <tbody>
+            {detail.partners.map((p) => (
+              <tr key={p.rv_id}>
+                <td className="id">{p.rv_id}</td>
+                <td>{p.gene_name && p.gene_name !== p.rv_id ? p.gene_name : "—"}</td>
+                <td className="n">{p.combined_score}</td>
+                <td className="n">{p.experimental || "—"}</td>
+                <td className="n">{p.database || "—"}</td>
+                <td className="n">{p.coexpression || "—"}</td>
+                <td className="n faint">{p.textmining || "—"}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>

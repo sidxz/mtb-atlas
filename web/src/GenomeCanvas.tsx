@@ -11,7 +11,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { TargetSummary } from "./api";
 
-export type ColourBy = "essentiality" | "structure" | "chemistry" | "resistance" | "category";
+export type ColourBy =
+  | "essentiality"
+  | "vulnerability"
+  | "structure"
+  | "chemistry"
+  | "resistance"
+  | "category";
 
 /** NC_000962.3, M. tuberculosis H37Rv. */
 export const GENOME_LENGTH = 4_411_532;
@@ -41,6 +47,17 @@ export function colourOf(gene: TargetSummary, by: ColourBy): string {
   switch (by) {
     case "essentiality":
       return gene.essentiality ? token(`--ess-${gene.essentiality}`) : token("--ess-none");
+    case "vulnerability": {
+      // Negative scale: -12 is highly vulnerable, 0 is not. Only genes with the
+      // study's own `certain` flag get a colour; the rest stay grey rather than
+      // implying a measurement the paper does not stand behind.
+      const vi = gene.vulnerability_index;
+      if (vi === null || !gene.vulnerability_certain) return token("--ess-none");
+      if (vi <= -9) return token("--accent");
+      if (vi <= -6) return token("--ess-ESD");
+      if (vi <= -3) return token("--ess-GD");
+      return token("--ess-GA");
+    }
     case "structure":
       if (gene.n_pdb >= 5) return token("--accent");
       if (gene.n_pdb > 0) return token("--ess-NE");

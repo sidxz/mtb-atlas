@@ -38,6 +38,22 @@ export interface TargetSummary {
   n_variants_associated: number;
   n_variants_mappable: number;
   resistance_drugs: string[];
+  /** CRISPRi knockdown. More negative is more vulnerable. */
+  vulnerability_index: number | null;
+  vi_lower: number | null;
+  vi_upper: number | null;
+  vulnerability_certain: boolean;
+  crispr_essential: boolean;
+  /** The drug that already targets this gene, per Bosch 2021. */
+  antibacterial: string | null;
+  human_homolog: boolean;
+  close_human_homolog: boolean;
+  human_homolog_gene: string | null;
+  human_homolog_acc: string | null;
+  human_homolog_identity: number | null;
+  human_homolog_evalue: number | null;
+  n_partners: number;
+  top_partner_score: number | null;
   has_structure: boolean;
   has_ligands: boolean;
   structural_gap: boolean;
@@ -156,8 +172,23 @@ export interface TargetDetail extends TargetSummary {
   whole_cell: Activity[];
   compounds: Compound[];
   variants: Variant[];
+  partners: Partner[];
+  interpro_ids: string[];
+  pfam_ids: string[];
+  go_ids: string[];
+  ec_numbers: string[];
   /** What the atlas does NOT know, stated rather than left as a blank cell. */
   absences: string[];
+}
+
+export interface Partner {
+  rv_id: string;
+  gene_name: string | null;
+  combined_score: number;
+  experimental: number;
+  database: number;
+  textmining: number;
+  coexpression: number;
 }
 
 export interface Meta {
@@ -176,7 +207,12 @@ export interface TargetQuery {
   in_who_catalogue?: boolean;
   structural_gap?: boolean;
   conflict?: boolean;
+  crispr_essential?: boolean;
+  vulnerability_certain?: boolean;
+  human_homolog?: boolean;
+  close_human_homolog?: boolean;
   min_pchembl?: number;
+  max_vulnerability_index?: number;
   sort?: string;
   order?: "asc" | "desc";
   limit?: number;

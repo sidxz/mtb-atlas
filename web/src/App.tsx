@@ -19,6 +19,7 @@ const ESSENTIALITY: [string, string][] = [
 
 const COLOUR_MODES: [ColourBy, string][] = [
   ["essentiality", "Essentiality"],
+  ["vulnerability", "Vulnerability"],
   ["structure", "Structure coverage"],
   ["chemistry", "Chemical matter"],
   ["resistance", "Resistance"],
@@ -27,6 +28,8 @@ const COLOUR_MODES: [ColourBy, string][] = [
 
 type Flag =
   | "structural_gap"
+  | "crispr_essential"
+  | "vulnerability_certain"
   | "has_structure"
   | "has_predicted"
   | "has_ligands"
@@ -35,6 +38,8 @@ type Flag =
 
 const FLAGS: [Flag, string][] = [
   ["structural_gap", "Essential · structure · no ligands"],
+  ["crispr_essential", "Essential by CRISPRi"],
+  ["vulnerability_certain", "Vulnerability measured confidently"],
   ["has_structure", "Has an experimental structure"],
   ["has_predicted", "Has a predicted structure"],
   ["has_ligands", "Has chemical matter"],
@@ -46,12 +51,14 @@ const COLUMNS: [string, string, boolean][] = [
   ["rv_id", "Locus", false],
   ["gene_name", "Gene", false],
   ["essentiality", "Essentiality", false],
+  ["vulnerability_index", "Vuln.", true],
   ["n_pdb", "PDB", true],
   ["plddt_mean", "pLDDT", true],
   ["n_compounds", "Cpds", true],
   ["best_pchembl", "Best pChEMBL", true],
   ["best_whole_cell_pchembl", "Cell", true],
   ["n_variants_associated", "WHO", true],
+  ["n_partners", "Partners", true],
 ];
 
 function useTheme() {
@@ -81,6 +88,10 @@ export function App() {
   const [essentiality, setEssentiality] = useState<Set<string>>(new Set());
   const [category, setCategory] = useState<Set<string>>(new Set());
   const [flags, setFlags] = useState<Set<Flag>>(new Set());
+  // Anti-target filter: hide anything sharing a UniRef cluster with a human
+  // protein. Off by default, because UniRef50 co-membership is a family-level
+  // flag rather than a measured identity.
+  const [hideHumanHomologs, setHideHumanHomologs] = useState(false);
   const [colourBy, setColourBy] = useState<ColourBy>("essentiality");
   const [sort, setSort] = useState<{ key: string; order: "asc" | "desc" }>({
     key: "start",
@@ -119,6 +130,7 @@ export function App() {
       if (essentiality.size && !essentiality.has(gene.essentiality ?? "")) return false;
       if (category.size && !category.has(gene.category ?? "")) return false;
       for (const flag of flags) if (!gene[flag]) return false;
+      if (hideHumanHomologs && gene.close_human_homolog) return false;
       if (!text) return true;
       return (
         gene.rv_id.toLowerCase().includes(text) ||
@@ -127,7 +139,7 @@ export function App() {
         (gene.uniprot_acc ?? "").toLowerCase().includes(text)
       );
     });
-  }, [all, query, essentiality, category, flags]);
+  }, [all, query, essentiality, category, flags, hideHumanHomologs]);
 
   const sorted = useMemo(() => {
     const direction = sort.order === "asc" ? 1 : -1;
@@ -190,6 +202,9 @@ export function App() {
             <span>
               <b>{meta.counts.with_resistance.toLocaleString()}</b> with resistance
             </span>
+            <span>
+              <b>{(meta.counts.vulnerability_measured ?? 0).toLocaleString()}</b> vulnerability measured
+            </span>
             <span className="hero">
               <b>{meta.counts.structural_gap.toLocaleString()}</b> essential · structure · no ligands
             </span>
@@ -243,6 +258,15 @@ export function App() {
                   <span className="c">{counted((g) => Boolean(g[key]))}</span>
                 </button>
               ))}
+              <button
+                type="button"
+                aria-pressed={hideHumanHomologs}
+                onClick={() => setHideHumanHomologs((v) => !v)}
+                title="Hide genes with a human homolog at 30% identity or more"
+              >
+                <span className="name">No close human homolog</span>
+                <span className="c">{counted((g) => !g.close_human_homolog)}</span>
+              </button>
             </div>
           </div>
 
@@ -374,6 +398,15 @@ export function App() {
                         <span className="absent">—</span>
                       )}
                     </td>
+                    <td className="n">
+                      {gene.vulnerability_index === null ? (
+                        "—"
+                      ) : (
+                        <span className={gene.vulnerability_certain ? undefined : "faint"}>
+                          {gene.vulnerability_index.toFixed(1)}
+                        </span>
+                      )}
+                    </td>
                     <td className="n">{gene.n_pdb || "—"}</td>
                     <td className="n">{gene.plddt_mean ? gene.plddt_mean.toFixed(0) : "—"}</td>
                     <td className="n">{gene.n_compounds || "—"}</td>
@@ -387,7 +420,26 @@ export function App() {
                     </td>
                     <td className="n">{gene.best_whole_cell_pchembl?.toFixed(2) ?? "—"}</td>
                     <td className="n">{gene.n_variants_associated || "—"}</td>
-                    <td className="prodcell">{gene.product}</td>
+                    <td className="n">{gene.n_partners || "—"}</td>
+                    <td className="prodcell">
+                      {gene.antibacterial && (
+                        <span className="chip accent" style={{ marginRight: 5 }}>
+                          {gene.antibacterial}
+                        </span>
+                      )}
+                      {gene.close_human_homolog && (
+                        <span
+                          className="chip warn"
+                          style={{ marginRight: 5 }}
+                          title={`Human homolog ${gene.human_homolog_gene ?? ""} at ${Math.round(
+                            (gene.human_homolog_identity ?? 0) * 100,
+                          )}% identity`}
+                        >
+                          human
+                        </span>
+                      )}
+                      {gene.product}
+                    </td>
                   </tr>
                 ))}
               </tbody>

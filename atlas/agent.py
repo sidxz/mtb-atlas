@@ -48,6 +48,11 @@ TABLES = (
     "interactions",
     "homology",
     "chembl_targets",
+    "drugs",
+    "drug_mechanisms",
+    "drug_genes",
+    "trials",
+    "trial_drugs",
 )
 
 # One line per table: what a question should reach for, and the trap in it.
@@ -71,8 +76,31 @@ TABLE_NOTES = {
     "for promoter, frameshift and stop variants.",
     "interactions": "STRING, combined_score >= 700, one row per unordered pair. "
     "A gene appears as rv_id OR partner_rv_id -- check both.",
-    "homology": "Human anti-target flag by UniRef co-membership, keyed on uniprot_acc. "
-    "Not a measured identity.",
+    "homology": "Human anti-target check: phmmer of each Mtb protein against the reviewed "
+    "human proteome, keyed on uniprot_acc. `identity` is a FRACTION (0.48 = 48%); "
+    "`close_human_homolog` means identity >= 0.30, a convention of this atlas.",
+    "drugs": "One row per ChEMBL parent molecule with a TUBERCULOSIS indication. "
+    "`max_phase_tb` is the highest phase for TB; `max_phase` is for ANY indication, so an "
+    "approved antibiotic can be phase 2 for TB. The set is ChEMBL's, unedited: it includes "
+    "host-directed adjuncts, HIV co-medications, vaccines and placebo excipients -- filter "
+    "on `acts_on_mtb`, `host_targeted` or `atc_codes` (J04 = antimycobacterials).",
+    "drug_mechanisms": "ChEMBL mechanism of action per drug. `target_organism` is often NOT "
+    "Mtb (rifampicin's target is a generic bacterial RNA polymerase built from E. coli "
+    "proteins). Gene links are in drug_genes.",
+    "drug_genes": "Drug to Rv tag. `link`: mechanism = ChEMBL names this gene's protein as "
+    "the single-protein target; mechanism_complex = ChEMBL names a complex the protein "
+    "belongs to (bedaquiline -> all 8 ATP synthase subunits), not evidence it binds this "
+    "subunit; bosch_2021 = Bosch 2021's own drug annotation, exact name match; "
+    "who_resistance = WHO-graded resistance variants in this gene for this drug, which is "
+    "NOT target engagement (katG activates isoniazid). Drugs acting on a gene: "
+    "link IN ('mechanism', 'bosch_2021').",
+    "trials": "ClinicalTrials.gov interventional studies for condition 'tuberculosis', "
+    "including vaccine, diagnostic and behavioural studies. `phase_max` is numeric "
+    "(0.5 = early phase 1 ... 4); NULL means phase not applicable. Dates may be partial "
+    "(YYYY-MM).",
+    "trial_drugs": "Trial to drug. `via_chembl_ref` = ChEMBL's curated trial reference; "
+    "`via_intervention_name` = exact match of an intervention name to a ChEMBL synonym. "
+    "A trial with no row here may still have tested a drug under a name nothing matched.",
 }
 
 SYSTEM = """You answer questions about Mycobacterium tuberculosis H37Rv drug targets \
@@ -99,9 +127,17 @@ organism and says nothing on its own about which protein is engaged.
 - Essentiality is one in vitro condition (7H9 broth). Vulnerability is CRISPRi \
 knockdown and answers a different question -- how far expression must fall before \
 fitness suffers -- on a negative scale, and only `certain` rows are confident.
-- Human homology is shared UniRef cluster membership, not a measured percent identity.
+- Human homology is a phmmer search against the reviewed human proteome, reported as \
+an E-value and a percent identity; the 30% "close" line is this atlas's convention.
 - The WHO catalogue covers 65 genes. For every other gene the correct statement is \
 "not in the catalogue", never "no resistance known".
+- Drugs: `max_phase_tb` is the phase for tuberculosis, not for any indication. A drug \
+reaches a gene through ChEMBL's mechanism (a single protein, or a complex the protein \
+belongs to -- membership is not binding), Bosch 2021's annotation, or WHO-graded \
+resistance. Resistance is not engagement: katG activates isoniazid and Rv0678 is a \
+regulator. Say which link an answer rests on.
+- Trials link to drugs through ChEMBL's own trial references or an exact \
+intervention-name match. An unlinked trial may still have tested a drug.
 
 Be concise and quantitative. Prefer a short table to a paragraph when the answer is \
 a list of genes."""

@@ -14,6 +14,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from .clinical import TARGET_LINKS
 from .store import STORE, provenance
 from .summary import counts
 
@@ -32,7 +33,15 @@ LICENCES = {
     "vulnerability": ("Bosch 2021, Cell (CRISPRi)", "CC BY 4.0"),
     "interactions": ("STRING v12.5", "CC BY 4.0"),
     "homology": ("phmmer vs reviewed human proteome", "CC BY 4.0"),
+    "drugs": ("ChEMBL drug indications and mechanisms", "CC BY-SA 3.0"),
+    # The terms ask for attribution, the processing date (carried in the
+    # version) and a statement of modifications (docs/data-sources.md).
+    "trials": ("ClinicalTrials.gov", "US Government database; attribution required"),
 }
+# Store tables with no licence of their own: joins, and a second table from a
+# source already listed above.
+DERIVED = ("crosswalk", "target_summary", "drug_mechanisms", "drug_genes", "trial_drugs")
+TARGET_LINK_SQL = ", ".join(f"'{link}'" for link in TARGET_LINKS)
 
 SORTABLE = {
     "rv_id",
@@ -51,6 +60,9 @@ SORTABLE = {
     "n_compounds",
     "n_whole_cell",
     "best_resolution",
+    "best_drug_phase",
+    "n_drugs",
+    "n_trials",
 }
 
 app = FastAPI(
@@ -64,7 +76,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET"], a
 def _db() -> duckdb.DuckDBPyConnection:
     """A fresh connection per request; DuckDB reads Parquet straight off disk."""
     connection = duckdb.connect()
-    for name in (*LICENCES, "crosswalk", "target_summary"):
+    for name in (*LICENCES, *DERIVED):
         path = STORE / f"{name}.parquet"
         if path.exists():
             connection.sql(f"CREATE VIEW {name} AS SELECT * FROM '{path}'")
@@ -138,6 +150,14 @@ class TargetSummary(BaseModel):
     has_ligands: bool = False
     structural_gap: bool = False
     conflict: bool = False
+    # Drugs said to act on this gene's own protein (ChEMBL mechanism or Bosch
+    # 2021), their best phase *for TB*, and the trials testing them.
+    n_drugs: int = 0
+    best_drug_phase: float | None = None
+    drug_names: list[str] = Field(default_factory=list)
+    n_complex_drugs: int = 0
+    n_trials: int = 0
+    has_clinical_drug: bool = False
 
 
 class TargetPage(BaseModel):
@@ -166,6 +186,8 @@ class TargetDetail(TargetSummary):
     pfam_ids: list[str] = Field(default_factory=list)
     go_ids: list[str] = Field(default_factory=list)
     ec_numbers: list[str] = Field(default_factory=list)
+    drugs: list[dict[str, Any]] = Field(default_factory=list)
+    trials: list[dict[str, Any]] = Field(default_factory=list)
     absences: list[str] = Field(default_factory=list)
 
 
@@ -202,6 +224,16 @@ def meta() -> Meta:
             "Human homology is computed here with phmmer against the reviewed human "
             "proteome, reported as E-value and percent identity. The 30% 'close' "
             "threshold is this atlas's line, not a fact of biology.",
+            "Drugs are ChEMBL molecules with a tuberculosis indication, unedited: the set "
+            "includes host-directed adjuncts, HIV co-medications and placebo excipients. "
+            "The phase shown is the highest phase for TB, not for any indication.",
+            "A drug counts on a gene only when ChEMBL's mechanism or Bosch 2021 names that "
+            "gene's protein. Membership of a target complex and WHO-graded resistance are "
+            "shown but not counted: resistance is not target engagement.",
+            "Trials are ClinicalTrials.gov interventional studies for the condition "
+            "'tuberculosis'. A trial links to a drug through ChEMBL's own trial reference "
+            "or an exact match of an intervention name; an unlinked trial may still have "
+            "tested one.",
         ],
     )
 
@@ -227,6 +259,10 @@ def targets(
     close_human_homolog: Annotated[
         bool | None, Query(description="Human homolog at >= 30% identity")
     ] = None,
+    has_clinical_drug: Annotated[
+        bool | None, Query(description="A drug with a TB indication acts on this gene")
+    ] = None,
+    min_drug_phase: Annotated[float | None, Query(description="Best phase for TB")] = None,
     min_pchembl: float | None = None,
     max_vulnerability_index: Annotated[
         float | None, Query(description="More negative is more vulnerable")
@@ -265,6 +301,7 @@ def targets(
         ("vulnerability_certain", vulnerability_certain),
         ("human_homolog", human_homolog),
         ("close_human_homolog", close_human_homolog),
+        ("has_clinical_drug", has_clinical_drug),
     ):
         if value is not None:
             where.append(f"{column} = ?")
@@ -275,6 +312,9 @@ def targets(
     if max_vulnerability_index is not None:
         where.append("vulnerability_index <= ?")
         params.append(max_vulnerability_index)
+    if min_drug_phase is not None:
+        where.append("best_drug_phase >= ?")
+        params.append(min_drug_phase)
 
     clause = f"WHERE {' AND '.join(where)}" if where else ""
     connection = _db()
@@ -376,6 +416,28 @@ def target(rv_id: str) -> TargetDetail:
         [accession],
     )
     annotation = annotations[0] if annotations else {}
+    drugs = _query(
+        connection,
+        "SELECT g.link, g.target_chembl_id, g.target_name, g.n_target_components,"
+        " g.shared_accession, g.source_text, g.n_variants, d.molecule_chembl_id, d.pref_name,"
+        " d.max_phase_tb, d.max_phase, d.first_approval, d.molecule_type"
+        " FROM drug_genes g JOIN drugs d USING (molecule_chembl_id) WHERE g.rv_id = ?"
+        " ORDER BY d.max_phase_tb DESC NULLS LAST, d.pref_name, g.link",
+        [rv_id],
+    )
+    trials = _query(
+        connection,
+        "SELECT t.nct_id, any_value(t.brief_title) AS brief_title, any_value(t.phases) AS phases,"
+        " any_value(t.phase_max) AS phase_max, any_value(t.status) AS status,"
+        " any_value(t.start_date) AS start_date, any_value(t.lead_sponsor) AS lead_sponsor,"
+        " any_value(t.has_results) AS has_results,"
+        " list_sort(list_distinct(list(d.pref_name))) AS drugs"
+        " FROM drug_genes g JOIN trial_drugs td USING (molecule_chembl_id)"
+        " JOIN trials t USING (nct_id) JOIN drugs d ON d.molecule_chembl_id = g.molecule_chembl_id"
+        f" WHERE g.rv_id = ? AND g.link IN ({TARGET_LINK_SQL})"
+        " GROUP BY t.nct_id ORDER BY start_date DESC NULLS LAST",
+        [rv_id],
+    )
 
     absences = []
     if not structures:
@@ -394,6 +456,11 @@ def target(rv_id: str) -> TargetDetail:
             "A vulnerability index exists but did not meet the study's own criteria "
             "for a confident estimate, so treat it as indicative only."
         )
+    if not any(d["link"] in TARGET_LINKS for d in drugs):
+        absences.append(
+            "No drug with a TB indication in ChEMBL acts on this gene by ChEMBL's mechanism "
+            "or Bosch 2021's annotation."
+        )
     absences.append("No druggability or pocket call: no public source provides one.")
 
     return TargetDetail(
@@ -410,6 +477,8 @@ def target(rv_id: str) -> TargetDetail:
         pfam_ids=list(annotation.get("pfam_ids") or []),
         go_ids=list(annotation.get("go_ids") or []),
         ec_numbers=list(annotation.get("ec_numbers") or []),
+        drugs=drugs,
+        trials=trials,
         absences=absences,
     )
 
@@ -429,6 +498,185 @@ def compound(molecule_chembl_id: str) -> dict[str, Any]:
         [molecule_chembl_id],
     )
     return {**rows[0], "activities": activities}
+
+
+@app.get("/drugs")
+def drugs(
+    q: Annotated[str | None, Query(description="Name, synonym or ChEMBL id")] = None,
+    min_phase: Annotated[float | None, Query(description="Best phase for TB")] = None,
+    acts_on_mtb: bool | None = None,
+    host_targeted: bool | None = None,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 500,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, Any]:
+    """TB drugs and candidates, best TB phase first, with the genes they act on."""
+    where: list[str] = []
+    params: list[Any] = []
+    if q:
+        where.append(
+            "(lower(d.pref_name) LIKE ? OR lower(list_aggr(d.synonyms, 'string_agg', '|')) LIKE ?"
+            " OR lower(d.molecule_chembl_id) = ?)"
+        )
+        params += [f"%{q.lower()}%", f"%{q.lower()}%", q.lower()]
+    if min_phase is not None:
+        where.append("d.max_phase_tb >= ?")
+        params.append(min_phase)
+    for column, value in (("acts_on_mtb", acts_on_mtb), ("host_targeted", host_targeted)):
+        if value is not None:
+            where.append(f"d.{column} = ?")
+            params.append(value)
+    clause = f"WHERE {' AND '.join(where)}" if where else ""
+    connection = _db()
+    total = connection.execute(f"SELECT count(*) FROM drugs d {clause}", params).fetchone()[0]
+    items = _query(
+        connection,
+        "SELECT d.molecule_chembl_id, d.pref_name, d.max_phase_tb, d.max_phase,"
+        " d.first_approval, d.molecule_type, d.atc_codes, d.acts_on_mtb, d.host_targeted,"
+        " d.target_organisms, d.mechanisms_of_action,"
+        " coalesce(g.genes, []) AS genes, coalesce(t.n_trials, 0) AS n_trials"
+        " FROM drugs d"
+        " LEFT JOIN (SELECT g.molecule_chembl_id,"
+        "   list(DISTINCT {'rv_id': g.rv_id, 'gene_name': s.gene_name}) AS genes"
+        "   FROM drug_genes g JOIN target_summary s USING (rv_id)"
+        f"   WHERE g.link IN ({TARGET_LINK_SQL}) GROUP BY 1) g USING (molecule_chembl_id)"
+        " LEFT JOIN (SELECT molecule_chembl_id, count(DISTINCT nct_id) AS n_trials"
+        "   FROM trial_drugs GROUP BY 1) t USING (molecule_chembl_id)"
+        f" {clause} ORDER BY d.max_phase_tb DESC NULLS LAST, d.pref_name LIMIT ? OFFSET ?",
+        [*params, limit, offset],
+    )
+    return {"total": total, "limit": limit, "offset": offset, "items": items}
+
+
+@app.get("/drugs/{molecule_chembl_id}")
+def drug(molecule_chembl_id: str) -> dict[str, Any]:
+    """One drug: mechanisms, every gene link with how it was made, trials, bioactivity."""
+    connection = _db()
+    found = _query(
+        connection, "SELECT * FROM drugs WHERE molecule_chembl_id = ?", [molecule_chembl_id]
+    )
+    if not found:
+        raise HTTPException(404, f"no TB drug {molecule_chembl_id} in the atlas")
+    mechanisms = _query(
+        connection,
+        "SELECT * FROM drug_mechanisms WHERE molecule_chembl_id = ? ORDER BY target_name",
+        [molecule_chembl_id],
+    )
+    genes = _query(
+        connection,
+        "SELECT g.*, s.gene_name, s.product, s.essentiality, s.vulnerability_index,"
+        " s.vulnerability_certain FROM drug_genes g JOIN target_summary s USING (rv_id)"
+        " WHERE g.molecule_chembl_id = ? ORDER BY CASE g.link WHEN 'mechanism' THEN 0"
+        " WHEN 'bosch_2021' THEN 1 WHEN 'mechanism_complex' THEN 2 ELSE 3 END, g.rv_id",
+        [molecule_chembl_id],
+    )
+    trials = _query(
+        connection,
+        "SELECT t.nct_id, t.brief_title, t.acronym, t.phases, t.phase_max, t.status,"
+        " t.start_date, t.completion_date, t.lead_sponsor, t.enrollment, t.has_results,"
+        " td.via_chembl_ref, td.via_intervention_name, td.matched_names"
+        " FROM trial_drugs td JOIN trials t USING (nct_id) WHERE td.molecule_chembl_id = ?"
+        " ORDER BY t.start_date DESC NULLS LAST",
+        [molecule_chembl_id],
+    )
+    # The discovery end of the same molecule, where the atlas holds it.
+    bioactivity = _query(
+        connection,
+        "SELECT count(*) FILTER (WHERE evidence <> 'whole_cell') AS n_protein,"
+        " max(pchembl_value) FILTER (WHERE evidence <> 'whole_cell') AS best_protein_pchembl,"
+        " count(*) FILTER (WHERE evidence = 'whole_cell') AS n_whole_cell,"
+        " max(pchembl_value) FILTER (WHERE evidence = 'whole_cell') AS best_whole_cell_pchembl"
+        " FROM activities WHERE molecule_chembl_id = ?",
+        [molecule_chembl_id],
+    )
+    return {
+        **found[0],
+        "mechanisms": mechanisms,
+        "genes": genes,
+        "trials": trials,
+        "bioactivity": bioactivity[0],
+    }
+
+
+TRIAL_SORTS = ("start_date", "phase_max", "enrollment", "last_update", "nct_id")
+
+
+@app.get("/trials")
+def trials(
+    q: Annotated[
+        str | None, Query(description="NCT id, title, acronym, sponsor or intervention")
+    ] = None,
+    min_phase: float | None = None,
+    status: Annotated[list[str] | None, Query()] = None,
+    molecule: Annotated[str | None, Query(description="Linked to this ChEMBL drug")] = None,
+    linked: Annotated[bool | None, Query(description="Linked to any TB drug")] = None,
+    sort: str = "start_date",
+    order: Literal["asc", "desc"] = "desc",
+    limit: Annotated[int, Query(ge=1, le=2000)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, Any]:
+    if sort not in TRIAL_SORTS:
+        raise HTTPException(400, f"sort must be one of {list(TRIAL_SORTS)}")
+    where: list[str] = []
+    params: list[Any] = []
+    if q:
+        where.append(
+            "(lower(t.nct_id) = ? OR lower(t.brief_title) LIKE ?"
+            " OR lower(coalesce(t.acronym, '')) LIKE ?"
+            " OR lower(coalesce(t.lead_sponsor, '')) LIKE ?"
+            " OR lower(CAST(t.interventions AS VARCHAR)) LIKE ?)"
+        )
+        params += [q.lower()] + [f"%{q.lower()}%"] * 4
+    if min_phase is not None:
+        where.append("t.phase_max >= ?")
+        params.append(min_phase)
+    if status:
+        where.append(f"t.status IN ({','.join('?' * len(status))})")
+        params += status
+    if molecule:
+        where.append("t.nct_id IN (SELECT nct_id FROM trial_drugs WHERE molecule_chembl_id = ?)")
+        params.append(molecule)
+    if linked is not None:
+        where.append("(t.nct_id IN (SELECT nct_id FROM trial_drugs)) = ?")
+        params.append(linked)
+    clause = f"WHERE {' AND '.join(where)}" if where else ""
+    connection = _db()
+    total = connection.execute(f"SELECT count(*) FROM trials t {clause}", params).fetchone()[0]
+    items = _query(
+        connection,
+        "SELECT t.*, coalesce(l.drugs, []) AS drugs FROM trials t"
+        " LEFT JOIN (SELECT td.nct_id, list({'molecule_chembl_id': td.molecule_chembl_id,"
+        "   'pref_name': d.pref_name, 'via_chembl_ref': td.via_chembl_ref,"
+        "   'via_intervention_name': td.via_intervention_name} ORDER BY d.pref_name) AS drugs"
+        "   FROM trial_drugs td JOIN drugs d USING (molecule_chembl_id) GROUP BY 1) l"
+        f" USING (nct_id) {clause} ORDER BY t.{sort} {order.upper()} NULLS LAST, t.nct_id"
+        " LIMIT ? OFFSET ?",
+        [*params, limit, offset],
+    )
+    return {"total": total, "limit": limit, "offset": offset, "items": items}
+
+
+@app.get("/trials/{nct_id}")
+def trial(nct_id: str) -> dict[str, Any]:
+    connection = _db()
+    found = _query(connection, "SELECT * FROM trials WHERE nct_id = ?", [nct_id])
+    if not found:
+        raise HTTPException(404, f"no trial {nct_id} in the atlas")
+    drugs = _query(
+        connection,
+        "SELECT td.*, d.pref_name, d.max_phase_tb FROM trial_drugs td"
+        " JOIN drugs d USING (molecule_chembl_id) WHERE td.nct_id = ? ORDER BY d.pref_name",
+        [nct_id],
+    )
+    genes = _query(
+        connection,
+        "SELECT DISTINCT g.rv_id, s.gene_name, g.link, d.pref_name AS drug"
+        " FROM trial_drugs td JOIN drug_genes g USING (molecule_chembl_id)"
+        " JOIN target_summary s USING (rv_id)"
+        " JOIN drugs d ON d.molecule_chembl_id = g.molecule_chembl_id"
+        f" WHERE td.nct_id = ? AND g.link IN ({TARGET_LINK_SQL}) ORDER BY g.rv_id",
+        [nct_id],
+    )
+    return {**found[0], "drugs": drugs, "genes": genes}
 
 
 def _query(

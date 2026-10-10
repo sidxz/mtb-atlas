@@ -99,3 +99,19 @@ def test_system_prompt_states_the_evidence_rules() -> None:
         "Cite records",
     ):
         assert phrase in agent.SYSTEM, phrase
+
+
+def test_describe_names_the_clinical_traps() -> None:
+    text = agent.describe()
+    for table in ("drugs", "drug_mechanisms", "drug_genes", "trials", "trial_drugs"):
+        assert f"## {table}" in text
+    assert "max_phase_tb" in text  # TB phase, not any-indication phase
+    assert "NOT target engagement" in text  # who_resistance links
+    assert "via_chembl_ref" in text
+
+
+def test_system_prompt_states_the_clinical_rules() -> None:
+    for phrase in ("for tuberculosis", "Resistance is not engagement", "complex"):
+        assert phrase in agent.SYSTEM, phrase
+    # The homology column is a phmmer search now, not UniRef co-membership.
+    assert "UniRef cluster membership" not in agent.SYSTEM

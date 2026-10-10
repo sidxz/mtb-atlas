@@ -24,7 +24,7 @@ The questions it exists to answer:
 
 ## Status
 
-Six milestones are in. Ten public sources, one store, one app.
+Eight milestones are in. Ten public sources, one store, one app.
 
 ```
 make install      # uv venv + dependencies
@@ -32,7 +32,7 @@ make build        # whole pipeline -> data/store/*.parquet  (~15 min cold)
 uv run atlas clinical   # the clinical stage alone, then the roll-up
 make api          # FastAPI on :8099
 make web          # the app on :5173
-make test         # 224 tests against committed fixtures, no network
+make test         # 230 tests against committed fixtures, no network
 ```
 
 | Milestone | Scope | |
@@ -45,6 +45,7 @@ make test         # 224 tests against committed fixtures, no network
 | M5 | Agent: natural-language questions, answers cite the records | ✅ |
 | M6 | Clinical layer: TB drugs and mechanisms, trials, and every drug–gene and trial–drug link labelled with how it was made | ✅ |
 | M7 | UniProt's protein biology per gene; ligand identity; one box over genes, drugs, trials and compounds | ✅ |
+| M8 | Target enablement: vulnerability in a clinical isolate, whether a protein assay exists, and how the protein was produced | ✅ |
 | — | Beyond the brief: CRISPRi vulnerability, STRING partners, human anti-target, domains | ✅ |
 
 ## What it answers
@@ -59,6 +60,20 @@ vulnerability index · 847 with a close human homolog
 
 That last line is the product: a target shortlist short enough to read, with
 `nadD`, `nusG` and `hadA` near the top.
+
+Enablement — what it would take to work on one:
+
+```
+103 genes with a published assay against the protein · 431 essential genes
+    with none, where screening starts by building the assay
+3,936 genes also measured in HN878, a clinical isolate · 507 with the
+    authors' own H37Rv-vs-HN878 differential
+1,649 structure entries name the plasmid they were expressed from;
+    581 crystallised a construct that is not the wild-type
+```
+
+accD6 is the case that earns the strain column: −11.45 in H37Rv and −2.27 in
+HN878, confident in both. It would have read as an excellent target.
 
 From the clinical end:
 
@@ -87,7 +102,7 @@ downloads are cached on disk and gitignored. Every record carries `source`,
 | `proteins.parquet` | 3,997 | `uniprot_acc` | UniProt |
 | `chembl_targets.parquet` | ~17,000 | `uniprot_acc` | ChEMBL |
 | `crosswalk.parquet` | 4,173 | `rv_id` | joined |
-| `structures.parquet` | 4,803 | `pdb_id`, `uniprot_acc` | RCSB PDB |
+| `structures.parquet` | 4,803 | `pdb_id`, `uniprot_acc` | RCSB PDB (ligands + construct) |
 | `predicted_structures.parquet` | 3,973 | `uniprot_acc` | AlphaFold DB |
 | `activities.parquet` | 15,518 | `activity_id` | ChEMBL |
 | `compounds.parquet` | 5,178 | `molecule_chembl_id` | ChEMBL |

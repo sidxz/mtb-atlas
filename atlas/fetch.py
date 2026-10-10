@@ -97,9 +97,13 @@ def fetch(
 
     if path.exists() and meta_path.exists() and not force:
         meta = json.loads(meta_path.read_text())
-        return Fetched(
-            path, meta["url"], meta["retrieved_at"], meta["sha256"], True, meta["headers"]
-        )
+        # The cache is keyed on the destination filename, so a changed URL -- a
+        # new release path, or an extra field added to a UniProt stream query --
+        # would otherwise be served the old file forever.
+        if meta.get("url") == url:
+            return Fetched(
+                path, meta["url"], meta["retrieved_at"], meta["sha256"], True, meta["headers"]
+            )
 
     path.parent.mkdir(parents=True, exist_ok=True)
     host = httpx.URL(url).host

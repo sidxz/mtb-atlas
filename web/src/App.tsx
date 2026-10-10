@@ -1,6 +1,7 @@
 /**
  * The one stop. Filters on the left, the whole genome in the middle, the full
- * evidence record for whatever you picked on the right.
+ * evidence record for whatever you picked on the right -- and, one switch
+ * away, the same layout for TB drugs and the trials testing them.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -8,6 +9,7 @@ import { api, type Meta, type TargetDetail, type TargetSummary } from "./api";
 import { CATEGORIES, GenomeCanvas, colourOf, type ColourBy } from "./GenomeCanvas";
 import { TargetDetailPanel } from "./TargetDetail";
 import { Ask } from "./Ask";
+import { DrugsAndTrials, phaseLabel, type Focus } from "./Clinical";
 
 const ESSENTIALITY: [string, string][] = [
   ["ES", "Essential"],
@@ -24,6 +26,7 @@ const COLOUR_MODES: [ColourBy, string][] = [
   ["structure", "Structure coverage"],
   ["chemistry", "Chemical matter"],
   ["resistance", "Resistance"],
+  ["clinical", "Clinical stage"],
   ["category", "Functional category"],
 ];
 
@@ -35,6 +38,7 @@ type Flag =
   | "has_predicted"
   | "has_ligands"
   | "in_who_catalogue"
+  | "has_clinical_drug"
   | "conflict";
 
 const FLAGS: [Flag, string][] = [
@@ -45,6 +49,7 @@ const FLAGS: [Flag, string][] = [
   ["has_predicted", "Has a predicted structure"],
   ["has_ligands", "Has chemical matter"],
   ["in_who_catalogue", "In the WHO catalogue"],
+  ["has_clinical_drug", "A TB drug or candidate acts on it"],
   ["conflict", "ID conflict between sources"],
 ];
 
@@ -63,6 +68,7 @@ const COLUMNS: [string, string, boolean][] = [
   ["best_pchembl", "Best pChEMBL", true],
   ["best_whole_cell_pchembl", "Cell", true],
   ["n_variants_associated", "WHO", true],
+  ["best_drug_phase", "TB phase", true],
   ["n_partners", "Partners", true],
 ];
 
@@ -103,6 +109,8 @@ export function App() {
     order: "asc",
   });
 
+  const [view, setView] = useState<"genome" | "clinical">("genome");
+  const [focus, setFocus] = useState<Focus>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<TargetDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -141,7 +149,8 @@ export function App() {
         gene.rv_id.toLowerCase().includes(text) ||
         (gene.gene_name ?? "").toLowerCase().includes(text) ||
         (gene.product ?? "").toLowerCase().includes(text) ||
-        (gene.uniprot_acc ?? "").toLowerCase().includes(text)
+        (gene.uniprot_acc ?? "").toLowerCase().includes(text) ||
+        gene.drug_names.some((name) => name.toLowerCase().includes(text))
       );
     });
   }, [all, query, essentiality, category, flags, hideHumanHomologs]);
@@ -163,6 +172,15 @@ export function App() {
     (predicate: (gene: TargetSummary) => boolean) => all.filter(predicate).length,
     [all],
   );
+
+  const openGene = useCallback((rvId: string) => {
+    setSelected(rvId);
+    setView("genome");
+  }, []);
+  const openClinical = useCallback((next: Focus) => {
+    setFocus(next);
+    setView("clinical");
+  }, []);
 
   const toggleIn = <T,>(set: Set<T>, value: T, apply: (next: Set<T>) => void) => {
     const next = new Set(set);
@@ -210,11 +228,23 @@ export function App() {
             <span>
               <b>{(meta.counts.vulnerability_measured ?? 0).toLocaleString()}</b> vulnerability measured
             </span>
+            <span>
+              <b>{(meta.counts.with_clinical_drug ?? 0).toLocaleString()}</b> with a TB drug ·{" "}
+              <b>{(meta.counts.trials ?? 0).toLocaleString()}</b> trials
+            </span>
             <span className="hero">
               <b>{meta.counts.structural_gap.toLocaleString()}</b> essential · structure · no ligands
             </span>
           </div>
         )}
+        <div className="viewswitch" role="group" aria-label="View">
+          <button type="button" aria-pressed={view === "genome"} onClick={() => setView("genome")}>
+            Genome
+          </button>
+          <button type="button" aria-pressed={view === "clinical"} onClick={() => setView("clinical")}>
+            Drugs &amp; trials
+          </button>
+        </div>
         <button className="iconbtn" type="button" onClick={toggle}>
           Theme
         </button>
@@ -222,253 +252,260 @@ export function App() {
 
       <Ask base={import.meta.env.VITE_API_BASE ?? "/api"} />
 
-      <div className="body">
-        <aside className="col col-pad">
-          <div className="group">
-            <p className="lab">Search</p>
-            <input
-              className="search"
-              type="search"
-              value={query}
-              placeholder="Rv3790, dprE1, epimerase"
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          </div>
-
-          <div className="group">
-            <p className="lab">Colour the genome by</p>
-            <div className="seg">
-              {COLOUR_MODES.map(([key, label]) => (
-                <button
-                  key={key}
-                  type="button"
-                  aria-pressed={colourBy === key}
-                  onClick={() => setColourBy(key)}
-                >
-                  <span className="name">{label}</span>
-                </button>
-              ))}
+      {view === "clinical" ? (
+        <DrugsAndTrials meta={meta} focus={focus} onFocus={setFocus} onSelectGene={openGene} />
+      ) : (
+        <div className="body">
+          <aside className="col col-pad">
+            <div className="group">
+              <p className="lab">Search</p>
+              <input
+                className="search"
+                type="search"
+                value={query}
+                placeholder="Rv3790, dprE1, epimerase"
+                onChange={(event) => setQuery(event.target.value)}
+              />
             </div>
-          </div>
 
-          <div className="group">
-            <p className="lab">Restrict to</p>
-            <div className="seg">
-              {FLAGS.map(([key, label]) => (
-                <button
-                  key={key}
-                  type="button"
-                  aria-pressed={flags.has(key)}
-                  onClick={() => toggleIn(flags, key, setFlags)}
-                >
-                  <span className="name">{label}</span>
-                  <span className="c">{counted((g) => Boolean(g[key]))}</span>
-                </button>
-              ))}
-              <button
-                type="button"
-                aria-pressed={hideHumanHomologs}
-                onClick={() => setHideHumanHomologs((v) => !v)}
-                title="Hide genes with a human homolog at 30% identity or more"
-              >
-                <span className="name">No close human homolog</span>
-                <span className="c">{counted((g) => !g.close_human_homolog)}</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="group">
-            <p className="lab">Essentiality</p>
-            <div className="seg">
-              {ESSENTIALITY.map(([key, label]) => (
-                <button
-                  key={key}
-                  type="button"
-                  aria-pressed={essentiality.has(key)}
-                  onClick={() => toggleIn(essentiality, key, setEssentiality)}
-                >
-                  <span className="name">
-                    <i className="sw" style={{ background: `var(--ess-${key})` }} />
-                    {label}
-                  </span>
-                  <span className="c">{counted((g) => g.essentiality === key)}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="group">
-            <p className="lab">Functional category</p>
-            <div className="seg">
-              {CATEGORIES.map((name) => (
-                <button
-                  key={name}
-                  type="button"
-                  aria-pressed={category.has(name)}
-                  onClick={() => toggleIn(category, name, setCategory)}
-                  title={name}
-                >
-                  <span className="name" style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {name}
-                  </span>
-                  <span className="c">{counted((g) => g.category === name)}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {meta && (
-            <div className="group sources">
-              <p className="lab">Sources</p>
-              {meta.sources.map((s, index) => (
-                <div key={`${s.name}-${s.version}-${index}`}>
-                  <b>{s.name}</b> {s.version} · {s.licence}
-                </div>
-              ))}
-            </div>
-          )}
-        </aside>
-
-        <main className="col canvascol">
-          <GenomeCanvas
-            genes={all}
-            matching={matching}
-            colourBy={colourBy}
-            selected={selected}
-            onSelect={setSelected}
-            theme={theme}
-          />
-          <p className="ringkey">
-            outer ring: {COLOUR_MODES.find(([k]) => k === colourBy)?.[1].toLowerCase()} · inner
-            rings: structure, chemical matter, resistance
-          </p>
-          <div className="listhead">
-            <h2>
-              {flags.size || essentiality.size || category.size || query
-                ? "Matching genes"
-                : "All genes"}
-            </h2>
-            <span className="count">
-              {sorted.length.toLocaleString()} of {all.length.toLocaleString()}
-              {sorted.length > 300 ? " · showing first 300" : ""}
-            </span>
-          </div>
-          <div className="scroller" style={{ flex: "0 0 auto", maxHeight: "38vh" }}>
-            <table>
-              <thead>
-                <tr>
-                  {COLUMNS.map(([key, label, numeric]) => (
-                    <th
-                      key={key}
-                      className={numeric ? "n" : undefined}
-                      aria-sort={
-                        sort.key === key
-                          ? sort.order === "asc"
-                            ? "ascending"
-                            : "descending"
-                          : undefined
-                      }
-                      onClick={() =>
-                        setSort((current) =>
-                          current.key === key
-                            ? { key, order: current.order === "asc" ? "desc" : "asc" }
-                            : {
-                                key,
-                                order: !numeric || LOWER_IS_BETTER.has(key) ? "asc" : "desc",
-                              },
-                        )
-                      }
-                    >
-                      {label}
-                      {sort.key === key ? (sort.order === "asc" ? " ↑" : " ↓") : ""}
-                    </th>
-                  ))}
-                  <th>Product</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sorted.slice(0, 300).map((gene) => (
-                  <tr
-                    key={gene.rv_id}
-                    aria-selected={gene.rv_id === selected}
-                    onClick={() => setSelected(gene.rv_id)}
+            <div className="group">
+              <p className="lab">Colour the genome by</p>
+              <div className="seg">
+                {COLOUR_MODES.map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    aria-pressed={colourBy === key}
+                    onClick={() => setColourBy(key)}
                   >
-                    <td className="id">{gene.rv_id}</td>
-                    <td>{gene.gene_name && gene.gene_name !== gene.rv_id ? gene.gene_name : "—"}</td>
-                    <td>
-                      {gene.essentiality ? (
-                        <>
-                          <i
-                            className="dot"
-                            style={{ background: colourOf(gene, "essentiality") }}
-                          />
-                          {gene.essentiality_label}
-                        </>
-                      ) : (
-                        <span className="absent">—</span>
-                      )}
-                    </td>
-                    <td className="n">
-                      {gene.vulnerability_index === null ? (
-                        "—"
-                      ) : (
-                        <span className={gene.vulnerability_certain ? undefined : "faint"}>
-                          {gene.vulnerability_index.toFixed(1)}
-                        </span>
-                      )}
-                    </td>
-                    <td className="n">{gene.n_pdb || "—"}</td>
-                    <td className="n">{gene.plddt_mean ? gene.plddt_mean.toFixed(0) : "—"}</td>
-                    <td className="n">{gene.n_compounds || "—"}</td>
-                    <td className="n">
-                      {gene.best_pchembl?.toFixed(2) ?? "—"}
-                      {gene.chembl_evidence === "orthologue" && (
-                        <span className="chip ortho" style={{ marginLeft: 4 }}>
-                          o
-                        </span>
-                      )}
-                    </td>
-                    <td className="n">{gene.best_whole_cell_pchembl?.toFixed(2) ?? "—"}</td>
-                    <td className="n">{gene.n_variants_associated || "—"}</td>
-                    <td className="n">{gene.n_partners || "—"}</td>
-                    <td className="prodcell">
-                      {gene.antibacterial && (
-                        <span className="chip accent" style={{ marginRight: 5 }}>
-                          {gene.antibacterial}
-                        </span>
-                      )}
-                      {gene.close_human_homolog && (
-                        <span
-                          className="chip warn"
-                          style={{ marginRight: 5 }}
-                          title={`Human homolog ${gene.human_homolog_gene ?? ""} at ${Math.round(
-                            (gene.human_homolog_identity ?? 0) * 100,
-                          )}% identity`}
-                        >
-                          human
-                        </span>
-                      )}
-                      {gene.product}
-                    </td>
-                  </tr>
+                    <span className="name">{label}</span>
+                  </button>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        </main>
-
-        <aside className="col detailcol">
-          {detailError ? (
-            <div className="errbox">{detailError}</div>
-          ) : detail ? (
-            <TargetDetailPanel detail={detail} />
-          ) : (
-            <div className="empty">
-              {selected ? `Loading ${selected}…` : "Pick a gene on the ring, or a row below."}
+              </div>
             </div>
-          )}
-        </aside>
-      </div>
+
+            <div className="group">
+              <p className="lab">Restrict to</p>
+              <div className="seg">
+                {FLAGS.map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    aria-pressed={flags.has(key)}
+                    onClick={() => toggleIn(flags, key, setFlags)}
+                  >
+                    <span className="name">{label}</span>
+                    <span className="c">{counted((g) => Boolean(g[key]))}</span>
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  aria-pressed={hideHumanHomologs}
+                  onClick={() => setHideHumanHomologs((v) => !v)}
+                  title="Hide genes with a human homolog at 30% identity or more"
+                >
+                  <span className="name">No close human homolog</span>
+                  <span className="c">{counted((g) => !g.close_human_homolog)}</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="group">
+              <p className="lab">Essentiality</p>
+              <div className="seg">
+                {ESSENTIALITY.map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    aria-pressed={essentiality.has(key)}
+                    onClick={() => toggleIn(essentiality, key, setEssentiality)}
+                  >
+                    <span className="name">
+                      <i className="sw" style={{ background: `var(--ess-${key})` }} />
+                      {label}
+                    </span>
+                    <span className="c">{counted((g) => g.essentiality === key)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="group">
+              <p className="lab">Functional category</p>
+              <div className="seg">
+                {CATEGORIES.map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    aria-pressed={category.has(name)}
+                    onClick={() => toggleIn(category, name, setCategory)}
+                    title={name}
+                  >
+                    <span className="name" style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {name}
+                    </span>
+                    <span className="c">{counted((g) => g.category === name)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {meta && (
+              <div className="group sources">
+                <p className="lab">Sources</p>
+                {meta.sources.map((s, index) => (
+                  <div key={`${s.name}-${s.version}-${index}`}>
+                    <b>{s.name}</b> {s.version} · {s.licence}
+                  </div>
+                ))}
+              </div>
+            )}
+          </aside>
+
+          <main className="col canvascol">
+            <GenomeCanvas
+              genes={all}
+              matching={matching}
+              colourBy={colourBy}
+              selected={selected}
+              onSelect={setSelected}
+              theme={theme}
+            />
+            <p className="ringkey">
+              outer ring: {COLOUR_MODES.find(([k]) => k === colourBy)?.[1].toLowerCase()} · inner
+              rings: structure, chemical matter, resistance
+            </p>
+            <div className="listhead">
+              <h2>
+                {flags.size || essentiality.size || category.size || query
+                  ? "Matching genes"
+                  : "All genes"}
+              </h2>
+              <span className="count">
+                {sorted.length.toLocaleString()} of {all.length.toLocaleString()}
+                {sorted.length > 300 ? " · showing first 300" : ""}
+              </span>
+            </div>
+            <div className="scroller" style={{ flex: "0 0 auto", maxHeight: "38vh" }}>
+              <table>
+                <thead>
+                  <tr>
+                    {COLUMNS.map(([key, label, numeric]) => (
+                      <th
+                        key={key}
+                        className={numeric ? "n" : undefined}
+                        aria-sort={
+                          sort.key === key
+                            ? sort.order === "asc"
+                              ? "ascending"
+                              : "descending"
+                            : undefined
+                        }
+                        onClick={() =>
+                          setSort((current) =>
+                            current.key === key
+                              ? { key, order: current.order === "asc" ? "desc" : "asc" }
+                              : {
+                                  key,
+                                  order: !numeric || LOWER_IS_BETTER.has(key) ? "asc" : "desc",
+                                },
+                          )
+                        }
+                      >
+                        {label}
+                        {sort.key === key ? (sort.order === "asc" ? " ↑" : " ↓") : ""}
+                      </th>
+                    ))}
+                    <th>Product</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sorted.slice(0, 300).map((gene) => (
+                    <tr
+                      key={gene.rv_id}
+                      aria-selected={gene.rv_id === selected}
+                      onClick={() => setSelected(gene.rv_id)}
+                    >
+                      <td className="id">{gene.rv_id}</td>
+                      <td>{gene.gene_name && gene.gene_name !== gene.rv_id ? gene.gene_name : "—"}</td>
+                      <td>
+                        {gene.essentiality ? (
+                          <>
+                            <i
+                              className="dot"
+                              style={{ background: colourOf(gene, "essentiality") }}
+                            />
+                            {gene.essentiality_label}
+                          </>
+                        ) : (
+                          <span className="absent">—</span>
+                        )}
+                      </td>
+                      <td className="n">
+                        {gene.vulnerability_index === null ? (
+                          "—"
+                        ) : (
+                          <span className={gene.vulnerability_certain ? undefined : "faint"}>
+                            {gene.vulnerability_index.toFixed(1)}
+                          </span>
+                        )}
+                      </td>
+                      <td className="n">{gene.n_pdb || "—"}</td>
+                      <td className="n">{gene.plddt_mean ? gene.plddt_mean.toFixed(0) : "—"}</td>
+                      <td className="n">{gene.n_compounds || "—"}</td>
+                      <td className="n">
+                        {gene.best_pchembl?.toFixed(2) ?? "—"}
+                        {gene.chembl_evidence === "orthologue" && (
+                          <span className="chip ortho" style={{ marginLeft: 4 }}>
+                            o
+                          </span>
+                        )}
+                      </td>
+                      <td className="n">{gene.best_whole_cell_pchembl?.toFixed(2) ?? "—"}</td>
+                      <td className="n">{gene.n_variants_associated || "—"}</td>
+                      <td className="n">
+                        {gene.best_drug_phase === null ? "—" : phaseLabel(gene.best_drug_phase)}
+                      </td>
+                      <td className="n">{gene.n_partners || "—"}</td>
+                      <td className="prodcell">
+                        {gene.antibacterial && (
+                          <span className="chip accent" style={{ marginRight: 5 }}>
+                            {gene.antibacterial}
+                          </span>
+                        )}
+                        {gene.close_human_homolog && (
+                          <span
+                            className="chip warn"
+                            style={{ marginRight: 5 }}
+                            title={`Human homolog ${gene.human_homolog_gene ?? ""} at ${Math.round(
+                              (gene.human_homolog_identity ?? 0) * 100,
+                            )}% identity`}
+                          >
+                            human
+                          </span>
+                        )}
+                        {gene.product}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </main>
+
+          <aside className="col detailcol">
+            {detailError ? (
+              <div className="errbox">{detailError}</div>
+            ) : detail ? (
+              <TargetDetailPanel detail={detail} meta={meta} onOpen={openClinical} />
+            ) : (
+              <div className="empty">
+                {selected ? `Loading ${selected}…` : "Pick a gene on the ring, or a row below."}
+              </div>
+            )}
+          </aside>
+        </div>
+      )}
     </div>
   );
 }

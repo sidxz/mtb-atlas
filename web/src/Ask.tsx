@@ -13,6 +13,8 @@ const EXAMPLES = [
   "What is known about Rv0206c, and what is missing?",
   "Which genes are most vulnerable by CRISPRi but have no chemical matter at all?",
   "Compare dprE1 and inhA on every kind of evidence the atlas holds.",
+  "Which essential, confidently vulnerable genes have no TB drug or candidate acting on them?",
+  "Which phase 2 or 3 trials test a drug that acts on dprE1 or mmpL3, and are they recruiting?",
 ];
 
 interface Result {

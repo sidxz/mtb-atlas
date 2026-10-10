@@ -58,6 +58,15 @@ export interface TargetSummary {
   has_ligands: boolean;
   structural_gap: boolean;
   conflict: boolean;
+  /** Drugs a source says act on this gene's own protein (ChEMBL mechanism, Bosch 2021). */
+  n_drugs: number;
+  /** Their best phase *for tuberculosis*, not for any indication. */
+  best_drug_phase: number | null;
+  drug_names: string[];
+  /** Drugs that reach this gene only as one member of the complex they act on. */
+  n_complex_drugs: number;
+  n_trials: number;
+  has_clinical_drug: boolean;
 }
 
 export interface StructureComponent {
@@ -177,8 +186,172 @@ export interface TargetDetail extends TargetSummary {
   pfam_ids: string[];
   go_ids: string[];
   ec_numbers: string[];
+  drugs: GeneDrug[];
+  trials: GeneTrial[];
   /** What the atlas does NOT know, stated rather than left as a blank cell. */
   absences: string[];
+}
+
+/**
+ * How a drug reaches a gene. Only `mechanism` and `bosch_2021` say the drug acts
+ * on this gene's own protein; a complex member is one subunit of what the drug
+ * acts on, and WHO resistance is not target engagement.
+ */
+export type DrugLink = "mechanism" | "mechanism_complex" | "bosch_2021" | "who_resistance";
+
+export interface Ref {
+  type: string;
+  id: string;
+  url: string | null;
+}
+
+interface LinkDetail {
+  link: DrugLink;
+  target_chembl_id: string | null;
+  target_name: string | null;
+  n_target_components: number | null;
+  shared_accession: boolean;
+  /** What the source actually said: the mechanism, Bosch's text, the WHO drug. */
+  source_text: string | null;
+  n_variants: number | null;
+}
+
+export interface GeneDrug extends LinkDetail {
+  molecule_chembl_id: string;
+  pref_name: string | null;
+  max_phase_tb: number | null;
+  max_phase: number | null;
+  first_approval: number | null;
+  molecule_type: string | null;
+}
+
+export interface TrialSummary {
+  nct_id: string;
+  brief_title: string | null;
+  acronym?: string | null;
+  phases: string[];
+  phase_max: number | null;
+  status: string | null;
+  start_date: string | null;
+  completion_date?: string | null;
+  lead_sponsor: string | null;
+  enrollment?: number | null;
+  has_results: boolean;
+}
+
+export interface GeneTrial extends TrialSummary {
+  drugs: string[];
+}
+
+export interface DrugSummary {
+  molecule_chembl_id: string;
+  pref_name: string | null;
+  synonyms: string[];
+  max_phase_tb: number | null;
+  max_phase: number | null;
+  first_approval: number | null;
+  molecule_type: string | null;
+  atc_codes: string[];
+  acts_on_mtb: boolean;
+  host_targeted: boolean;
+  target_organisms: string[];
+  mechanisms_of_action: string[];
+  genes: { rv_id: string; gene_name: string | null }[];
+  n_trials: number;
+}
+
+export interface Mechanism {
+  mechanism_of_action: string | null;
+  action_type: string | null;
+  mechanism_comment: string | null;
+  direct_interaction: boolean;
+  target_chembl_id: string | null;
+  target_name: string | null;
+  target_type: string | null;
+  target_organism: string | null;
+  target_tax_id: number | null;
+  component_accessions: string[];
+  refs: Ref[];
+}
+
+export interface DrugGene extends LinkDetail {
+  rv_id: string;
+  gene_name: string | null;
+  product: string | null;
+  essentiality: string | null;
+  vulnerability_index: number | null;
+  vulnerability_certain: boolean;
+}
+
+export interface DrugTrial extends TrialSummary {
+  via_chembl_ref: boolean;
+  via_intervention_name: boolean;
+  matched_names: string[];
+}
+
+export interface DrugDetail {
+  molecule_chembl_id: string;
+  pref_name: string | null;
+  molecule_type: string | null;
+  max_phase_tb: number | null;
+  max_phase: number | null;
+  first_approval: number | null;
+  synonyms: string[];
+  salt_chembl_ids: string[];
+  tb_indications: string[];
+  atc_codes: string[];
+  nct_ids: string[];
+  label_refs: Ref[];
+  acts_on_mtb: boolean;
+  host_targeted: boolean;
+  smiles: string | null;
+  mw: number | null;
+  alogp: number | null;
+  mechanisms: Mechanism[];
+  genes: DrugGene[];
+  trials: DrugTrial[];
+  bioactivity: {
+    n_protein: number;
+    best_protein_pchembl: number | null;
+    n_whole_cell: number;
+    best_whole_cell_pchembl: number | null;
+  };
+}
+
+export interface TrialDrug {
+  molecule_chembl_id: string;
+  pref_name: string | null;
+  via_chembl_ref: boolean;
+  via_intervention_name: boolean;
+}
+
+export interface Trial extends TrialSummary {
+  official_title: string | null;
+  why_stopped: string | null;
+  primary_completion_date: string | null;
+  first_posted: string | null;
+  last_update: string | null;
+  allocation: string | null;
+  primary_purpose: string | null;
+  sponsor_class: string | null;
+  collaborators: string[];
+  conditions: string[];
+  interventions: { type: string | null; name: string | null; other_names: string[] }[];
+  arms: { label: string | null; type: string | null; interventions: string[] }[];
+  countries: string[];
+  drugs: TrialDrug[];
+}
+
+export interface TrialDetail extends Omit<Trial, "drugs"> {
+  drugs: (TrialDrug & { matched_names: string[]; max_phase_tb: number | null })[];
+  genes: { rv_id: string; gene_name: string | null; link: DrugLink; drug: string | null }[];
+}
+
+export interface Page<T> {
+  total: number;
+  limit: number;
+  offset: number;
+  items: T[];
 }
 
 export interface Partner {
@@ -242,4 +415,8 @@ export const api = {
     ),
   target: (rvId: string) => get<TargetDetail>(`/targets/${rvId}`),
   compound: (id: string) => get<Compound & { activities: Activity[] }>(`/compounds/${id}`),
+  drugs: () => get<Page<DrugSummary>>("/drugs", { limit: 1000 }),
+  drug: (id: string) => get<DrugDetail>(`/drugs/${id}`),
+  trials: () => get<Page<Trial>>("/trials", { limit: 2000 }),
+  trial: (nctId: string) => get<TrialDetail>(`/trials/${nctId}`),
 };

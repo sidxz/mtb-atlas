@@ -8,7 +8,8 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import type { Activity, Compound, TargetDetail as Detail, Variant } from "./api";
+import type { Activity, Compound, TargetDetail as Detail, Meta, Variant } from "./api";
+import { ClinicalTab, phaseLabel, type Focus } from "./Clinical";
 import { StructureViewer, alphafoldSource, pdbSource, type ViewerSource } from "./StructureViewer";
 
 const SOURCES = {
@@ -21,9 +22,10 @@ const SOURCES = {
   string: "STRING v12.5 · CC BY 4.0",
   homology: "phmmer vs reviewed human proteome (UniProt) · CC BY 4.0",
   identity: "Mycobrowser release 5 (licence not stated) · UniProt · CC BY 4.0",
+  clinical: "ChEMBL TB indications and mechanisms · Bosch 2021 · ClinicalTrials.gov",
 };
 
-type Tab = "evidence" | "structure" | "chemistry" | "resistance" | "network";
+type Tab = "evidence" | "structure" | "chemistry" | "resistance" | "clinical" | "network";
 
 const number = (value: number | null | undefined, digits = 2) =>
   value === null || value === undefined ? "—" : value.toFixed(digits);
@@ -38,7 +40,15 @@ function Row({ label, source, children }: { label: string; source?: string; chil
   );
 }
 
-export function TargetDetailPanel({ detail }: { detail: Detail }) {
+export function TargetDetailPanel({
+  detail,
+  meta,
+  onOpen,
+}: {
+  detail: Detail;
+  meta: Meta | null;
+  onOpen: (focus: Focus) => void;
+}) {
   const [tab, setTab] = useState<Tab>("evidence");
   const [structureIndex, setStructureIndex] = useState(0);
   const [showLigands, setShowLigands] = useState(true);
@@ -83,6 +93,7 @@ export function TargetDetailPanel({ detail }: { detail: Detail }) {
             ["structure", "Structure", detail.n_pdb + (detail.has_predicted ? 1 : 0)],
             ["chemistry", "Chemistry", detail.n_compounds],
             ["resistance", "Resistance", detail.n_variants_associated],
+            ["clinical", "Clinical", detail.n_drugs],
             ["network", "Network", detail.n_partners],
           ] as [Tab, string, number | null][]
         ).map(([key, label, badge]) => (
@@ -165,6 +176,8 @@ export function TargetDetailPanel({ detail }: { detail: Detail }) {
         )}
 
         {tab === "chemistry" && <Chemistry detail={detail} />}
+
+        {tab === "clinical" && <ClinicalTab detail={detail} meta={meta} onOpen={onOpen} />}
 
         {tab === "network" && <Network detail={detail} />}
 
@@ -326,6 +339,25 @@ function Evidence({ detail }: { detail: Detail }) {
           </>
         ) : (
           <span className="absent">no compound in ChEMBL is recorded against this gene</span>
+        )}
+      </Row>
+
+      <Row label="Clinical stage" source={SOURCES.clinical}>
+        {detail.n_drugs ? (
+          <>
+            <span className="big">{phaseLabel(detail.best_drug_phase)}</span>{" "}
+            <span className="dim">for TB · {detail.drug_names.join(", ")}</span>
+            <div className="note">
+              {detail.n_trials} linked trial{detail.n_trials === 1 ? "" : "s"}. A drug counts here only
+              when ChEMBL&rsquo;s mechanism or Bosch 2021 names this gene&rsquo;s protein.
+            </div>
+          </>
+        ) : (
+          <span className="absent">
+            no drug with a TB indication acts on this gene
+            {detail.n_complex_drugs > 0 &&
+              ` (${detail.n_complex_drugs} act on a complex it belongs to)`}
+          </span>
         )}
       </Row>
 

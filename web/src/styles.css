@@ -179,6 +179,17 @@ button { font: inherit; }
 .chip.warn { color: var(--warn); }
 .chip.ok { color: var(--ok); }
 .chip.accent { color: var(--accent); }
+button.chip { background: none; cursor: pointer; }
+button.chip:hover { background: var(--surface-2); }
+.chips { display: inline-flex; flex-wrap: wrap; gap: 3px 4px; }
+
+.viewswitch { display: flex; gap: 1px; background: var(--line); border: 1px solid var(--line); }
+.viewswitch button {
+  background: var(--surface); border: 0; color: var(--fg-dim); padding: 5px 11px;
+  cursor: pointer; font-size: 12px; white-space: nowrap;
+}
+.viewswitch button:hover { color: var(--fg); }
+.viewswitch button[aria-pressed="true"] { background: var(--accent); color: #fff; }
 
 /* ---- canvas --------------------------------------------------------------- */
 

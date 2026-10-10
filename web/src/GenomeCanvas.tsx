@@ -17,6 +17,7 @@ export type ColourBy =
   | "structure"
   | "chemistry"
   | "resistance"
+  | "clinical"
   | "category";
 
 /** NC_000962.3, M. tuberculosis H37Rv. */
@@ -69,6 +70,13 @@ export function colourOf(gene: TargetSummary, by: ColourBy): string {
       if (gene.n_variants_associated >= 5) return token("--accent");
       if (gene.n_variants_associated > 0) return token("--warn");
       return gene.in_who_catalogue ? token("--ess-NE") : token("--ess-none");
+    case "clinical":
+      // Best phase *for TB* among drugs a source says act on this gene's own
+      // protein. Complex membership alone gets the faintest mark, not a colour.
+      if (gene.best_drug_phase !== null && gene.best_drug_phase >= 4) return token("--accent");
+      if (gene.best_drug_phase !== null && gene.best_drug_phase >= 2) return token("--ess-ESD");
+      if (gene.best_drug_phase !== null) return token("--counter");
+      return gene.n_complex_drugs > 0 ? token("--line-strong") : token("--ess-none");
     case "category": {
       const index = CATEGORIES.indexOf(gene.category ?? "");
       return index < 0 ? token("--ess-none") : CATEGORY_COLOURS[index];

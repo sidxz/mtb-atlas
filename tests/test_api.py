@@ -47,6 +47,7 @@ def test_drug_page_goes_back_to_genes_and_trials(client: TestClient) -> None:
 def test_drug_list_filters_by_phase(client: TestClient) -> None:
     items = client.get("/drugs", params={"min_phase": 4}).json()["items"]
     assert items and all(d["max_phase_tb"] >= 4 for d in items)
+    assert "TMC207" in next(d for d in items if d["pref_name"] == "BEDAQUILINE")["synonyms"]
     assert "CHEMBL3330226" not in {d["molecule_chembl_id"] for d in items}
 
 

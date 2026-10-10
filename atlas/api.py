@@ -530,7 +530,7 @@ def drugs(
     total = connection.execute(f"SELECT count(*) FROM drugs d {clause}", params).fetchone()[0]
     items = _query(
         connection,
-        "SELECT d.molecule_chembl_id, d.pref_name, d.max_phase_tb, d.max_phase,"
+        "SELECT d.molecule_chembl_id, d.pref_name, d.synonyms, d.max_phase_tb, d.max_phase,"
         " d.first_approval, d.molecule_type, d.atc_codes, d.acts_on_mtb, d.host_targeted,"
         " d.target_organisms, d.mechanisms_of_action,"
         " coalesce(g.genes, []) AS genes, coalesce(t.n_trials, 0) AS n_trials"

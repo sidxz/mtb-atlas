@@ -1,9 +1,9 @@
 /*
  * Design language: Ziehl-Neelsen. Carbol fuchsin on a methylene-blue
  * counterstain is how this organism is seen down a microscope, so the accent
- * is fuchsin and the secondary is that blue. Archivo for text, IBM Plex Mono
- * for every identifier and number — Rv tags, accessions and pChEMBL values are
- * things people copy, and they should look it.
+ * is fuchsin and the secondary is that blue. Inter throughout, with tabular
+ * figures on so that Rv tags, accessions and pChEMBL values still line up in
+ * a column the way the monospace used to make them.
  */
 
 :root {
@@ -32,8 +32,12 @@
   --ess-Uncertain: #8b92a4;
   --ess-none: #b9bfcd;
 
-  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  --sans: "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* One face throughout. `--mono` keeps its name because it still marks the
+     same thing -- identifiers and numbers, the values people copy -- and
+     those now get Inter's tabular figures instead of a monospace, so columns
+     still line up. Pointing it back at a monospace is one line. */
+  --mono: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
   color-scheme: light;
 }
@@ -106,6 +110,10 @@ body {
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  /* The monospace used to do this for free. Inter's default figures are
+     proportional, so a column of pChEMBL values would no longer line up;
+     tabular is the right default for a screen that is mostly numbers. */
+  font-variant-numeric: tabular-nums;
 }
 
 .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }

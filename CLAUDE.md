@@ -1,8 +1,8 @@
 # Mtb Target Atlas — working rules
 
 A browser app where every *M. tuberculosis* H37Rv gene is a navigable object,
-unifying the evidence early drug discovery teams check during target selection
-and hit triage.
+unifying the evidence a TB drug discovery team checks from target selection and
+hit triage through to clinical trials.
 
 **Public data only. No consortium data, ever.** Every source is listed in
 `docs/data-sources.md` with its licence. If a source is not in that file, it does
@@ -18,11 +18,12 @@ make summary          # row counts and conflict counts from the crosswalk
 make test             # pytest, fixtures only, no network
 make lint             # ruff check + ruff format --check
 make fmt              # ruff format
+make api / make web   # FastAPI on :8099, the app on :5173
+uv run atlas clinical # rebuild just the clinical stage (drugs, trials, links) and the roll-up
 ```
 
-No Docker Compose, FastAPI, RDKit or frontend yet — those arrive with M2/M3.
-Adding them before their milestone is scaffolding for later; later can scaffold
-for itself.
+No Docker Compose and no RDKit. Add infrastructure when a milestone needs it;
+adding it earlier is scaffolding for later, and later can scaffold for itself.
 
 ## Canonical key
 
@@ -93,6 +94,23 @@ This is the rule that outranks completeness.
   the flag.
 - No druggability claim without a source. Nothing public supplies one today; see
   the open question in `docs/data-sources.md`.
+- **TB phase is not overall phase.** `drugs.max_phase_tb` is the highest phase
+  ChEMBL records for a tuberculosis indication. `max_phase` is for any
+  indication: linezolid is approved, and phase 3 for TB. The drug set is
+  ChEMBL's TB indications, unedited (host-directed adjuncts, HIV co-medications
+  and placebo excipients included), made filterable rather than curated away.
+- **A drug acts on a gene only when a source names that gene's protein**: a
+  ChEMBL single-protein mechanism, or Bosch 2021's annotation matched exactly
+  to a ChEMBL synonym. Membership of the complex a drug is filed against
+  (bedaquiline: all eight ATP synthase subunits) and WHO-graded resistance are
+  shown, never counted. **Resistance is not engagement**: katG activates
+  isoniazid. A mechanism target from another organism (rifampicin's *E. coli*
+  RNA polymerase) reaches no Mtb gene, and no homology bridge is built to make
+  it. See `atlas/clinical.py`.
+- **A trial links to a drug** through ChEMBL's curated reference or an exact
+  match of a cleaned intervention name. Other names are a fallback only,
+  because sponsors list drug classes there, and a name two molecules share
+  links neither. Studies of nontuberculous mycobacteria are not TB trials.
 
 ## Validation targets
 
@@ -101,9 +119,9 @@ interesting shapes:
 
 | Gene | Rv tag | Why |
 |---|---|---|
-| DprE1 | `Rv3790` | Essential (`ES`), 31 structures, direct ChEMBL target, **no** WHO entry |
-| InhA | `Rv1484` | Essential (`ES`), 135 structures, best-studied chemistry, full WHO entry |
-| MmpL3 | `Rv0206c` | Essential domain (`ESD`), 1 structure, ligands **only** via the *M. smegmatis* orthologue, no WHO entry, most vulnerable of the three (-11.0) |
+| DprE1 | `Rv3790` | Essential (`ES`), 31 structures, direct ChEMBL target, **no** WHO entry; macozinone and TBA-7371 (phase 2) by ChEMBL mechanism, while BTZ-043 and quabodepistat have none in ChEMBL and so reach no gene |
+| InhA | `Rv1484` | Essential (`ES`), 135 structures, best-studied chemistry, full WHO entry; isoniazid and ethionamide, approved |
+| MmpL3 | `Rv0206c` | Essential domain (`ESD`), 1 structure, ligands **only** via the *M. smegmatis* orthologue, no WHO entry, most vulnerable of the three (-11.0); SQ109 (phase 2) **only** through Bosch 2021, because ChEMBL records no mechanism for it |
 
 A fourth is worth keeping to hand: **GroEL2 (`Rv0440`)** is essential and highly
 vulnerable (-11.6) and would look like an excellent target, except that it is
@@ -132,7 +150,8 @@ test the lock as well as the guard.**
 
 The schema dump carries each table's trap (join `structures` on `uniprot_acc`
 not `rv_id`; `resistance` is keyed on gene symbol; the vulnerability index is
-negative), because a model that writes a plausible wrong join gets silent
+negative; `max_phase_tb` is not `max_phase`; a `who_resistance` link is not a
+target), because a model that writes a plausible wrong join gets silent
 nonsense rather than an error.
 
 ## Conventions

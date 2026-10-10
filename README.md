@@ -1,7 +1,8 @@
 # Mtb Target Atlas
 
 Every *Mycobacterium tuberculosis* H37Rv gene as a navigable object, unifying the
-evidence early drug discovery teams check during target selection and hit triage.
+evidence a TB drug discovery team checks from target selection and hit triage
+through to the clinic.
 
 Built **only from public data**. No consortium data, ever.
 
@@ -11,18 +12,21 @@ The questions it exists to answer:
 - Is there an experimental structure? A predicted one? A druggable pocket?
 - What chemical matter hits it, at what potency?
 - Which resistance mutations are known?
+- Which drugs and clinical candidates act on it, at what phase for TB, and in
+  which trials?
 - Which essential targets have a structure and no ligands?
 
 ## Status
 
-All five milestones are in. Nine public sources, one store, one app.
+Six milestones are in. Ten public sources, one store, one app.
 
 ```
 make install      # uv venv + dependencies
 make build        # whole pipeline -> data/store/*.parquet  (~15 min cold)
+uv run atlas clinical   # the clinical stage alone, then the roll-up
 make api          # FastAPI on :8099
 make web          # the app on :5173
-make test         # 92 tests against committed fixtures, no network
+make test         # 146 tests against committed fixtures, no network
 ```
 
 | Milestone | Scope | |
@@ -33,6 +37,7 @@ make test         # 92 tests against committed fixtures, no network
 | M3 | Target page: evidence panels + Mol* with ligands and resistance residues | ✅ |
 | M4 | Genome canvas: all 4,173 genes, recolourable by any evidence axis | ✅ |
 | M5 | Agent: natural-language questions, answers cite the records | ✅ |
+| M6 | Clinical layer: TB drugs and mechanisms, trials, and every drug–gene and trial–drug link labelled with how it was made | ✅ |
 | — | Beyond the brief: CRISPRi vulnerability, STRING partners, human anti-target, domains | ✅ |
 
 ## What it answers
@@ -47,6 +52,21 @@ vulnerability index · 847 with a close human homolog
 
 That last line is the product: a target shortlist short enough to read, with
 `nadD`, `nusG` and `hadA` near the top.
+
+From the clinical end:
+
+```
+112 molecules with a TB indication in ChEMBL · 11 placed on 13 Mtb genes
+1,137 interventional TB trials · 483 linked to one of those molecules
+281 genes essential · confidently vulnerable · no close human homolog ·
+    no TB drug or candidate acting on them
+```
+
+A drug counts on a gene only when ChEMBL's mechanism or Bosch 2021 names that
+gene's protein. Membership of a target complex and WHO-graded resistance are
+shown beside it, never counted, and 25 anti-TB molecules — the rifamycins,
+delamanid, pretomanid, BTZ-043 among them — reach no gene because no public
+structured source states one.
 
 ## The store
 
@@ -69,6 +89,11 @@ downloads are cached on disk and gitignored. Every record carries `source`,
 | `resistance.parquet` | 48,152 | gene, mutation, drug | WHO catalogue |
 | `interactions.parquet` | 28,739 | `rv_id`, `partner_rv_id` | STRING |
 | `homology.parquet` | 3,997 | `uniprot_acc` | phmmer vs human |
+| `drugs.parquet` | 112 | `molecule_chembl_id` | ChEMBL TB indications |
+| `drug_mechanisms.parquet` | 92 | molecule, target | ChEMBL |
+| `trials.parquet` | 1,137 | `nct_id` | ClinicalTrials.gov |
+| `drug_genes.parquet` | 233 | molecule, `rv_id`, link | joined |
+| `trial_drugs.parquet` | 1,183 | `nct_id`, molecule | joined |
 | `target_summary.parquet` | 4,173 | `rv_id` | rolled up |
 
 See [`docs/data-sources.md`](docs/data-sources.md) for every endpoint, format,

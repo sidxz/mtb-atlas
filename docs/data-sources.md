@@ -1,8 +1,8 @@
 # Data sources
 
 Every endpoint, format and licence below was checked against the live service on
-**2026-10-09**. Nothing here is from memory or documentation alone — where a
-claim could not be verified, it says so.
+**2026-10-09** (the clinical sources on **2026-10-10**). Nothing here is from
+memory or documentation alone — where a claim could not be verified, it says so.
 
 All sources are public. No consortium data, ever.
 
@@ -19,7 +19,9 @@ All sources are public. No consortium data, ever.
 | [WHO catalogue](#who-mutation-catalogue) | 2nd ed. (2023) | ODC-By 1.0 | Resistance mutations |
 | [Bosch 2021 CRISPRi](#vulnerability-bosch-2021) | Cell, Table S3 | CC BY 4.0 | Vulnerability index |
 | [STRING](#string) | v12.5, taxon 83332 | CC BY 4.0 | Interaction partners |
-| [UniRef co-membership](#human-homology) | UniRef90 / UniRef50 | CC BY 4.0 | Human anti-target flag |
+| [phmmer vs human proteome](#human-homology) | UniProt UP000005640, reviewed | CC BY 4.0 | Human anti-target check |
+| [ChEMBL drugs](#chembl-tb-drugs-and-mechanisms) | ChEMBL_37 | CC BY-SA 3.0 | TB drugs, phases, mechanisms (M6) |
+| [ClinicalTrials.gov](#clinicaltrialsgov) | API 2.0.5, data 2026-10-09 | US Government database; terms below | Interventional TB trials (M6) |
 
 Licences differ, so they are tracked per source rather than rolled up. The code
 in this repository is MIT; the data is not.
@@ -354,18 +356,130 @@ public resource publishes this for Mtb in a downloadable form:**
   not a file, to every scripted attempt.
 - DIAMOND and BLAST are not installed in this environment.
 
-**What this pipeline does instead:** four bulk UniProt ID-mapping jobs, mapping
-both proteomes into UniRef90 and UniRef50 and intersecting the cluster ids. No
-local tooling, no multi-gigabyte download.
+**Tried first and abandoned: UniRef co-membership.** Four bulk UniProt
+ID-mapping jobs, both proteomes into UniRef90 and UniRef50, cluster ids
+intersected. It returned **zero human homologs across all 3,978 accessions**.
+UniRef50 clusters at 50% identity to the representative, and Mtb–human
+homology mostly lives at 25–40%: GroEL2 (`P9WPE7`) and human HSPD1 (`P10809`),
+textbook homologs, land in different UniRef50 clusters. A column that says
+"no" to every gene reads as reassurance, so it was removed.
 
-**What that claim is worth.** UniRef clusters at N% identity *to the
-representative*, so two members are not guaranteed to be N% identical to each
-other. UniRef50 co-membership means "same broad family" — true of most kinases
-and ABC transporters — and is a flag to investigate. UniRef90 co-membership is
-a much stronger claim and is rare. Both levels are reported separately and
-neither is ever described as a percent identity, because neither is one. A
-measured identity needs DIAMOND; that is the upgrade path if the flag proves
-too coarse.
+**What this pipeline does instead:** `phmmer` (via `pyhmmer`, a pip package —
+no system tooling) searches each Mtb protein against the **reviewed** human
+proteome (`UP000005640`, reviewed only: the unreviewed set is mostly isoforms
+and fragments). The best hit at E ≤ 1e-5 is kept with its E-value, bit score,
+coverage and a percent identity computed from the aligned columns. A hit at
+≥ 30% identity is flagged `close_human_homolog`; that line is this atlas's
+convention, which is why the identity is always shown beside the flag. GroEL2
+comes back 48% identical to HSPD1. Both proteomes are UniProt, CC BY 4.0.
+
+## ChEMBL: TB drugs and mechanisms
+
+The clinical end of the atlas starts here. Same release and licence as the
+rest of ChEMBL (CC BY-SA 3.0, IDs preserved, release displayed).
+
+- **Indications:** `drug_indication.json?mesh_heading__icontains=tuberculosis`
+  → **187 indications** over **112 parent molecules**. MeSH headings seen:
+  Tuberculosis (109), Tuberculosis, Pulmonary (50), Multidrug-Resistant (22),
+  Meningeal (6). `Mycobacterium Infections` (10) and the MAC headings (16) are
+  broader than TB and are left out. Filtering on `efo_term` returns the same
+  187 rows.
+- **Phase:** `max_phase_for_ind` is the phase *for that indication* (a string,
+  `"4.0"`). The atlas keeps it as `max_phase_tb`, apart from the molecule's
+  `max_phase` for any indication: linezolid is approved, and phase 3 for TB.
+  Of the 112, 22 are approved for TB, 32 are phase 3, 45 phase 2, 13 phase 1.
+- **Trial references:** an indication's `ClinicalTrials` ref packs every NCT id
+  into one comma-separated `ref_id` — 316 such refs naming 262 distinct trials.
+  Other refs are DailyMed, FDA, EMA and ATC labels.
+- **Salts:** 42 indications name a salt (`CHEMBL2105700`, bedaquiline
+  fumarate) whose `parent_molecule_chembl_id` is the drug. Everything is keyed
+  on the parent; salt ids and names are kept as synonyms.
+- **Mechanisms:** `mechanism.json?molecule_chembl_id__in=...` → 94 records over
+  49 targets (92 after de-duplicating salt and parent). **41 of the 112 have
+  no mechanism at all**, including BTZ-043, quabodepistat, SQ109, telacebec,
+  pretomanid and TBAJ-876.
+- **Targets:** `target.json?target_chembl_id__in=...` gives organism, `tax_id`,
+  type and component accessions. Only 12 molecules have a mechanism on an
+  *M. tuberculosis* target. Rifampicin, rifapentine and rifabutin point at
+  `CHEMBL2364672`, a *Bacterial* RNA polymerase built from *E. coli*
+  accessions. The fluoroquinolones point at *S. pneumoniae* gyrase and
+  topoisomerase IV. Bedaquiline points at Mtb ATP synthase as an eight-subunit
+  `PROTEIN COMPLEX`, and sutezolid, capreomycin and pyrazinamide at the Mtb 70S
+  ribosome (60 components).
+- **The set is unedited:** ChEMBL reads indications off trial records, so the
+  112 include host-directed adjuncts (glucocorticoids, NSAIDs, statins), HIV
+  co-medications, BCG, tuberculin and placebo excipients ("lactose, anhydrous"
+  at phase 3). They are kept and made filterable — `acts_on_mtb` (12),
+  `host_targeted` (23), `atc_codes` (22 carry a J04 antimycobacterial code) —
+  rather than curated away.
+- **Gotcha:** the API sometimes answers a JSON request with an HTML error page.
+  `fetch(..., json_body=True)` treats that as transient and never caches it.
+
+**How a drug reaches a gene** (`atlas/clinical.py`, `drug_genes.link`):
+
+| Link | Meaning | Live count |
+|---|---|---|
+| `mechanism` | ChEMBL's mechanism names this gene's protein as the single-protein target | 9 links, 8 drugs, 7 genes |
+| `mechanism_complex` | ChEMBL names a complex this protein belongs to — not evidence it binds this subunit | 179 links, 4 drugs, 65 genes |
+| `bosch_2021` | Bosch 2021's `antibacterial` column, matched exactly to a ChEMBL synonym | 12 links, 8 drugs, 12 genes |
+| `who_resistance` | WHO-graded resistance variants in this gene for this drug — **not** target engagement | 33 links, 15 drugs, 24 genes |
+
+Only `mechanism` and `bosch_2021` count as a drug acting on the gene: **11
+drugs land on 13 genes**. A mechanism target from another organism links no
+Mtb gene; bridging rifampicin to rpoB by homology would state something ChEMBL
+does not. rpoB still meets rifampicin through the WHO catalogue, as resistance.
+
+**Anti-TB drugs the public structured data cannot place on a gene** (25): the
+rifamycins (non-Mtb target), delamanid and pretomanid (prodrugs; organism-level
+or no target), capreomycin and the oxazolidinones (ribosome complex or non-Mtb
+ribosome), clofazimine (DNA), and BTZ-043, quabodepistat, TBAJ-876, TBAJ-587,
+TBI-223, TBA-354 and GSK-2556286 (no mechanism in ChEMBL 37). Each still has its
+drug page, phase and trials; it is the gene link that is absent, and the UI
+says so.
+
+## ClinicalTrials.gov
+
+- **API:** `https://clinicaltrials.gov/api/v2/studies?query.cond=tuberculosis&filter.advanced=AREA[StudyType]INTERVENTIONAL&fields=...&pageSize=1000`,
+  paged by `nextPageToken`. **1,152 studies** on 2026-10-10 (1,665 with
+  observational; `query.term` returns 2,449). Version from `/api/v2/version`:
+  `apiVersion 2.0.5`, `dataTimestamp 2026-10-09T09:00:05`.
+- **Terms** (ClinicalTrials.gov Terms and Conditions, last modified
+  2023-01-31; the page renders client-side, so the text was read from the
+  site's own bundle): data are available to all requesters at no charge. In
+  any publication or distribution you should attribute ClinicalTrials.gov,
+  keep the data current, clearly display the date the data were processed by
+  ClinicalTrials.gov, and state any modifications. No proprietary rights may be
+  asserted, and extracted email addresses may not be used for marketing. Data
+  carry international copyright outside the US, and some may be subject to
+  third-party copyright.
+- **How this pipeline complies:** it fetches at build time and commits only
+  test fixtures. `source_version` carries the `dataTimestamp`, which the UI
+  shows next to every trial. Contacts are never requested. **Modifications,
+  stated:** a subset of fields is kept; phases gain a number for sorting
+  (early phase 1 = 0.5, "NA" = none); 15 studies whose conditions are solely
+  nontuberculous mycobacterial disease are dropped; nothing else is
+  rewritten.
+- **Quirks:** dates are often partial (`2018-06`) and are kept as given. The
+  condition search also matches "Non-tuberculous" (15 NTM studies, now
+  excluded). Another 60 list no TB condition at all. Most are TB studies by
+  title — vaccine trials in "Healthy" volunteers, TMC207 in hepatic impairment.
+  A few are adjacent, such as pleural-effusion diagnostics and TB-service
+  integration. All 60 are kept, because a condition list is not a reliable
+  test of scope.
+  Phase "NA" (411) is behavioural, diagnostic and device studies.
+- **Scope after exclusion:** 1,137 trials. 104 phase 4, 178 phase 3, 253
+  phase 2, 182 phase 1, 9 early phase 1.
+
+**How a trial reaches a drug** (`trial_drugs`): ChEMBL's own curated NCT
+reference (`via_chembl_ref`), or an exact match of a cleaned intervention name
+to a ChEMBL synonym (`via_intervention_name`). Cleaning splits combinations,
+takes parentheticals as alternatives, and strips doses and dosage forms. An
+intervention's other names are consulted only when its own name matches
+nothing, because sponsors list classes there: NCT02651259 gives rifapentine the
+other name "Rifamycin". A name two molecules share links neither. Live: 483
+trials link to at least one drug; 219 trial–drug pairs come by both methods,
+57 by reference only and 247 by name only. ChEMBL references 3 trials outside
+this search, and those links are dropped rather than left dangling.
 
 ## Rejected: the TB clinical pipeline
 
@@ -378,7 +492,9 @@ identifiers and inconsistent casing. The footer reads "©2016 Working Group on
 New TB Drugs. All Rights Reserved" — no open licence.
 
 Not ingested. The validated-target information the atlas needed is available,
-openly licensed, from Bosch 2021's `antibacterial` column instead.
+openly licensed, from Bosch 2021's `antibacterial` column instead. The phases
+and trials of the clinical pipeline now come from ChEMBL's TB indications and
+ClinicalTrials.gov, above, both with clear terms.
 
 ## Noted but not ingested: MtbTnDB
 

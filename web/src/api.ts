@@ -67,6 +67,9 @@ export interface TargetSummary {
   n_complex_drugs: number;
   n_trials: number;
   has_clinical_drug: boolean;
+  /** From the UniProt entry; null where there is no protein (RNA genes). */
+  n_transmembrane: number | null;
+  n_references: number | null;
 }
 
 export interface StructureComponent {
@@ -186,6 +189,23 @@ export interface TargetDetail extends TargetSummary {
   pfam_ids: string[];
   go_ids: string[];
   ec_numbers: string[];
+  /** UniProt's biology: curated if reviewed, automatic if not. Null or empty: UniProt is silent. */
+  reviewed: boolean | null;
+  function: string | null;
+  subcellular_location: string | null;
+  locations: string[];
+  signal_peptide: boolean;
+  pathways: string[];
+  reactions: string[];
+  rhea_ids: string[];
+  cofactors: string[];
+  go_process: string[];
+  go_function: string[];
+  go_component: string[];
+  disruption_phenotype: string | null;
+  pubmed_ids: string[];
+  protein_existence: string | null;
+  annotation_score: number | null;
   drugs: GeneDrug[];
   trials: GeneTrial[];
   /** What the atlas does NOT know, stated rather than left as a blank cell. */

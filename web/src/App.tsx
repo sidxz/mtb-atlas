@@ -39,6 +39,7 @@ type Flag =
   | "has_ligands"
   | "in_who_catalogue"
   | "has_clinical_drug"
+  | "n_transmembrane"
   | "conflict";
 
 const FLAGS: [Flag, string][] = [
@@ -50,6 +51,7 @@ const FLAGS: [Flag, string][] = [
   ["has_ligands", "Has chemical matter"],
   ["in_who_catalogue", "In the WHO catalogue"],
   ["has_clinical_drug", "A TB drug or candidate acts on it"],
+  ["n_transmembrane", "Transmembrane segments annotated"],
   ["conflict", "ID conflict between sources"],
 ];
 
@@ -70,6 +72,7 @@ const COLUMNS: [string, string, boolean][] = [
   ["n_variants_associated", "WHO", true],
   ["best_drug_phase", "TB phase", true],
   ["n_partners", "Partners", true],
+  ["n_references", "Refs", true],
 ];
 
 function useTheme() {
@@ -467,6 +470,7 @@ export function App() {
                         {gene.best_drug_phase === null ? "—" : phaseLabel(gene.best_drug_phase)}
                       </td>
                       <td className="n">{gene.n_partners || "—"}</td>
+                    <td className="n">{gene.n_references ?? "—"}</td>
                       <td className="prodcell">
                         {gene.antibacterial && (
                           <span className="chip accent" style={{ marginRight: 5 }}>

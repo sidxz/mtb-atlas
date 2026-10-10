@@ -23,6 +23,7 @@ const SOURCES = {
   homology: "phmmer vs reviewed human proteome (UniProt) · CC BY 4.0",
   identity: "Mycobrowser release 5 (licence not stated) · UniProt · CC BY 4.0",
   clinical: "ChEMBL TB indications and mechanisms · Bosch 2021 · ClinicalTrials.gov",
+  uniprot: "UniProt · CC BY 4.0",
 };
 
 type Tab = "evidence" | "structure" | "chemistry" | "resistance" | "clinical" | "network";
@@ -192,9 +193,77 @@ export function TargetDetailPanel({
   );
 }
 
+function Protein({ detail }: { detail: Detail }) {
+  const [open, setOpen] = useState(false);
+  if (!detail.uniprot_acc) {
+    return (
+      <Row label="Protein">
+        <span className="absent">no protein: this is an RNA gene, or no accession could be resolved</span>
+      </Row>
+    );
+  }
+  const long = (detail.function ?? "").length > 320;
+  return (
+    <Row
+      label="Protein"
+      source={`${SOURCES.uniprot} · ${
+        detail.reviewed ? "reviewed entry (Swiss-Prot, curated)" : "unreviewed entry (TrEMBL, automatic)"
+      } · ${detail.protein_existence ?? "existence not stated"}`}
+    >
+      {detail.function ? (
+        <div style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+          {long && !open ? `${detail.function.slice(0, 320)}… ` : `${detail.function} `}
+          {long && (
+            <button type="button" className="minibtn" onClick={() => setOpen((v) => !v)}>
+              {open ? "less" : "more"}
+            </button>
+          )}
+        </div>
+      ) : (
+        <span className="absent">UniProt states no function for this entry</span>
+      )}
+      <div className="ids" style={{ marginTop: 6 }}>
+        {detail.locations.map((l) => (
+          <span key={l}>{l}</span>
+        ))}
+        <span>
+          {detail.n_transmembrane
+            ? `${detail.n_transmembrane} transmembrane segment${detail.n_transmembrane === 1 ? "" : "s"}`
+            : "no transmembrane segment annotated"}
+        </span>
+        {detail.signal_peptide && <span>signal peptide</span>}
+      </div>
+      {detail.pathways.map((p) => (
+        <div className="note" key={p} style={{ color: "var(--fg)" }}>
+          Pathway: {p}
+        </div>
+      ))}
+      {detail.reactions.slice(0, 2).map((r) => (
+        <div className="note mono" key={r}>
+          {r}
+        </div>
+      ))}
+      {detail.cofactors.length > 0 && <div className="note">Cofactor: {detail.cofactors.join(", ")}</div>}
+      {detail.go_process.length > 0 && (
+        <div className="note">Process: {detail.go_process.slice(0, 6).join(" · ")}</div>
+      )}
+      {detail.disruption_phenotype && <p className="caveat">Disruption: {detail.disruption_phenotype}</p>}
+      <div className="note">
+        UniProt cites {detail.pubmed_ids.length} paper{detail.pubmed_ids.length === 1 ? "" : "s"} for this
+        entry ·{" "}
+        <a href={`https://www.uniprot.org/uniprotkb/${detail.uniprot_acc}/entry`} target="_blank" rel="noreferrer">
+          {detail.uniprot_acc} ↗
+        </a>
+      </div>
+    </Row>
+  );
+}
+
 function Evidence({ detail }: { detail: Detail }) {
   return (
     <>
+      <Protein detail={detail} />
+
       <Row label="Essentiality" source={SOURCES.essentiality}>
         {detail.essentiality ? (
           <>

@@ -19,7 +19,7 @@ const SOURCES = {
   who: "WHO catalogue 2nd ed. 2023 · ODC-By 1.0",
   vulnerability: "Bosch et al. 2021, Cell · Table S3 · CC BY 4.0",
   string: "STRING v12.5 · CC BY 4.0",
-  homology: "UniRef co-membership vs reviewed human proteome · CC BY 4.0",
+  homology: "phmmer vs reviewed human proteome (UniProt) · CC BY 4.0",
   identity: "Mycobrowser release 5 (licence not stated) · UniProt · CC BY 4.0",
 };
 

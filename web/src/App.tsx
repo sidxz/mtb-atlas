@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type Meta, type TargetDetail, type TargetSummary } from "./api";
 import { CATEGORIES, GenomeCanvas, colourOf, type ColourBy } from "./GenomeCanvas";
 import { TargetDetailPanel } from "./TargetDetail";
+import { Ask } from "./Ask";
 
 const ESSENTIALITY: [string, string][] = [
   ["ES", "Essential"],
@@ -46,6 +47,10 @@ const FLAGS: [Flag, string][] = [
   ["in_who_catalogue", "In the WHO catalogue"],
   ["conflict", "ID conflict between sources"],
 ];
+
+// Columns where a *lower* number is the better answer, so the first click
+// should sort ascending: vulnerability runs negative, and so does an E-value.
+const LOWER_IS_BETTER = new Set(["vulnerability_index", "best_resolution", "human_homolog_identity"]);
 
 const COLUMNS: [string, string, boolean][] = [
   ["rv_id", "Locus", false],
@@ -215,6 +220,8 @@ export function App() {
         </button>
       </header>
 
+      <Ask base={import.meta.env.VITE_API_BASE ?? "/api"} />
+
       <div className="body">
         <aside className="col col-pad">
           <div className="group">
@@ -365,7 +372,10 @@ export function App() {
                         setSort((current) =>
                           current.key === key
                             ? { key, order: current.order === "asc" ? "desc" : "asc" }
-                            : { key, order: numeric ? "desc" : "asc" },
+                            : {
+                                key,
+                                order: !numeric || LOWER_IS_BETTER.has(key) ? "asc" : "desc",
+                              },
                         )
                       }
                     >

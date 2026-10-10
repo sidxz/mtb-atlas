@@ -77,6 +77,20 @@ This is the rule that outranks completeness.
 - Two of the three reference targets have **no** WHO resistance data, because the
   catalogue covers 65 genes and neither `dprE1` nor `mmpL3` is one. That is
   reported as an absence. Do not substitute a different source to fill the cell.
+- **Essentiality and vulnerability answer different questions and must not be
+  conflated.** TnSeq says whether a gene can be deleted. CRISPRi vulnerability
+  says how far expression must fall before fitness suffers -- the question an
+  inhibitor actually poses -- on a negative scale where only ~600 genes carry
+  the study's own `certain` flag. Show the flag; never present an uncertain
+  index as measured.
+- **"Essential" means ES or ESD.** Growth-defect is a real but weaker signal and
+  lives in `fitness_cost`. Folding it into the word "essential" adds 135 genes.
+- **Human homology is computed, not looked up, and always shown with its
+  number.** UniRef co-membership was tried and returned zero homologs for all
+  3,978 accessions, because UniRef50 clusters above the 25-40% range where
+  Mtb-human homology lives. phmmer gives an E-value and a percent identity; the
+  30% "close" threshold is this atlas's convention, so the identity sits next to
+  the flag.
 - No druggability claim without a source. Nothing public supplies one today; see
   the open question in `docs/data-sources.md`.
 
@@ -89,7 +103,12 @@ interesting shapes:
 |---|---|---|
 | DprE1 | `Rv3790` | Essential (`ES`), 31 structures, direct ChEMBL target, **no** WHO entry |
 | InhA | `Rv1484` | Essential (`ES`), 135 structures, best-studied chemistry, full WHO entry |
-| MmpL3 | `Rv0206c` | Essential domain (`ESD`), 1 structure, ligands **only** via the *M. smegmatis* orthologue, no WHO entry |
+| MmpL3 | `Rv0206c` | Essential domain (`ESD`), 1 structure, ligands **only** via the *M. smegmatis* orthologue, no WHO entry, most vulnerable of the three (-11.0) |
+
+A fourth is worth keeping to hand: **GroEL2 (`Rv0440`)** is essential and highly
+vulnerable (-11.6) and would look like an excellent target, except that it is
+48% identical to human HSPD1. It is the case that proves the anti-target column
+is doing work.
 
 ## Extension point, deliberately empty
 
@@ -97,6 +116,24 @@ Per-compound annotations (a nuisance-compound classifier) plug in against
 `molecule_chembl_id` as a separate Parquet file with its own provenance. **Do not
 implement the classifier.** The seam exists so it can be added, re-run and
 versioned without touching an ingester or a bioactivity row.
+
+## The agent
+
+`atlas/agent.py` gives a model two tools: the store's schema and read-only SQL.
+One query tool beats ten narrow ones, because the questions a target biologist
+asks are joins.
+
+It is safe because the tables are copied into an in-memory DuckDB and then
+`enable_external_access` is turned off and the configuration locked, so no
+statement can read a file, attach a database or reach the network -- with a
+single-SELECT guard and a row cap on top. **That sandbox is the only thing
+between a generated string and the filesystem; it has its own tests and they
+test the lock as well as the guard.**
+
+The schema dump carries each table's trap (join `structures` on `uniprot_acc`
+not `rv_id`; `resistance` is keyed on gene symbol; the vulnerability index is
+negative), because a model that writes a plausible wrong join gets silent
+nonsense rather than an error.
 
 ## Conventions
 

@@ -153,7 +153,7 @@ export function App() {
         (gene.gene_name ?? "").toLowerCase().includes(text) ||
         (gene.product ?? "").toLowerCase().includes(text) ||
         (gene.uniprot_acc ?? "").toLowerCase().includes(text) ||
-        gene.drug_names.some((name) => name.toLowerCase().includes(text))
+        (gene.drug_names ?? []).some((name) => name.toLowerCase().includes(text))
       );
     });
   }, [all, query, essentiality, category, flags, hideHumanHomologs]);
@@ -231,9 +231,10 @@ export function App() {
             <span>
               <b>{(meta.counts.vulnerability_measured ?? 0).toLocaleString()}</b> vulnerability measured
             </span>
+            {/* Absent, not zero, when the clinical stage has not run here. */}
             <span>
-              <b>{(meta.counts.with_clinical_drug ?? 0).toLocaleString()}</b> with a TB drug ·{" "}
-              <b>{(meta.counts.trials ?? 0).toLocaleString()}</b> trials
+              <b>{meta.counts.with_clinical_drug?.toLocaleString() ?? "—"}</b> with a TB drug ·{" "}
+              <b>{meta.counts.trials?.toLocaleString() ?? "—"}</b> trials
             </span>
             <span className="hero">
               <b>{meta.counts.structural_gap.toLocaleString()}</b> essential · structure · no ligands

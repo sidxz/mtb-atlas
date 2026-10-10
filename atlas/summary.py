@@ -15,6 +15,7 @@ from pathlib import Path
 
 import duckdb
 
+from .clinical import TARGET_LINKS
 from .store import STORE, provenance, read, write_parquet
 
 # Whole-cell potency is attributed to a gene only through a compound that
@@ -72,12 +73,12 @@ drug_link AS (
     -- own protein. Complex membership and resistance are shown on the page,
     -- never counted here. See atlas/clinical.py.
     SELECT g.rv_id,
-           count(DISTINCT g.molecule_chembl_id) FILTER (WHERE g.link IN ('mechanism', 'bosch_2021'))
+           count(DISTINCT g.molecule_chembl_id) FILTER (WHERE g.link IN ({target_links}))
                AS n_drugs,
-           max(d.max_phase_tb) FILTER (WHERE g.link IN ('mechanism', 'bosch_2021'))
+           max(d.max_phase_tb) FILTER (WHERE g.link IN ({target_links}))
                AS best_drug_phase,
            list_sort(list_distinct(
-               list(d.pref_name) FILTER (WHERE g.link IN ('mechanism', 'bosch_2021'))
+               list(d.pref_name) FILTER (WHERE g.link IN ({target_links}))
            )) AS drug_names
     FROM drug_genes g
     JOIN drugs d USING (molecule_chembl_id)
@@ -91,14 +92,14 @@ complex_only AS (
       AND NOT EXISTS (
           SELECT 1 FROM drug_genes t
           WHERE t.rv_id = g.rv_id AND t.molecule_chembl_id = g.molecule_chembl_id
-            AND t.link IN ('mechanism', 'bosch_2021'))
+            AND t.link IN ({target_links}))
     GROUP BY 1
 ),
 gene_trials AS (
     SELECT g.rv_id, count(DISTINCT t.nct_id) AS n_trials
     FROM drug_genes g
     JOIN trial_drugs t USING (molecule_chembl_id)
-    WHERE g.link IN ('mechanism', 'bosch_2021')
+    WHERE g.link IN ({target_links})
     GROUP BY 1
 ),
 res AS (
@@ -159,12 +160,7 @@ SELECT
     coalesce(ca.n_whole_cell, 0) AS n_whole_cell,
     ca.best_whole_cell_pchembl,
 
-    coalesce(dl.n_drugs, 0)             AS n_drugs,
-    dl.best_drug_phase,
-    coalesce(dl.drug_names, [])         AS drug_names,
-    coalesce(co.n_complex_drugs, 0)     AS n_complex_drugs,
-    coalesce(gt.n_trials, 0)            AS n_trials,
-    (coalesce(dl.n_drugs, 0) > 0)       AS has_clinical_drug,
+    -- CLINICAL COLUMNS
 
     (res.gene IS NOT NULL)              AS in_who_catalogue,
     coalesce(res.n_catalogued, 0)       AS n_variants_catalogued,
@@ -196,6 +192,41 @@ LEFT JOIN gene_trials  gt ON gt.rv_id = w.rv_id
 ORDER BY w.start
 """
 
+# The one place that says which links count as a drug acting on a gene.
+TARGET_LINK_SQL = ", ".join(f"'{link}'" for link in TARGET_LINKS)
+
+CLINICAL_COLUMNS = """
+    coalesce(dl.n_drugs, 0)             AS n_drugs,
+    dl.best_drug_phase,
+    coalesce(dl.drug_names, [])         AS drug_names,
+    coalesce(co.n_complex_drugs, 0)     AS n_complex_drugs,
+    coalesce(gt.n_trials, 0)            AS n_trials,
+    (coalesce(dl.n_drugs, 0) > 0)       AS has_clinical_drug,
+"""
+# The clinical stage reaches ChEMBL and ClinicalTrials.gov, so a cold build can
+# stop short of it. Then every clinical column is NULL rather than 0: "not
+# built" and "no drug acts on this gene" are different answers, and only one of
+# them was measured.
+UNBUILT_CLINICAL_COLUMNS = """
+    NULL::BIGINT    AS n_drugs,
+    NULL::DOUBLE    AS best_drug_phase,
+    NULL::VARCHAR[] AS drug_names,
+    NULL::BIGINT    AS n_complex_drugs,
+    NULL::BIGINT    AS n_trials,
+    NULL::BOOLEAN   AS has_clinical_drug,
+"""
+# Shapes just wide enough for the clinical CTEs to bind when the files are
+# absent; they return no rows, and the columns above are NULL regardless.
+EMPTY_CLINICAL: dict[str, str] = {
+    "drugs": "SELECT NULL::VARCHAR AS molecule_chembl_id, NULL::VARCHAR AS pref_name,"
+    " NULL::VARCHAR AS inchi_key, NULL::DOUBLE AS max_phase_tb WHERE false",
+    "drug_genes": "SELECT NULL::VARCHAR AS rv_id, NULL::VARCHAR AS molecule_chembl_id,"
+    " NULL::VARCHAR AS link WHERE false",
+    "trial_drugs": "SELECT NULL::VARCHAR AS nct_id, NULL::VARCHAR AS molecule_chembl_id"
+    " WHERE false",
+}
+CLINICAL_COUNTS = ("with_clinical_drug", "drugs", "trials")
+
 TABLES = {
     "walk": "crosswalk",
     "act": "activities",
@@ -213,16 +244,34 @@ TABLES = {
 }
 
 
+def built(name: str, *, store: Path | None = None) -> bool:
+    return ((store or STORE) / f"{name}.parquet").exists()
+
+
 def build(*, store: Path | None = None) -> Path:
     base = store or STORE
     connection = duckdb.connect()
+    missing = [name for name in EMPTY_CLINICAL if not built(name, store=store)]
     for alias, name in TABLES.items():
-        connection.sql(f"CREATE VIEW {alias} AS SELECT * FROM '{base / f'{name}.parquet'}'")
-    rows = connection.sql(SUMMARY_SQL)
+        source = (
+            EMPTY_CLINICAL[name]
+            if name in missing
+            else f"SELECT * FROM '{base / f'{name}.parquet'}'"
+        )
+        connection.sql(f"CREATE VIEW {alias} AS {source}")
+    rows = connection.sql(
+        SUMMARY_SQL.replace(
+            "    -- CLINICAL COLUMNS\n",
+            UNBUILT_CLINICAL_COLUMNS if missing else CLINICAL_COLUMNS,
+        ).replace("{target_links}", TARGET_LINK_SQL)
+    )
     columns = rows.columns
     records = [dict(zip(columns, row, strict=True)) for row in rows.fetchall()]
 
-    versions = {name: provenance(name, store=store)[0] for name in sorted(set(TABLES.values()))}
+    versions = {
+        name: provenance(name, store=store)[0]
+        for name in sorted(set(TABLES.values()) - set(missing))
+    }
     return write_parquet(
         "target_summary",
         records,
@@ -255,5 +304,11 @@ def counts(*, store: Path | None = None) -> dict[str, int]:
     row = relation.fetchone()
     out = {name: int(value or 0) for name, value in zip(relation.columns, row, strict=True)}
     for name in ("drugs", "trials"):
-        out[name] = int(read(name, store=store).aggregate("count(*)").fetchone()[0])
+        if built(name, store=store):
+            out[name] = int(read(name, store=store).aggregate("count(*)").fetchone()[0])
+    # A key that is absent says the layer was never built. A zero would say it
+    # was built and found nothing.
+    if not built("drug_genes", store=store):
+        for name in CLINICAL_COUNTS:
+            out.pop(name, None)
     return out

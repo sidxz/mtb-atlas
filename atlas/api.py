@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from .clinical import TARGET_LINKS
 from .store import STORE, provenance
-from .summary import counts
+from .summary import EMPTY_CLINICAL, built, counts
 
 # Licences differ per source and the UI shows them, so they live beside the
 # versions rather than in a footnote.
@@ -33,6 +33,7 @@ LICENCES = {
     "vulnerability": ("Bosch 2021, Cell (CRISPRi)", "CC BY 4.0"),
     "interactions": ("STRING v12.5", "CC BY 4.0"),
     "homology": ("phmmer vs reviewed human proteome", "CC BY 4.0"),
+    "ligands": ("RCSB PDB chemical components", "CC0 1.0"),
     "drugs": ("ChEMBL drug indications and mechanisms", "CC BY-SA 3.0"),
     # The terms ask for attribution, the processing date (carried in the
     # version) and a statement of modifications (docs/data-sources.md).
@@ -105,7 +106,20 @@ def _db() -> duckdb.DuckDBPyConnection:
         path = STORE / f"{name}.parquet"
         if path.exists():
             connection.sql(f"CREATE VIEW {name} AS SELECT * FROM '{path}'")
+        elif name in EMPTY_CLINICAL:
+            # An empty stand-in, so a store without the clinical layer answers
+            # rather than failing. Without it DuckDB falls back to a
+            # replacement scan and binds the route function of the same name.
+            connection.sql(f"CREATE VIEW {name} AS {EMPTY_CLINICAL[name]}")
     return connection
+
+
+def _require_clinical() -> None:
+    """Routes that are only about drugs and trials have no honest empty answer."""
+    if not built("drug_genes"):
+        raise HTTPException(
+            503, "The clinical layer is not built in this store. Run `atlas clinical`."
+        )
 
 
 # --- models ------------------------------------------------------------------
@@ -177,15 +191,17 @@ class TargetSummary(BaseModel):
     conflict: bool = False
     # Drugs said to act on this gene's own protein (ChEMBL mechanism or Bosch
     # 2021), their best phase *for TB*, and the trials testing them.
-    n_drugs: int = 0
-    best_drug_phase: float | None = None
-    drug_names: list[str] = Field(default_factory=list)
-    n_complex_drugs: int = 0
-    n_trials: int = 0
-    has_clinical_drug: bool = False
+    # None where the clinical layer has not been built; [] means none found.
+    drug_names: list[str] | None = Field(default_factory=list)
     # From the UniProt entry; None where there is no protein (RNA genes).
     n_transmembrane: int | None = None
     n_references: int | None = None
+    # None, not 0, where the clinical stage has not run in this store.
+    n_drugs: int | None = 0
+    best_drug_phase: float | None = None
+    n_complex_drugs: int | None = 0
+    n_trials: int | None = 0
+    has_clinical_drug: bool | None = False
 
 
 class TargetPage(BaseModel):
@@ -232,6 +248,7 @@ class TargetDetail(TargetSummary):
     pubmed_ids: list[str] = Field(default_factory=list)
     protein_existence: str | None = None
     annotation_score: float | None = None
+    bound_ligands: list[dict[str, Any]] = Field(default_factory=list)
     drugs: list[dict[str, Any]] = Field(default_factory=list)
     trials: list[dict[str, Any]] = Field(default_factory=list)
     absences: list[str] = Field(default_factory=list)
@@ -463,27 +480,59 @@ def target(rv_id: str) -> TargetDetail:
         [accession],
     )
     annotation = annotations[0] if annotations else {}
-    drugs = _query(
-        connection,
-        "SELECT g.link, g.target_chembl_id, g.target_name, g.n_target_components,"
-        " g.shared_accession, g.source_text, g.n_variants, d.molecule_chembl_id, d.pref_name,"
-        " d.max_phase_tb, d.max_phase, d.first_approval, d.molecule_type"
-        " FROM drug_genes g JOIN drugs d USING (molecule_chembl_id) WHERE g.rv_id = ?"
-        " ORDER BY d.max_phase_tb DESC NULLS LAST, d.pref_name, g.link",
-        [rv_id],
+    clinical = built("drug_genes")
+    drugs = (
+        _query(
+            connection,
+            "SELECT g.link, g.target_chembl_id, g.target_name, g.n_target_accessions,"
+            " g.target_type,"
+            " g.shared_accession, g.source_text, g.n_variants, d.molecule_chembl_id, d.pref_name,"
+            " d.max_phase_tb, d.max_phase, d.first_approval, d.molecule_type"
+            " FROM drug_genes g JOIN drugs d USING (molecule_chembl_id) WHERE g.rv_id = ?"
+            " ORDER BY d.max_phase_tb DESC NULLS LAST, d.pref_name, g.link",
+            [rv_id],
+        )
+        if clinical
+        else []
     )
-    trials = _query(
+    trials = (
+        _query(
+            connection,
+            "SELECT t.nct_id, any_value(t.brief_title) AS brief_title,"
+            " any_value(t.phases) AS phases,"
+            " any_value(t.phase_max) AS phase_max, any_value(t.status) AS status,"
+            " any_value(t.start_date) AS start_date, any_value(t.lead_sponsor) AS lead_sponsor,"
+            " any_value(t.has_results) AS has_results,"
+            " list_sort(list_distinct(list(d.pref_name))) AS drugs"
+            " FROM drug_genes g JOIN trial_drugs td USING (molecule_chembl_id)"
+            " JOIN trials t USING (nct_id)"
+            " JOIN drugs d ON d.molecule_chembl_id = g.molecule_chembl_id"
+            f" WHERE g.rv_id = ? AND g.link IN ({TARGET_LINK_SQL})"
+            " GROUP BY t.nct_id ORDER BY start_date DESC NULLS LAST",
+            [rv_id],
+        )
+        if clinical
+        else []
+    )
+
+    # What is actually bound in this protein's own chains, named, and tied back
+    # to the compound and the drug where the same molecule is one.
+    bound_ligands = _query(
         connection,
-        "SELECT t.nct_id, any_value(t.brief_title) AS brief_title, any_value(t.phases) AS phases,"
-        " any_value(t.phase_max) AS phase_max, any_value(t.status) AS status,"
-        " any_value(t.start_date) AS start_date, any_value(t.lead_sponsor) AS lead_sponsor,"
-        " any_value(t.has_results) AS has_results,"
-        " list_sort(list_distinct(list(d.pref_name))) AS drugs"
-        " FROM drug_genes g JOIN trial_drugs td USING (molecule_chembl_id)"
-        " JOIN trials t USING (nct_id) JOIN drugs d ON d.molecule_chembl_id = g.molecule_chembl_id"
-        f" WHERE g.rv_id = ? AND g.link IN ({TARGET_LINK_SQL})"
-        " GROUP BY t.nct_id ORDER BY start_date DESC NULLS LAST",
-        [rv_id],
+        "WITH bound AS ("
+        "  SELECT DISTINCT unnest(ligand_ids) AS comp_id FROM structures WHERE uniprot_acc = ?)"
+        " SELECT b.comp_id, l.name, l.formula_weight, l.inchikey, l.smiles,"
+        "   coalesce(l.chembl_id, c.molecule_chembl_id) AS molecule_chembl_id,"
+        "   d.pref_name AS drug_name, d.max_phase_tb,"
+        "   (SELECT max(a.pchembl_value) FROM activities a"
+        "     WHERE a.molecule_chembl_id = coalesce(l.chembl_id, c.molecule_chembl_id)"
+        "       AND a.evidence <> 'whole_cell') AS best_pchembl"
+        " FROM bound b"
+        " LEFT JOIN ligands l USING (comp_id)"
+        " LEFT JOIN compounds c ON c.molecule_chembl_id = l.chembl_id OR c.inchi_key = l.inchikey"
+        " LEFT JOIN drugs d ON d.molecule_chembl_id = l.chembl_id OR d.inchi_key = l.inchikey"
+        " ORDER BY d.max_phase_tb DESC NULLS LAST, best_pchembl DESC NULLS LAST, b.comp_id",
+        [accession],
     )
 
     absences = []
@@ -503,7 +552,12 @@ def target(rv_id: str) -> TargetDetail:
             "A vulnerability index exists but did not meet the study's own criteria "
             "for a confident estimate, so treat it as indicative only."
         )
-    if not any(d["link"] in TARGET_LINKS for d in drugs):
+    if not clinical:
+        absences.append(
+            "The clinical layer is not built in this store, so nothing is known here about "
+            "drugs or trials. Run `atlas clinical`."
+        )
+    elif not any(d["link"] in TARGET_LINKS for d in drugs):
         absences.append(
             "No drug with a TB indication in ChEMBL acts on this gene by ChEMBL's mechanism "
             "or Bosch 2021's annotation."
@@ -525,6 +579,7 @@ def target(rv_id: str) -> TargetDetail:
             for name, value in annotation.items()
             if value is not None and name not in ("n_transmembrane", "n_references")
         },
+        bound_ligands=bound_ligands,
         drugs=drugs,
         trials=trials,
         absences=absences,
@@ -558,6 +613,7 @@ def drugs(
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> dict[str, Any]:
     """TB drugs and candidates, best TB phase first, with the genes they act on."""
+    _require_clinical()
     where: list[str] = []
     params: list[Any] = []
     if q:
@@ -598,6 +654,7 @@ def drugs(
 @app.get("/drugs/{molecule_chembl_id}")
 def drug(molecule_chembl_id: str) -> dict[str, Any]:
     """One drug: mechanisms, every gene link with how it was made, trials, bioactivity."""
+    _require_clinical()
     connection = _db()
     found = _query(
         connection, "SELECT * FROM drugs WHERE molecule_chembl_id = ?", [molecule_chembl_id]
@@ -662,6 +719,7 @@ def trials(
     limit: Annotated[int, Query(ge=1, le=2000)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> dict[str, Any]:
+    _require_clinical()
     if sort not in TRIAL_SORTS:
         raise HTTPException(400, f"sort must be one of {list(TRIAL_SORTS)}")
     where: list[str] = []
@@ -705,6 +763,7 @@ def trials(
 
 @app.get("/trials/{nct_id}")
 def trial(nct_id: str) -> dict[str, Any]:
+    _require_clinical()
     connection = _db()
     found = _query(connection, "SELECT * FROM trials WHERE nct_id = ?", [nct_id])
     if not found:
@@ -717,10 +776,9 @@ def trial(nct_id: str) -> dict[str, Any]:
     )
     genes = _query(
         connection,
-        "SELECT DISTINCT g.rv_id, s.gene_name, g.link, d.pref_name AS drug"
+        "SELECT DISTINCT g.rv_id, s.gene_name"
         " FROM trial_drugs td JOIN drug_genes g USING (molecule_chembl_id)"
         " JOIN target_summary s USING (rv_id)"
-        " JOIN drugs d ON d.molecule_chembl_id = g.molecule_chembl_id"
         f" WHERE td.nct_id = ? AND g.link IN ({TARGET_LINK_SQL}) ORDER BY g.rv_id",
         [nct_id],
     )

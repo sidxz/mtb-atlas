@@ -11,13 +11,13 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from atlas import api, store
+from atlas import api, store, summary
 
 
 @pytest.fixture
 def client(evidence_store: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    monkeypatch.setattr(api, "STORE", evidence_store)
-    monkeypatch.setattr(store, "STORE", evidence_store)
+    for module in (api, store, summary):
+        monkeypatch.setattr(module, "STORE", evidence_store)
     return TestClient(api.app)
 
 
@@ -106,3 +106,19 @@ def test_structures_separate_a_neighbours_ligand(client: TestClient) -> None:
     assert entry["ligand_ids_elsewhere"] == ["RFP"]
     rpob = client.get("/targets/Rv0667").json()
     assert next(s for s in rpob["structures"] if s["pdb_id"] == "5UHB")["ligand_ids"] == ["RFP"]
+
+
+def test_a_bound_ligand_is_named_and_tied_to_its_drug(client: TestClient) -> None:
+    """5UHB holds rifampicin on rpoB's chain, and rifampicin is an approved TB drug."""
+    (ligand,) = client.get("/targets/Rv0667").json()["bound_ligands"]
+    assert ligand["comp_id"] == "RFP"
+    assert ligand["molecule_chembl_id"] == "CHEMBL374478"
+    assert ligand["drug_name"] == "RIFAMPIN"
+    assert ligand["max_phase_tb"] == 4
+
+
+def test_a_bound_ligand_that_is_no_known_drug_is_still_named(client: TestClient) -> None:
+    (ligand,) = client.get("/targets/Rv1484").json()["bound_ligands"]  # InhA, 1ZID
+    assert ligand["comp_id"] == "ZID"
+    assert "NICOTINAMIDE" in ligand["name"]
+    assert ligand["drug_name"] is None

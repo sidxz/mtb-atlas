@@ -170,6 +170,7 @@ export function TargetDetailPanel({
                     </div>
                   )}
                 </div>
+                <BoundLigands detail={detail} />
                 <StructureTable detail={detail} />
               </>
             )}
@@ -415,7 +416,7 @@ function Evidence({ detail }: { detail: Detail }) {
         {detail.n_drugs ? (
           <>
             <span className="big">{phaseLabel(detail.best_drug_phase)}</span>{" "}
-            <span className="dim">for TB · {detail.drug_names.join(", ")}</span>
+            <span className="dim">for TB · {(detail.drug_names ?? []).join(", ")}</span>
             <div className="note">
               {detail.n_trials} linked trial{detail.n_trials === 1 ? "" : "s"}. A drug counts here only
               when ChEMBL&rsquo;s mechanism or Bosch 2021 names this gene&rsquo;s protein.
@@ -423,8 +424,10 @@ function Evidence({ detail }: { detail: Detail }) {
           </>
         ) : (
           <span className="absent">
-            no drug with a TB indication acts on this gene
-            {detail.n_complex_drugs > 0 &&
+            {detail.n_drugs === null
+              ? "the clinical layer is not built in this store — run `atlas clinical`"
+              : "no drug with a TB indication acts on this gene"}
+            {!!detail.n_complex_drugs &&
               ` (${detail.n_complex_drugs} act on a complex it belongs to)`}
           </span>
         )}
@@ -517,6 +520,43 @@ function PlddtBar({ predicted }: { predicted: NonNullable<Detail["alphafold"]> }
   );
 }
 
+function BoundLigands({ detail }: { detail: Detail }) {
+  // Defaulted, not asserted: an older API is a degraded page, not a blank one.
+  const ligands = detail.bound_ligands ?? [];
+  if (!ligands.length) return null;
+  return (
+    <div className="scroller" style={{ marginTop: 12 }}>
+      <p className="lab">Bound on this protein&rsquo;s chains</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>What it is</th>
+            <th className="n">pChEMBL</th>
+            <th>TB phase</th>
+          </tr>
+        </thead>
+        <tbody>
+          {ligands.map((l) => (
+            <tr key={l.comp_id} title={l.name ?? ""}>
+              <td className="id">{l.comp_id}</td>
+              <td className="prodcell">
+                {l.drug_name ? <span className="chip accent">{l.drug_name}</span> : null}{" "}
+                {l.molecule_chembl_id && !l.drug_name ? (
+                  <span className="mono dim">{l.molecule_chembl_id}</span>
+                ) : null}{" "}
+                {l.name ?? <span className="absent">unnamed component</span>}
+              </td>
+              <td className="n">{number(l.best_pchembl)}</td>
+              <td className="dim">{l.max_phase_tb === null ? "—" : phaseLabel(l.max_phase_tb)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function StructureTable({ detail }: { detail: Detail }) {
   return (
     <div className="scroller" style={{ marginTop: 12 }}>
@@ -542,7 +582,7 @@ function StructureTable({ detail }: { detail: Detail }) {
                 {s.ligand_ids.length ? s.ligand_ids.join(" ") : <span className="absent">—</span>}
               </td>
               <td className="mono faint" title="Bound to another chain in the same entry">
-                {s.ligand_ids_elsewhere.length ? s.ligand_ids_elsewhere.join(" ") : "—"}
+                {s.ligand_ids_elsewhere?.length ? s.ligand_ids_elsewhere.join(" ") : "—"}
               </td>
             </tr>
           ))}

@@ -58,15 +58,18 @@ export interface TargetSummary {
   has_ligands: boolean;
   structural_gap: boolean;
   conflict: boolean;
-  /** Drugs a source says act on this gene's own protein (ChEMBL mechanism, Bosch 2021). */
-  n_drugs: number;
+  /**
+   * Drugs a source says act on this gene's own protein (ChEMBL mechanism, Bosch
+   * 2021). Null, not zero, where the clinical layer is not built in this store.
+   */
+  n_drugs: number | null;
   /** Their best phase *for tuberculosis*, not for any indication. */
   best_drug_phase: number | null;
-  drug_names: string[];
+  drug_names: string[] | null;
   /** Drugs that reach this gene only as one member of the complex they act on. */
-  n_complex_drugs: number;
-  n_trials: number;
-  has_clinical_drug: boolean;
+  n_complex_drugs: number | null;
+  n_trials: number | null;
+  has_clinical_drug: boolean | null;
   /** From the UniProt entry; null where there is no protein (RNA genes). */
   n_transmembrane: number | null;
   n_references: number | null;
@@ -194,6 +197,7 @@ export interface TargetDetail extends TargetSummary {
   pfam_ids: string[];
   go_ids: string[];
   ec_numbers: string[];
+  bound_ligands: BoundLigand[];
   /** UniProt's biology: curated if reviewed, automatic if not. Null or empty: UniProt is silent. */
   reviewed: boolean | null;
   function: string | null;
@@ -222,7 +226,25 @@ export interface TargetDetail extends TargetSummary {
  * on this gene's own protein; a complex member is one subunit of what the drug
  * acts on, and WHO resistance is not target engagement.
  */
-export type DrugLink = "mechanism" | "mechanism_complex" | "bosch_2021" | "who_resistance";
+export type DrugLink =
+  | "mechanism"
+  | "mechanism_complex"
+  | "bosch_2021"
+  | "structure"
+  | "who_resistance";
+
+/** A component modelled on this protein's own chain, named and tied to a molecule. */
+export interface BoundLigand {
+  comp_id: string;
+  name: string | null;
+  formula_weight: number | null;
+  inchikey: string | null;
+  smiles: string | null;
+  molecule_chembl_id: string | null;
+  drug_name: string | null;
+  max_phase_tb: number | null;
+  best_pchembl: number | null;
+}
 
 export interface Ref {
   type: string;
@@ -234,7 +256,9 @@ interface LinkDetail {
   link: DrugLink;
   target_chembl_id: string | null;
   target_name: string | null;
-  n_target_components: number | null;
+  /** Accessions on ChEMBL's target, which for a ribosome is fewer than its components. */
+  n_target_accessions: number | null;
+  target_type: string | null;
   shared_accession: boolean;
   /** What the source actually said: the mechanism, Bosch's text, the WHO drug. */
   source_text: string | null;
@@ -369,7 +393,7 @@ export interface Trial extends TrialSummary {
 
 export interface TrialDetail extends Omit<Trial, "drugs"> {
   drugs: (TrialDrug & { matched_names: string[]; max_phase_tb: number | null })[];
-  genes: { rv_id: string; gene_name: string | null; link: DrugLink; drug: string | null }[];
+  genes: { rv_id: string; gene_name: string | null }[];
 }
 
 export interface Page<T> {

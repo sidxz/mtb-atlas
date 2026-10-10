@@ -29,8 +29,13 @@ def main(argv: list[str] | None = None) -> int:
         runner = {
             "build": pipeline.build_all,
             "identity": pipeline.build_identity,
+            # The roll-up reads the clinical tables where they exist, so the
+            # evidence stage refreshes their links first -- no network, they
+            # are joins over the store. Where they do not exist, the roll-up
+            # leaves the clinical columns NULL and says so.
             "evidence": lambda force: [
                 *pipeline.build_evidence(force=force),
+                *pipeline.relink_clinical(),
                 pipeline.build_summary(),
             ],
             "clinical": lambda force: [

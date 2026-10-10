@@ -76,6 +76,20 @@ def build_evidence(*, force: bool = False) -> list[Path]:
     paths = []
     _say("[evidence] structures (RCSB PDB)")
     paths.append(pdb.build(accessions, retrieved_at=retrieved_at, force=force))
+    _say("[evidence] ligand identity (RCSB chemical components)")
+    paths.append(
+        pdb.build_ligands(
+            sorted(
+                {
+                    row[0]
+                    for row in read("structures")
+                    .project("unnest(list_concat(ligand_ids, ligand_ids_elsewhere))")
+                    .fetchall()
+                }
+            ),
+            retrieved_at=retrieved_at,
+        )
+    )
     _say("[evidence] predicted structures (AlphaFold)")
     paths.append(alphafold.build(predicted, retrieved_at=retrieved_at, force=force))
     _say("[evidence] bioactivity (ChEMBL)")
@@ -101,6 +115,21 @@ def build_clinical(*, force: bool = False) -> list[Path]:
     _say("[clinical] drug -> gene and trial -> drug links")
     paths += clinical.build()
     return paths
+
+
+def relink_clinical() -> list[Path]:
+    """Re-join drugs and trials onto whatever the store now holds.
+
+    The links reach genes through the crosswalk, Bosch 2021 and the WHO
+    catalogue, so an evidence rebuild leaves them stale. This touches no
+    upstream service; where the clinical stage has never run, there is nothing
+    to re-join and the roll-up reports the layer as unbuilt.
+    """
+    if not all(summary.built(name) for name in ("drugs", "trials", "ligands")):
+        _say("[clinical] not built in this store; skipping the re-link")
+        return []
+    _say("[clinical] re-linking drugs and trials to the rebuilt evidence")
+    return clinical.build()
 
 
 def build_summary() -> Path:

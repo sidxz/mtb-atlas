@@ -11,8 +11,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
+import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -28,6 +31,7 @@ RAW = ROOT / "data" / "raw"
 STORE = ROOT / "data" / "store"
 
 _last_request: dict[str, float] = {}
+_throttle_lock = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -57,10 +61,18 @@ class Fetched:
 
 
 def _throttle(host: str, min_interval: float) -> None:
-    elapsed = time.monotonic() - _last_request.get(host, 0.0)
-    if elapsed < min_interval:
-        time.sleep(min_interval - elapsed)
-    _last_request[host] = time.monotonic()
+    """Hold the per-host request rate, including across concurrent workers.
+
+    The slot is reserved under the lock and slept for outside it, so eight
+    workers queue up behind each other instead of all reading the same stale
+    timestamp and firing at once.
+    """
+    with _throttle_lock:
+        elapsed = time.monotonic() - _last_request.get(host, 0.0)
+        wait = max(0.0, min_interval - elapsed)
+        _last_request[host] = time.monotonic() + wait
+    if wait:
+        time.sleep(wait)
 
 
 def fetch(
@@ -143,10 +155,92 @@ def fetch(
     return fetched
 
 
-def fetch_json(url: str, *, min_interval: float = 0.2, timeout: float = 120.0) -> object:
+def fetch_json(
+    url: str,
+    *,
+    min_interval: float = 0.2,
+    timeout: float = 120.0,
+    client: httpx.Client | None = None,
+    attempts: int = 3,
+) -> object:
     """GET JSON without caching, for the many small lookups that make up a crosswalk."""
-    _throttle(httpx.URL(url).host, min_interval)
+    owns_client = client is None
+    client = client or httpx.Client(follow_redirects=True, timeout=timeout)
+    try:
+        for attempt in range(1, attempts + 1):
+            _throttle(httpx.URL(url).host, min_interval)
+            try:
+                response = client.get(url, headers={"User-Agent": USER_AGENT})
+                response.raise_for_status()
+                return response.json()
+            except (httpx.HTTPError, ValueError):
+                if attempt == attempts:
+                    raise
+                time.sleep(2.0**attempt)
+    finally:
+        if owns_client:
+            client.close()
+    raise AssertionError("unreachable")
+
+
+def post_json(
+    url: str,
+    payload: object,
+    *,
+    min_interval: float = 0.2,
+    timeout: float = 180.0,
+    attempts: int = 3,
+) -> object:
+    """POST JSON, for the batch endpoints (RCSB search and GraphQL)."""
     with httpx.Client(follow_redirects=True, timeout=timeout) as client:
-        response = client.get(url, headers={"User-Agent": USER_AGENT})
-        response.raise_for_status()
-        return response.json()
+        for attempt in range(1, attempts + 1):
+            _throttle(httpx.URL(url).host, min_interval)
+            try:
+                response = client.post(url, json=payload, headers={"User-Agent": USER_AGENT})
+                response.raise_for_status()
+                return response.json()
+            except (httpx.HTTPError, ValueError):
+                if attempt == attempts:
+                    raise
+                time.sleep(2.0**attempt)
+    raise AssertionError("unreachable")
+
+
+def fetch_json_many(
+    urls: Sequence[str],
+    *,
+    workers: int = 8,
+    min_interval: float = 0.1,
+    timeout: float = 60.0,
+    label: str = "",
+) -> dict[str, object]:
+    """GET many small JSON endpoints concurrently, skipping the ones that fail.
+
+    AlphaFold and ChEMBL are keyed per accession or per target, so a build means
+    thousands of tiny requests. Eight in flight against a shared throttle keeps
+    this to minutes without being rude. Failures are reported and skipped rather
+    than aborting a long build.
+    """
+    out: dict[str, object] = {}
+    failures: list[tuple[str, str]] = []
+    with (
+        httpx.Client(follow_redirects=True, timeout=timeout) as client,
+        ThreadPoolExecutor(max_workers=workers) as pool,
+    ):
+        jobs = {
+            pool.submit(
+                fetch_json, url, min_interval=min_interval, timeout=timeout, client=client
+            ): url
+            for url in urls
+        }
+        for done, future in enumerate(as_completed(jobs), 1):
+            url = jobs[future]
+            try:
+                out[url] = future.result()
+            except Exception as error:  # noqa: BLE001 - one bad key must not end a build
+                failures.append((url, str(error)[:120]))
+            if label and (done % 200 == 0 or done == len(jobs)):
+                print(f"  {label} {done}/{len(jobs)}", file=sys.stderr)
+    if failures:
+        print(f"  {label}: {len(failures)} failed, e.g. {failures[0]}", file=sys.stderr)
+    return out

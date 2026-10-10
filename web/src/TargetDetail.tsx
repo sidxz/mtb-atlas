@@ -812,7 +812,11 @@ function Chemistry({ detail, onOpen }: { detail: Detail; onOpen: (focus: Focus) 
             </tr>
           </thead>
           <tbody>
-            {byCompound.slice(0, 250).map(({ activity, compound, cell }) => (
+            {/* All of them: the tab badge counts 356 for inhA and a table
+                that stopped at 250 was claiming a number it did not show.
+                Each depiction waits until it scrolls into view, so the cost
+                is the rows, not the molecules. */}
+            {byCompound.map(({ activity, compound, cell }) => (
               <tr
                 key={activity.molecule_chembl_id}
                 onClick={() =>

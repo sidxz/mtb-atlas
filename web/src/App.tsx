@@ -4,7 +4,7 @@
  * away, the same layout for TB drugs and the trials testing them.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type Meta, type TargetDetail, type TargetSummary } from "./api";
 import { CATEGORIES, GenomeCanvas, RINGS, colourOf, type ColourBy } from "./GenomeCanvas";
 import { TargetDetailPanel } from "./TargetDetail";
@@ -107,6 +107,53 @@ const SCAN_COLUMNS = new Set([
 
 const cellClass = (key: string, numeric: boolean) =>
   key === "rv_id" ? "id" : key === "product" ? "prodcell" : numeric ? "n" : undefined;
+
+/** One row, memoised.
+ *
+ * The whole genome is in the table, so a sort reorders 4,173 rows over 15
+ * columns. Without this React rebuilds all 62,595 cells and a column click
+ * costs the best part of a second; memoised, the reorder moves existing DOM
+ * nodes and only the row whose selection changed re-renders.
+ */
+const GeneRow = memo(function GeneRow({
+  gene,
+  columns,
+  selected,
+  onSelect,
+}: {
+  gene: TargetSummary;
+  columns: [string, string, boolean][];
+  selected: boolean;
+  onSelect: (rv: string) => void;
+}) {
+  return (
+    <tr className="generow" aria-selected={selected} onClick={() => onSelect(gene.rv_id)}>
+      {columns.map(([key, , numeric]) => (
+        <td key={key} className={cellClass(key, numeric)}>
+          {cell(gene, key)}
+        </td>
+      ))}
+    </tr>
+  );
+});
+
+// Rows off screen are not rendered, so a few above and below keep a fast
+// scroll from showing blank bands before React catches up.
+const OVERSCAN = 15;
+
+/** Height for the rows that are not rendered, so the scrollbar tells the truth.
+ *
+ * Every row is exactly one line — `white-space: nowrap` on every cell and the
+ * product column ellipsised — so one measured height stands for all of them.
+ */
+function Spacer({ rows, height, columns }: { rows: number; height: number; columns: number }) {
+  if (rows <= 0) return null;
+  return (
+    <tr aria-hidden="true">
+      <td colSpan={columns} style={{ height: rows * height, padding: 0, border: 0 }} />
+    </tr>
+  );
+}
 
 /** One cell renderer per column, so the header and the body cannot drift apart. */
 function cell(gene: TargetSummary, key: string): React.ReactNode {
@@ -304,6 +351,34 @@ export function App() {
 
   const matching = useMemo(() => new Set(filtered.map((g) => g.rv_id)), [filtered]);
   const narrowed = filtered.length !== all.length && all.length > 0;
+
+  // The table holds every gene, so only the rows on screen are rendered.
+  // Without this a sort reorders 4,173 keyed rows, which is half a second of
+  // DOM work however well the rows themselves are memoised.
+  const scroller = useRef<HTMLDivElement | null>(null);
+  const [viewport, setViewport] = useState({ top: 0, height: 900 });
+  const [rowHeight, setRowHeight] = useState(30);
+  useEffect(() => {
+    // The distance between two rows, not one row's box: with collapsed
+    // borders those differ by half a pixel, and over 4,000 spacer rows half a
+    // pixel is a two-thousand-pixel lie in the scrollbar.
+    const rows = scroller.current?.querySelectorAll("tbody tr.generow");
+    if (!rows || rows.length < 2) return;
+    const measured = rows[1].getBoundingClientRect().top - rows[0].getBoundingClientRect().top;
+    if (measured > 1 && Math.abs(measured - rowHeight) > 0.05) setRowHeight(measured);
+  });
+  // Clamped so the window is never empty. The spacer's height is derived from
+  // `rowHeight` and the scroll position is derived from the spacer, so a
+  // corrected measurement can briefly put the scroll position past where the
+  // new maths expects the last row to be.
+  const firstRow = Math.min(
+    Math.max(0, sorted.length - 1),
+    Math.max(0, Math.floor(viewport.top / rowHeight) - OVERSCAN),
+  );
+  const lastRow = Math.min(
+    sorted.length,
+    Math.max(firstRow + 1, Math.ceil((viewport.top + viewport.height) / rowHeight) + OVERSCAN),
+  );
   // With a gene open the table yields most of its width to the detail panel.
   const columns = useMemo(
     () =>
@@ -553,12 +628,24 @@ export function App() {
                   ? "Matching genes"
                   : "All genes"}
               </h2>
+              {/* "All genes" used to sit above a table holding the first 300
+                  of them. All of them are in here now, so the heading is the
+                  whole truth and the count has nothing left to qualify. */}
               <span className="count">
                 {sorted.length.toLocaleString()} of {all.length.toLocaleString()}
-                {sorted.length > 300 ? " · showing first 300" : ""}
               </span>
             </div>
-            <div className="scroller" style={{ flex: 1, minHeight: 0 }}>
+            <div
+              className="scroller"
+              style={{ flex: 1, minHeight: 0 }}
+              ref={scroller}
+              onScroll={(event) =>
+                setViewport({
+                  top: event.currentTarget.scrollTop,
+                  height: event.currentTarget.clientHeight,
+                })
+              }
+            >
               <table>
                 <thead>
                   <tr>
@@ -591,19 +678,21 @@ export function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sorted.slice(0, 300).map((gene) => (
-                    <tr
+                  <Spacer rows={firstRow} height={rowHeight} columns={columns.length} />
+                  {sorted.slice(firstRow, lastRow).map((gene) => (
+                    <GeneRow
                       key={gene.rv_id}
-                      aria-selected={gene.rv_id === selected}
-                      onClick={() => setSelected(gene.rv_id)}
-                    >
-                      {columns.map(([key, , numeric]) => (
-                        <td key={key} className={cellClass(key, numeric)}>
-                          {cell(gene, key)}
-                        </td>
-                      ))}
-                    </tr>
+                      gene={gene}
+                      columns={columns}
+                      selected={gene.rv_id === selected}
+                      onSelect={setSelected}
+                    />
                   ))}
+                  <Spacer
+                    rows={sorted.length - lastRow}
+                    height={rowHeight}
+                    columns={columns.length}
+                  />
                 </tbody>
               </table>
             </div>

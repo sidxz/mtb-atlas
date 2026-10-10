@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import argparse
 
-from . import crosswalk
+from . import pipeline
 from .store import read
+from .summary import counts
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="atlas", description=__doc__)
     parser.add_argument(
-        "command", choices=("build", "summary"), help="build the store, or summarise it"
+        "command",
+        choices=("build", "identity", "evidence", "summary"),
+        help="build everything, just the identity or evidence stage, or summarise the store",
     )
     parser.add_argument(
         "--force",
@@ -20,9 +23,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    if args.command == "build":
-        for path in crosswalk.build_all(force=args.force):
+    if args.command in ("build", "identity", "evidence"):
+        runner = {
+            "build": pipeline.build_all,
+            "identity": pipeline.build_identity,
+            "evidence": pipeline.build_evidence,
+        }[args.command]
+        for path in runner(force=args.force):
             print(f"wrote {path.relative_to(path.parent.parent.parent)}")
+        return 0
+
+    if args.command == "summary":
+        for key, value in counts().items():
+            print(f"{value:>8,}  {key.replace('_', ' ')}")
         return 0
 
     print(

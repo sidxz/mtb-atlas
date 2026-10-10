@@ -260,6 +260,22 @@ and trials view, `/search` over every object at once, and the agent. A new kind
 of evidence is not finished until the agent's schema carries its trap, because
 that is the only surface where a wrong join is silent.
 
+**The genome view has two states, and the point is that they are different.**
+With nothing selected the gene table takes the whole width — 15 columns,
+nothing clipped. With a gene open the table keeps only the columns you scan by
+(plus whatever you sorted on) and the detail panel takes the rest. Before this,
+both tables were clipped at once while a 340px ring reserved a 1,237px band;
+the ring now lives in the rail beside the control it is the legend for.
+
+Two rules that follow, and are easy to undo by accident:
+
+- **A wider panel must not mean a wider line of text.** Prose in the detail
+  panel caps at 78ch and the evidence rows run in two columns past 1,500px.
+  The width is for tables and the viewer, not for the measure.
+- **Numbers must stay in columns.** Everything is Inter now, including
+  identifiers; `font-variant-numeric: tabular-nums` on the body is what the
+  monospace used to do for free, and removing it ruins every numeric column.
+
 ## Conventions
 
 - Small commits, conventional commit messages (`feat:`, `fix:`, `docs:`, `test:`).

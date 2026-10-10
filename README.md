@@ -24,7 +24,7 @@ The questions it exists to answer:
 
 ## Status
 
-Eight milestones are in. Ten public sources, one store, one app.
+Eleven milestones are in. Eleven public sources, one store, one app.
 
 ```
 make install      # uv venv + dependencies
@@ -35,7 +35,7 @@ make web          # the app on :5173
 make check        # has anything released upstream? six requests, seconds
 make refresh SOURCE=chembl   # re-download one source, rebuild only what it feeds
 make diff         # what that did to the numbers
-make test         # 246 tests against committed fixtures, no network
+make test         # 249 tests against committed fixtures, no network
 ```
 
 | Milestone | Scope | |
@@ -49,6 +49,8 @@ make test         # 246 tests against committed fixtures, no network
 | M6 | Clinical layer: TB drugs and mechanisms, trials, and every drug–gene and trial–drug link labelled with how it was made | ✅ |
 | M7 | UniProt's protein biology per gene; ligand identity; one box over genes, drugs, trials and compounds | ✅ |
 | M8 | Target enablement: vulnerability in a clinical isolate, whether a protein assay exists, and how the protein was produced | ✅ |
+| M9 | The workspace: browse wide or read wide, compound depictions, every number linked to its assay | ✅ |
+| M10 | Upkeep: `check` what released, `refresh` one source, `diff` what it did — scriptable, no LLM | ✅ |
 | — | Beyond the brief: CRISPRi vulnerability, STRING partners, human anti-target, domains | ✅ |
 
 ## What it answers
@@ -106,6 +108,7 @@ downloads are cached on disk and gitignored. Every record carries `source`,
 | `chembl_targets.parquet` | ~17,000 | `uniprot_acc` | ChEMBL |
 | `crosswalk.parquet` | 4,173 | `rv_id` | joined |
 | `structures.parquet` | 4,803 | `pdb_id`, `uniprot_acc` | RCSB PDB (ligands + construct) |
+| `ligands.parquet` | 1,486 | `comp_id` | RCSB chemical components |
 | `predicted_structures.parquet` | 3,973 | `uniprot_acc` | AlphaFold DB |
 | `activities.parquet` | 15,518 | `activity_id` | ChEMBL |
 | `compounds.parquet` | 5,178 | `molecule_chembl_id` | ChEMBL |
@@ -119,7 +122,7 @@ downloads are cached on disk and gitignored. Every record carries `source`,
 | `drugs.parquet` | 112 | `molecule_chembl_id` | ChEMBL TB indications |
 | `drug_mechanisms.parquet` | 92 | molecule, target | ChEMBL |
 | `trials.parquet` | 1,137 | `nct_id` | ClinicalTrials.gov |
-| `drug_genes.parquet` | 233 | molecule, `rv_id`, link | joined |
+| `drug_genes.parquet` | 250 | molecule, `rv_id`, link | joined |
 | `trial_drugs.parquet` | 1,183 | `nct_id`, molecule | joined |
 | `target_summary.parquet` | 4,173 | `rv_id` | rolled up |
 

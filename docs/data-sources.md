@@ -728,6 +728,35 @@ For placing resistance mutations onto structures:
   not sufficient for per-residue work; M3 should use the residue-level SIFTS
   endpoint.
 
+## folC and PAS — a rule Sid has not set yet
+
+**Open. The atlas currently counts it; nobody has decided that it should.**
+
+`CLAUDE.md` says resistance is not engagement, and gives katG/isoniazid as the
+case: katG *activates* isoniazid, so a WHO resistance link to katG is shown and
+never counted as a drug acting on that gene.
+
+Bosch 2021's `antibacterial` column has the same shape in at least one place.
+ChEMBL's own note on para-aminosalicylic acid is that **FolC incorporates PAS
+into the antimetabolite that then inhibits DfrA** — so folC activates the drug
+rather than being inhibited by it, exactly like katG. `ribD` is arguably the
+same. Those are 2 of the 13 genes in the headline "11 drugs on 13 genes".
+
+Three options, none taken:
+
+1. **Leave it.** Bosch's column is the authors' own annotation and the atlas
+   carries it as stated. This is what the code does today.
+2. **Exclude activating enzymes from the count**, the way katG already is.
+   Needs a list, and the only source for "is this activation or inhibition" is
+   ChEMBL's free-text mechanism comment, which is not structured.
+3. **Drop Bosch as a counting link entirely.** Worst of the three: it is the
+   *only* source for mmpL3/SQ109, qcrB/telacebec and atpE/bedaquiline, which
+   ChEMBL records no mechanism for.
+
+Until it is decided, the UI quotes Bosch's own wording and says the annotation
+can name an activating enzyme (`web/src/Clinical.tsx`). See
+`TARGET_LINKS` in `atlas/clinical.py` for where the rule would change.
+
 ## Druggable pockets — unresolved
 
 **No public source provides this.** Nothing in the seven sources above gives a

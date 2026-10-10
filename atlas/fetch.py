@@ -85,12 +85,17 @@ def fetch(
     attempts: int = 4,
     timeout: float = 120.0,
     client: httpx.Client | None = None,
+    json_body: bool = False,
 ) -> Fetched:
     """Download `url` to `data/raw/<source>/<dest>` unless already cached.
 
     Idempotent: a cached file is returned untouched, so re-running a pipeline
     costs nothing and a part-finished run resumes where it stopped. Pass
     `force=True` to re-download and pick up an upstream release.
+
+    `json_body=True` treats a 200 that does not parse as JSON as a transient
+    failure: ChEMBL serves HTML error pages that way, and a cached error page
+    would be read back on every rebuild.
     """
     path = RAW / source / dest
     meta_path = path.with_suffix(path.suffix + ".meta.json")
@@ -118,8 +123,10 @@ def fetch(
                 if response.status_code in (429, 500, 502, 503, 504):
                     response.raise_for_status()
                 response.raise_for_status()
+                if json_body:
+                    json.loads(response.content)
                 break
-            except (httpx.HTTPError, httpx.StreamError):
+            except (httpx.HTTPError, httpx.StreamError, ValueError):
                 if attempt == attempts:
                     raise
                 time.sleep(2.0**attempt)

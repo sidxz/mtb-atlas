@@ -22,8 +22,18 @@ make api / make web   # FastAPI on :8099, the app on :5173
 uv run atlas clinical # rebuild just the clinical stage (drugs, trials, links) and the roll-up
 ```
 
-No Docker Compose and no RDKit. Add infrastructure when a milestone needs it;
-adding it earlier is scaffolding for later, and later can scaffold for itself.
+No Docker Compose, and **no RDKit in the pipeline**. Add infrastructure when a
+milestone needs it; adding it earlier is scaffolding for later, and later can
+scaffold for itself.
+
+RDKit does now run, as WebAssembly **in the browser only** (`web/src/Structure.tsx`),
+to draw compounds from the SMILES the API already serves. That is the
+presentation layer: a depiction is a rendering of a SMILES, not a fact about
+the molecule, so no depiction is stored, no ingester imports rdkit, and
+`make build` and `make test` are unchanged. It is fetched on first use, so
+nobody who does not open a chemistry tab pays the 7.4 MB. If a *pipeline* ever
+needs rdkit — a descriptor, a scaffold key, a nuisance filter — that is a
+separate decision against the rule above, not a precedent set by this one.
 
 ## Canonical key
 

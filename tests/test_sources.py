@@ -419,3 +419,20 @@ def test_an_entity_with_no_expression_record_says_nothing(
     assert rpob["expression_hosts"] == ["Escherichia coli 'BL21-Gold(DE3)pLysS AG'"]
     assert rpob["plasmids"] == []
     assert structures[("2CCA", "P9WIE5")]["plasmids"] == ["PKATII"]
+
+
+def test_a_phase_is_a_number_in_both_tables() -> None:
+    """ChEMBL serves `max_phase` as the string "2.0", and it was stored that way.
+
+    `drugs.max_phase` was a DOUBLE and `compounds.max_phase` a VARCHAR for the
+    same field, so the agent's schema offered one column that compares
+    numerically and one that compares lexically. Phases run -1 to 4, where
+    text ordering happens to agree with number ordering, which is exactly the
+    kind of bug that stays invisible until a value arrives that does not.
+    """
+    row = chembl._compound_row({"molecule_chembl_id": "CHEMBL3330226", "max_phase": "2.0"})
+    assert row["max_phase"] == 2.0
+    assert isinstance(row["max_phase"], float)
+    # -1 is ChEMBL's "unknown", carried as a number rather than reinterpreted.
+    assert chembl._compound_row({"molecule_chembl_id": "X", "max_phase": "-1.0"})["max_phase"] == -1
+    assert chembl._compound_row({"molecule_chembl_id": "X"})["max_phase"] is None

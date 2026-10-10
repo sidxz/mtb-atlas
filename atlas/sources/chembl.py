@@ -199,7 +199,10 @@ def _compound_row(molecule: dict[str, Any]) -> dict[str, Any]:
         "molecule_chembl_id": molecule["molecule_chembl_id"],
         "pref_name": molecule.get("pref_name"),
         "molecule_type": molecule.get("molecule_type"),
-        "max_phase": molecule.get("max_phase"),
+        # ChEMBL serves this as the string "2.0". Stored raw it made
+        # `compounds.max_phase` a VARCHAR while `drugs.max_phase` was a DOUBLE
+        # -- the same field, one comparing numerically and one lexically.
+        "max_phase": _float(molecule.get("max_phase")),
         "first_approval": molecule.get("first_approval"),
         "smiles": structures.get("canonical_smiles"),
         "inchi_key": structures.get("standard_inchi_key"),

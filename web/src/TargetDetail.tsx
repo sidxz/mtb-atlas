@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Activity, Compound, TargetDetail as Detail, Meta, Variant } from "./api";
 import { ClinicalTab, phaseLabel, type Focus } from "./Clinical";
 import { StructureViewer, alphafoldSource, pdbSource, type ViewerSource } from "./StructureViewer";
+import { Structure } from "./Structure";
 
 const SOURCES = {
   essentiality: "DeJesus 2017, mBio · Table S3 · CC BY 4.0",
@@ -751,6 +752,35 @@ function AssayReadiness({ detail }: { detail: Detail }) {
   );
 }
 
+/** Out to ChEMBL's own record, so a number can be chased to its source.
+ *
+ * `/explore/` is the live path; the older `*_report_card/` URLs 301 to it.
+ * Click is stopped from bubbling, because the row underneath opens the
+ * compound panel and a link that also navigates the page is a trap.
+ */
+function ChemblLink({
+  kind,
+  id,
+  label,
+}: {
+  kind: "compound" | "assay" | "document";
+  id: string;
+  label?: string;
+}) {
+  return (
+    <a
+      className="chembl"
+      href={`https://www.ebi.ac.uk/chembl/explore/${kind}/${id}`}
+      target="_blank"
+      rel="noreferrer"
+      onClick={(event) => event.stopPropagation()}
+      title={`${id} at ChEMBL`}
+    >
+      {label ?? id}
+    </a>
+  );
+}
+
 function Chemistry({ detail, onOpen }: { detail: Detail; onOpen: (focus: Focus) => void }) {
   const byCompound = useMemo(() => {
     const index = new Map<string, Compound>();
@@ -799,6 +829,7 @@ function Chemistry({ detail, onOpen }: { detail: Detail; onOpen: (focus: Focus) 
         <table>
           <thead>
             <tr>
+              <th>Structure</th>
               <th>Compound</th>
               <th className="n">pChEMBL</th>
               <th>Type</th>
@@ -806,6 +837,7 @@ function Chemistry({ detail, onOpen }: { detail: Detail; onOpen: (focus: Focus) 
               <th className="n">MW</th>
               <th className="n">cLogP</th>
               <th>Phase</th>
+              <th>Measured by</th>
             </tr>
           </thead>
           <tbody>
@@ -817,8 +849,19 @@ function Chemistry({ detail, onOpen }: { detail: Detail; onOpen: (focus: Focus) 
                   onOpen({ kind: "compound", id: activity.molecule_chembl_id })
                 }
               >
+                <td>
+                  <Structure
+                    smiles={compound?.smiles}
+                    title={compound?.pref_name ?? activity.molecule_chembl_id ?? undefined}
+                  />
+                </td>
                 <td className="id">
-                  {compound?.pref_name ?? activity.molecule_chembl_id}
+                  {/* Most of these have no name, so the accession is the name:
+                      printing it twice is noise, not provenance. */}
+                  {compound?.pref_name && <div>{compound.pref_name}</div>}
+                  {activity.molecule_chembl_id && (
+                    <ChemblLink kind="compound" id={activity.molecule_chembl_id} />
+                  )}
                   {activity.evidence === "orthologue" && (
                     <span className="chip ortho" style={{ marginLeft: 5 }}>
                       orth
@@ -835,7 +878,26 @@ function Chemistry({ detail, onOpen }: { detail: Detail; onOpen: (focus: Focus) 
                 <td className="n">{cell ? number(cell.pchembl_value) : "—"}</td>
                 <td className="n">{number(compound?.mw ?? null, 0)}</td>
                 <td className="n">{number(compound?.alogp ?? null, 1)}</td>
-                <td className="dim">{compound?.max_phase ? `phase ${compound.max_phase}` : "—"}</td>
+                <td className="dim">{phaseLabel(compound?.max_phase ?? null)}</td>
+                {/* A number is only as good as the experiment behind it, and
+                    "which assay" is the first thing anyone asks of an IC50. */}
+                <td className="assaycell">
+                  <div title={activity.assay_description ?? undefined}>
+                    {activity.assay_description ?? <span className="absent">—</span>}
+                  </div>
+                  <span className="assaylinks">
+                    {activity.assay_chembl_id && (
+                      <ChemblLink kind="assay" id={activity.assay_chembl_id} />
+                    )}
+                    {activity.document_chembl_id && (
+                      <ChemblLink
+                        kind="document"
+                        id={activity.document_chembl_id}
+                        label={activity.document_year ? `paper ${activity.document_year}` : "paper"}
+                      />
+                    )}
+                  </span>
+                </td>
               </tr>
             ))}
           </tbody>

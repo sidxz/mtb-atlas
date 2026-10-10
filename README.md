@@ -8,7 +8,8 @@ Built **only from public data**. No consortium data, ever.
 
 The questions it exists to answer:
 
-- Is this gene essential, and under which conditions?
+- Is this gene essential, and under which conditions — broth, or the
+  cholesterol it lives on inside a macrophage?
 - Is there an experimental structure? A predicted one? A druggable pocket?
 - What chemical matter hits it, at what potency?
 - Which resistance mutations are known?
@@ -90,6 +91,7 @@ downloads are cached on disk and gitignored. Every record carries `source`,
 | `compounds.parquet` | 5,178 | `molecule_chembl_id` | ChEMBL |
 | `essentiality.parquet` | 4,019 | `rv_id`, source | DeJesus 2017 |
 | `vulnerability.parquet` | 4,005 | `rv_id` | Bosch 2021 |
+| `conditional_fitness.parquet` | 3,987 | `rv_id` | Griffin 2011 |
 | `resistance.parquet` | 48,152 | gene, mutation, drug | WHO catalogue |
 | `interactions.parquet` | 28,739 | `rv_id`, `partner_rv_id` | STRING |
 | `homology.parquet` | 3,997 | `uniprot_acc` | phmmer vs human |

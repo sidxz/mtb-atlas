@@ -40,6 +40,8 @@ type Flag =
   | "has_ligands"
   | "in_who_catalogue"
   | "has_clinical_drug"
+  | "cholesterol_required"
+  | "required_in_vivo"
   | "n_transmembrane"
   | "conflict";
 
@@ -52,6 +54,8 @@ const FLAGS: [Flag, string][] = [
   ["has_ligands", "Has chemical matter"],
   ["in_who_catalogue", "In the WHO catalogue"],
   ["has_clinical_drug", "A TB drug or candidate acts on it"],
+  ["cholesterol_required", "Required on cholesterol"],
+  ["required_in_vivo", "Required in mouse infection"],
   ["n_transmembrane", "Transmembrane segments annotated"],
   ["conflict", "ID conflict between sources"],
 ];

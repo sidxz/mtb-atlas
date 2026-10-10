@@ -24,6 +24,7 @@ const SOURCES = {
   identity: "Mycobrowser release 5 (licence not stated) · UniProt · CC BY 4.0",
   clinical: "ChEMBL TB indications and mechanisms · Bosch 2021 · ClinicalTrials.gov",
   uniprot: "UniProt · CC BY 4.0",
+  cholesterol: "Griffin et al. 2011, PLoS Pathog · Tables S3/S4 · CC BY 4.0",
 };
 
 type Tab = "evidence" | "structure" | "chemistry" | "resistance" | "clinical" | "network";
@@ -280,6 +281,48 @@ function Evidence({ detail }: { detail: Detail }) {
           </>
         ) : (
           <span className="absent">no call in this dataset</span>
+        )}
+      </Row>
+
+      <Row label="On cholesterol" source={SOURCES.cholesterol}>
+        {detail.cholesterol_measured === null ? (
+          <span className="absent">this locus was not in the screen</span>
+        ) : detail.cholesterol_measured === false ? (
+          <>
+            <span className="absent">not measurable by transposon screening</span>
+            <div className="note">
+              The gene tolerates no insertions, so there was nothing to compare between
+              carbon sources. That is true of every gene essential in broth, and it is not
+              the same as no effect.
+            </div>
+          </>
+        ) : (
+          <>
+            <span
+              className="big"
+              style={{ color: detail.cholesterol_required ? "var(--accent)" : "var(--fg)" }}
+            >
+              {(detail.cholesterol_log2_ratio ?? 0) > 0 ? "+" : ""}
+              {number(detail.cholesterol_log2_ratio, 2)}
+            </span>{" "}
+            <span className="dim">
+              log2 cholesterol/glycerol · p {detail.cholesterol_p?.toExponential(1) ?? "—"}
+            </span>
+            <div className="note">
+              Negative is depleted on cholesterol, the carbon source M. tuberculosis uses
+              inside a macrophage.
+            </div>
+            {detail.cholesterol_required && (
+              <div className="note" style={{ color: "var(--fg)" }}>
+                One of the 96 genes the authors call <b>specifically required on cholesterol</b>.
+              </div>
+            )}
+          </>
+        )}
+        {detail.required_in_vivo && (
+          <div className="note" style={{ color: "var(--fg)" }}>
+            Required in a mouse infection — Sassetti &amp; Rubin 2003, carried in Griffin&rsquo;s table.
+          </div>
         )}
       </Row>
 

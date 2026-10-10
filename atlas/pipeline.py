@@ -22,6 +22,7 @@ from .sources import (
     alphafold,
     chembl,
     clinicaltrials,
+    conditional,
     essentiality,
     homology,
     mycobrowser,
@@ -98,6 +99,8 @@ def build_evidence(*, force: bool = False) -> list[Path]:
     paths.append(essentiality.build(force=force))
     _say("[evidence] resistance (WHO catalogue)")
     paths.append(resistance.build(force=force))
+    _say("[evidence] conditional fitness (Griffin 2011, cholesterol)")
+    paths.append(conditional.build(force=force))
     _say("[evidence] vulnerability (Bosch 2021 CRISPRi)")
     paths.append(vulnerability.build(force=force))
     _say("[evidence] interactions (STRING)")

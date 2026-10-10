@@ -33,6 +33,7 @@ LICENCES = {
     "vulnerability": ("Bosch 2021, Cell (CRISPRi)", "CC BY 4.0"),
     "interactions": ("STRING v12.5", "CC BY 4.0"),
     "homology": ("phmmer vs reviewed human proteome", "CC BY 4.0"),
+    "conditional_fitness": ("Griffin 2011, PLoS Pathog (cholesterol TnSeq)", "CC BY 4.0"),
     "ligands": ("RCSB PDB chemical components", "CC0 1.0"),
     "drugs": ("ChEMBL drug indications and mechanisms", "CC BY-SA 3.0"),
     # The terms ask for attribution, the processing date (carried in the
@@ -84,6 +85,7 @@ SORTABLE = {
     "n_compounds",
     "n_whole_cell",
     "best_resolution",
+    "cholesterol_log2_ratio",
     "best_drug_phase",
     "n_drugs",
     "n_trials",
@@ -155,6 +157,13 @@ class TargetSummary(BaseModel):
     essentiality_fitness_cost: bool = False
     essentiality_condition: str | None = None
     ta_sites: int | None = None
+    # Griffin 2011. None where the locus was never screened; `measured` is
+    # False where it was and took no insertions to compare.
+    cholesterol_measured: bool | None = None
+    cholesterol_log2_ratio: float | None = None
+    cholesterol_p: float | None = None
+    cholesterol_required: bool | None = None
+    required_in_vivo: bool | None = None
     n_pdb: int = 0
     best_resolution: float | None = None
     has_predicted: bool = False
@@ -273,7 +282,10 @@ def meta() -> Meta:
         sources=sources,
         caveats=[
             "Essentiality is one in vitro condition (7H9 broth, DeJesus 2017). "
-            "A gene essential there may not be essential in infection.",
+            "A gene essential there may not be essential in infection. Griffin 2011 "
+            "adds one more condition -- growth on cholesterol -- but a transposon "
+            "screen cannot measure a gene that tolerates no insertions, so every "
+            "in-vitro-essential gene comes back unmeasured there rather than unaffected.",
             "The WHO catalogue covers 65 genes with matched phenotypic testing. "
             "Every other gene has no resistance record, which is an absence of "
             "evidence rather than evidence of absence.",
@@ -310,6 +322,10 @@ def targets(
     has_predicted: bool | None = None,
     has_ligands: bool | None = None,
     in_who_catalogue: bool | None = None,
+    cholesterol_required: Annotated[
+        bool | None, Query(description="Griffin 2011's own call: required on cholesterol")
+    ] = None,
+    required_in_vivo: bool | None = None,
     structural_gap: Annotated[
         bool | None, Query(description="Essential, has a structure, has no ligands")
     ] = None,
@@ -365,6 +381,8 @@ def targets(
         ("human_homolog", human_homolog),
         ("close_human_homolog", close_human_homolog),
         ("has_clinical_drug", has_clinical_drug),
+        ("cholesterol_required", cholesterol_required),
+        ("required_in_vivo", required_in_vivo),
     ):
         if value is not None:
             where.append(f"{column} = ?")

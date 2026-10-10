@@ -18,6 +18,7 @@ All sources are public. No consortium data, ever.
 | [DeJesus 2017](#essentiality-dejesus-2017) | mBio, Table S3 | CC BY 4.0 | Essentiality (M1) |
 | [WHO catalogue](#who-mutation-catalogue) | 2nd ed. (2023) | ODC-By 1.0 | Resistance mutations |
 | [Bosch 2021 CRISPRi](#vulnerability-bosch-2021) | Cell, Table S3 | CC BY 4.0 | Vulnerability index |
+| [Griffin 2011](#conditional-fitness-griffin-2011) | PLoS Pathog, Tables S3/S4 | CC BY 4.0 | Fitness on cholesterol (M7) |
 | [STRING](#string) | v12.5, taxon 83332 | CC BY 4.0 | Interaction partners |
 | [phmmer vs human proteome](#human-homology) | UniProt UP000005640, reviewed | CC BY 4.0 | Human anti-target check |
 | [ChEMBL drugs](#chembl-tb-drugs-and-mechanisms) | ChEMBL_37 | CC BY-SA 3.0 | TB drugs, phases, mechanisms (M6) |
@@ -342,6 +343,48 @@ Bonus: the sheet's `antibacterial` column names the drug already targeting each
 gene — SQ109→mmpL3, PBTZ169→dprE1, Q203, bedaquiline, rifamycins and others.
 That is a machine-readable, openly licensed list of validated TB targets, which
 is exactly what the newtbdrugs pipeline page could not supply.
+
+## Conditional fitness: Griffin 2011
+
+Griffin JE, Gawronski JD, DeJesus MA, Ioerger TR, Akerley BJ, Sassetti CM.
+*High-resolution phenotypic profiling defines genes essential for mycobacterial
+growth and cholesterol catabolism.* PLoS Pathog 2011;7(9):e1002251. PMC3182942,
+doi 10.1371/journal.ppat.1002251. **CC BY**, confirmed through Europe PMC's
+`license` field on 2026-10-10.
+
+The first answer in the atlas to "essential *under which conditions*". Every
+essentiality number until now carried the caveat that DeJesus 2017 is one
+condition — 7H9 broth. Cholesterol is the carbon source *M. tuberculosis* uses
+inside a macrophage, so a gene required on cholesterol and not on glycerol is
+one the broth screen cannot see.
+
+- **Download:** the same Europe PMC route as DeJesus 2017,
+  `https://www.ebi.ac.uk/europepmc/webservices/rest/PMC3182942/supplementaryFiles`
+  — a 7.9 MB zip of all supplementary files, about 60 seconds.
+- **Table S3** (`ppat.1002251.s003.xlsx`, sheet `supp table 3`): 3,987 gene
+  rows keyed on `Locus`, the Rv tag. The title and legend occupy the first
+  seven rows and the column names run over rows 8 and 9, so the header is row
+  9. Carries normalized reads per insertion in each carbon source, the
+  cholesterol/glycerol ratio and a t-test p value.
+- **Table S4** (`ppat.1002251.s004.xlsx`): the authors' own list of **96 genes
+  specifically required for growth on cholesterol**. The atlas flags those
+  rather than drawing its own line through the ratio, for the same reason it
+  carries Bosch's `certain` flag.
+- **Coverage:** 3,985 of the 3,987 loci are in the gene universe (`Rv0061` and
+  `Rv1784` are not). 3,185 rows carry a ratio; p values all fall in (0, 1).
+
+**The blind spot, which is the whole point of recording `measured`.** A
+transposon screen compares insertion counts between conditions, and a gene that
+tolerates no insertions has nothing to compare. Every in-vitro-essential gene is
+such a gene: `dprE1`, `inhA`, `mmpL3` and `katG` all read `n/a`. The store
+records `measured = false` for them, and **not one of the 96 cholesterol-required
+genes is also called essential by DeJesus** — the two screens are structurally
+disjoint. A gene absent from the table altogether is `NULL`, a third state
+meaning it was never screened.
+
+**`Required in vivo` is not this paper's measurement.** The column carries
+Sassetti & Rubin 2003 (PNAS 100:12989-12994), a mouse screen, 193 genes. It is
+stored with its own citation so the attribution does not drift.
 
 ## STRING
 

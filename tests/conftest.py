@@ -12,6 +12,7 @@ from atlas.sources import (
     alphafold,
     chembl,
     clinicaltrials,
+    conditional,
     essentiality,
     mycobrowser,
     pdb,
@@ -114,6 +115,14 @@ def evidence_store(store: Path) -> Path:
         essentiality.normalize(FIXTURES / "dejesus_supplement.zip"),
         source=essentiality.SOURCE,
         source_version=essentiality.CITATION,
+        retrieved_at="2026-10-09",
+        store=store,
+    )
+    write_parquet(
+        "conditional_fitness",
+        conditional.normalize(FIXTURES / "griffin_supplement.zip"),
+        source=conditional.SOURCE,
+        source_version=conditional.CITATION,
         retrieved_at="2026-10-09",
         store=store,
     )

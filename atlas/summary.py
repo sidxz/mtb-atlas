@@ -137,6 +137,14 @@ SELECT
     pr.n_transmembrane,
     pr.n_references,
 
+    -- NULL where Griffin never screened the locus; false where it did and the
+    -- gene took no insertions to compare. Different answers, kept apart.
+    cf.measured          AS cholesterol_measured,
+    cf.log2_ratio        AS cholesterol_log2_ratio,
+    cf.p_value           AS cholesterol_p,
+    cf.cholesterol_required,
+    cf.required_in_vivo,
+
     e.call            AS essentiality,
     e.call_label      AS essentiality_label,
     coalesce(e.essential, false)    AS essentiality_essential,
@@ -177,6 +185,7 @@ SELECT
      AND coalesce(pa.n_activities, 0) = 0)        AS structural_gap
 FROM walk w
 LEFT JOIN ess   e   ON e.rv_id = w.rv_id
+LEFT JOIN cond  cf  ON cf.rv_id = w.rv_id
 LEFT JOIN struct st ON st.uniprot_acc = w.uniprot_acc
 LEFT JOIN pred  p   ON p.uniprot_acc = w.uniprot_acc
 LEFT JOIN protein_act pa ON pa.rv_id = w.rv_id
@@ -237,6 +246,7 @@ TABLES = {
     "vuln": "vulnerability",
     "hom": "homology",
     "interactions": "interactions",
+    "cond": "conditional_fitness",
     "prot": "proteins",
     "drugs": "drugs",
     "drug_genes": "drug_genes",

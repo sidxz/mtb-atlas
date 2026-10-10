@@ -127,3 +127,9 @@ def test_describe_names_the_structural_links() -> None:
     text = agent.describe()
     assert "## ligands" in text
     assert "soaking studies" in text  # a co-crystal is not a mechanism claim
+
+
+def test_describe_warns_that_tnseq_cannot_see_essential_genes() -> None:
+    text = agent.describe()
+    assert "## conditional_fitness" in text
+    assert "NOT the same as unaffected" in text

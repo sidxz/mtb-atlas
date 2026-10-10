@@ -78,6 +78,12 @@ This is the rule that outranks completeness.
 - Two of the three reference targets have **no** WHO resistance data, because the
   catalogue covers 65 genes and neither `dprE1` nor `mmpL3` is one. That is
   reported as an absence. Do not substitute a different source to fill the cell.
+- **A TnSeq screen cannot measure a gene with no insertions**, and every
+  in-vitro-essential gene is one. Griffin 2011's cholesterol comparison reads
+  `n/a` for dprE1, inhA and mmpL3, which is recorded as `measured = false` and
+  must never be shown as "no effect". A locus the screen never covered is NULL
+  — a third state. None of the 96 cholesterol-required genes is also called
+  essential; the two screens see disjoint sets of genes.
 - **Essentiality and vulnerability answer different questions and must not be
   conflated.** TnSeq says whether a gene can be deleted. CRISPRi vulnerability
   says how far expression must fall before fitness suffers -- the question an

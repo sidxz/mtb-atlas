@@ -43,6 +43,7 @@ TABLES = (
     "activities",
     "compounds",
     "essentiality",
+    "conditional_fitness",
     "resistance",
     "vulnerability",
     "interactions",
@@ -77,6 +78,12 @@ TABLE_NOTES = {
     "compounds": "One row per compound, with properties. Keyed on molecule_chembl_id.",
     "essentiality": "TnSeq calls, one in vitro condition. `essential` is ES or ESD; "
     "`fitness_cost` also includes growth-defect.",
+    "conditional_fitness": "Griffin 2011 TnSeq, cholesterol vs glycerol, one row per gene. "
+    "`log2_ratio` NEGATIVE means depleted on cholesterol. `cholesterol_required` is the "
+    "authors' own call (96 genes), not a threshold. **`measured` is false for every gene "
+    "that tolerates no transposon insertions, which is every in-vitro-essential gene** -- "
+    "dprE1, inhA and mmpL3 are all unmeasured here, which is NOT the same as unaffected. "
+    "A gene absent from this table was never screened.",
     "vulnerability": "CRISPRi. `vulnerability_index` is NEGATIVE: more negative is more "
     "vulnerable. Only rows with `certain` are confident estimates.",
     "resistance": "WHO catalogue, keyed on GENE SYMBOL not Rv tag, and only 65 genes "
@@ -141,6 +148,9 @@ Respect the evidence levels, because they are not interchangeable:
 mycobacterial protein reached through a UniRef cluster, which is a family-level link \
 and not evidence of a shared binding site; `whole_cell` is a MIC against the whole \
 organism and says nothing on its own about which protein is engaged.
+- Conditional fitness (Griffin 2011) adds growth on cholesterol, the carbon source Mtb \
+uses inside a macrophage. A transposon screen cannot measure a gene with no insertions, \
+so an essential gene is `measured = false` there -- unmeasured, not unaffected.
 - Essentiality is one in vitro condition (7H9 broth). Vulnerability is CRISPRi \
 knockdown and answers a different question -- how far expression must fall before \
 fitness suffers -- on a negative scale, and only `certain` rows are confident.

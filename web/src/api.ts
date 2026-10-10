@@ -24,6 +24,16 @@ export interface TargetSummary {
   essentiality_fitness_cost: boolean;
   essentiality_condition: string | null;
   ta_sites: number | null;
+  /**
+   * Griffin 2011, cholesterol vs glycerol. Null where the locus was never
+   * screened; `measured` false where it was and took no insertions to compare,
+   * which is true of every in-vitro-essential gene.
+   */
+  cholesterol_measured: boolean | null;
+  cholesterol_log2_ratio: number | null;
+  cholesterol_p: number | null;
+  cholesterol_required: boolean | null;
+  required_in_vivo: boolean | null;
   n_pdb: number;
   best_resolution: number | null;
   has_predicted: boolean;

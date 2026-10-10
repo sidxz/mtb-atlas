@@ -209,3 +209,30 @@ def test_ligand_rollup_excludes_a_neighbours_ligand(rows: dict) -> None:
     assert rows["Rv0667"]["n_pdb_with_ligand"] == 1
     assert rows["Rv0668"]["ligand_ids"] == []
     assert rows["Rv0668"]["n_pdb_with_ligand"] == 0
+
+
+# --- conditional fitness -----------------------------------------------------------
+
+
+def test_cholesterol_rolls_up_with_its_own_flag(rows: dict) -> None:
+    cyp125 = rows["Rv3545c"]
+    assert cyp125["cholesterol_required"] is True
+    assert cyp125["cholesterol_log2_ratio"] == pytest.approx(-1.893, abs=0.01)
+    assert cyp125["required_in_vivo"] is True
+
+
+def test_an_unmeasured_gene_gets_no_number(rows: dict) -> None:
+    """Every essential gene is unmeasured here; a zero would be a false reading."""
+    dpre1 = rows["Rv3790"]
+    assert dpre1["cholesterol_measured"] is False
+    assert dpre1["cholesterol_log2_ratio"] is None
+    assert dpre1["cholesterol_required"] is False
+
+
+def test_a_gene_the_screen_never_saw_is_null_not_false(rows: dict) -> None:
+    """Griffin covers 3,987 loci; the rest were not screened at all."""
+    missing = [r for r in rows.values() if r["cholesterol_measured"] is None]
+    assert missing
+    for row in missing:
+        assert row["cholesterol_log2_ratio"] is None
+        assert row["required_in_vivo"] is None

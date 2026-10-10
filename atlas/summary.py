@@ -29,9 +29,34 @@ protein_act AS (
     SELECT gt.rv_id,
            count(*)                                AS n_activities,
            count(DISTINCT a.molecule_chembl_id)    AS n_compounds,
-           max(a.pchembl_value)                    AS best_pchembl
+           max(a.pchembl_value)                    AS best_pchembl,
+           -- Whether anyone has published a way to measure this protein, which
+           -- is a different question from whether anyone has hit it. Distinct
+           -- assays, not measurements: one assay run against 400 compounds is
+           -- one assay you could run again. `direct` only -- an orthologue
+           -- assay is a real assay on another organism's protein, and
+           -- `whole_cell` rows are MICs ChEMBL files against the organism.
+           count(DISTINCT a.assay_chembl_id) FILTER (WHERE a.evidence = 'direct')
+               AS n_protein_assays,
+           max(a.document_year) FILTER (WHERE a.evidence = 'direct')
+               AS latest_protein_assay_year
     FROM gene_target gt
     JOIN act a ON a.target_chembl_id = gt.target_id AND a.evidence <> 'whole_cell'
+    GROUP BY 1
+),
+assay_example AS (
+    -- The assay the literature leans on hardest, as a readable description of
+    -- what the measurement actually is: a coupled enzymatic readout and a
+    -- fluorescence cell-free screen are not interchangeable to someone who has
+    -- to run one.
+    SELECT rv_id, arg_max(assay_description, n_measurements) AS protein_assay_example
+    FROM (
+        SELECT gt.rv_id, a.assay_description, count(*) AS n_measurements
+        FROM gene_target gt
+        JOIN act a ON a.target_chembl_id = gt.target_id
+        WHERE a.evidence = 'direct' AND a.assay_description IS NOT NULL
+        GROUP BY 1, 2
+    )
     GROUP BY 1
 ),
 gene_compound AS (
@@ -177,6 +202,9 @@ SELECT
     pa.best_pchembl,
     coalesce(ca.n_whole_cell, 0) AS n_whole_cell,
     ca.best_whole_cell_pchembl,
+    coalesce(pa.n_protein_assays, 0) AS n_protein_assays,
+    pa.latest_protein_assay_year,
+    ax.protein_assay_example,
 
     -- CLINICAL COLUMNS
 
@@ -200,6 +228,7 @@ LEFT JOIN struct st ON st.uniprot_acc = w.uniprot_acc
 LEFT JOIN pred  p   ON p.uniprot_acc = w.uniprot_acc
 LEFT JOIN protein_act pa ON pa.rv_id = w.rv_id
 LEFT JOIN cell_act    ca ON ca.rv_id = w.rv_id
+LEFT JOIN assay_example ax ON ax.rv_id = w.rv_id
 LEFT JOIN res ON res.gene = coalesce(w.gene_name, w.rv_id)
 LEFT JOIN vuln v ON v.rv_id = w.rv_id
 LEFT JOIN strain_vuln sv ON sv.rv_id = w.rv_id

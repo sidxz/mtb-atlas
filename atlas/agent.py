@@ -61,7 +61,11 @@ TABLES = (
 # One line per table: what a question should reach for, and the trap in it.
 TABLE_NOTES = {
     "target_summary": "START HERE. One row per gene, every evidence table rolled up. "
-    "Scalar columns for filtering and sorting.",
+    "Scalar columns for filtering and sorting. `n_protein_assays` is how many published "
+    "ChEMBL assays run against this gene's own protein -- whether the target can be "
+    "screened at all, which is a different question from `n_compounds` (whether anyone "
+    "has hit it). `hn878_*` compares vulnerability against a clinical isolate; see "
+    "strain_vulnerability for the sign convention.",
     "crosswalk": "Identity only: Rv tag to accession, with source disagreements and "
     "the loci that share an accession.",
     "proteins": "One UniProt entry per accession, keyed on uniprot_acc: cross-references "
@@ -75,7 +79,13 @@ TABLE_NOTES = {
     "`ligand_ids` excludes cofactors and crystallisation additives.",
     "predicted_structures": "AlphaFold, keyed on uniprot_acc.",
     "activities": "ChEMBL bioactivity. `evidence` is direct | orthologue | whole_cell. "
-    "Join to a gene through crosswalk.chembl_targets or target_summary.",
+    "Join to a gene through crosswalk.chembl_targets or target_summary. `assay_type` is "
+    "ChEMBL's own: B binding, F functional, A ADME. **Do NOT read assay_type as 'protein "
+    "assay'** -- every whole_cell row is F, because ChEMBL files MIC screens as functional "
+    "assays against the organism. A published assay for a gene's own protein means "
+    "`evidence = 'direct'`; count DISTINCT assay_chembl_id, since one assay can carry "
+    "hundreds of measurements. `target_summary.n_protein_assays` is that count already "
+    "done.",
     "compounds": "One row per compound, with properties. Keyed on molecule_chembl_id.",
     "essentiality": "TnSeq calls, one in vitro condition. `essential` is ES or ESD; "
     "`fitness_cost` also includes growth-defect.",

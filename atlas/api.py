@@ -83,6 +83,7 @@ SORTABLE = {
     "length",
     "n_compounds",
     "n_whole_cell",
+    "n_protein_assays",
     "best_resolution",
     "cholesterol_log2_ratio",
     "hn878_vulnerability_index",
@@ -184,6 +185,12 @@ class TargetSummary(BaseModel):
     best_pchembl: float | None = None
     n_whole_cell: int = 0
     best_whole_cell_pchembl: float | None = None
+    # Whether a way to measure this protein has been published, which is not
+    # the same question as whether anyone has hit it. Distinct ChEMBL assays on
+    # the Mtb protein itself; orthologue and whole-cell assays are excluded.
+    n_protein_assays: int = 0
+    latest_protein_assay_year: int | None = None
+    protein_assay_example: str | None = None
     chembl_evidence: str | None = None
     in_who_catalogue: bool = False
     n_variants_associated: int = 0
@@ -577,6 +584,12 @@ def target(rv_id: str) -> TargetDetail:
         absences.append("No experimental structure in the PDB for this accession.")
     if not activities:
         absences.append("No ChEMBL activity: no compound in ChEMBL is recorded against this gene.")
+    if not record.get("n_protein_assays"):
+        absences.append(
+            "No published assay against this protein in ChEMBL, so screening it means "
+            "developing the assay first. Orthologue and whole-cell measurements, where "
+            "they exist, do not supply one."
+        )
     if not variants:
         absences.append(
             "Not in the WHO catalogue, which covers only the 65 genes with matched "

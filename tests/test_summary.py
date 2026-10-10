@@ -269,3 +269,42 @@ def test_a_gene_never_measured_in_the_clinical_strain_is_null(rows: dict) -> Non
     assert rpob["hn878_vulnerability_index"] is None
     assert rpob["hn878_delta_vi"] is None
     assert rpob["hn878_differential_reported"] is False
+
+
+# --- is there a published assay for this protein? ------------------------------------
+
+
+def test_a_published_protein_assay_is_counted_and_shown(rows: dict) -> None:
+    """DprE1 has seven distinct ChEMBL assays on the Mtb protein itself.
+
+    The count is of assays, not measurements: one assay run against 400
+    compounds is one assay you could run again.
+    """
+    dpre1 = rows["Rv3790"]
+    assert dpre1["n_protein_assays"] == 7
+    assert dpre1["latest_protein_assay_year"] == 2024
+    assert "DprE1" in dpre1["protein_assay_example"]
+
+
+def test_a_gene_with_no_protein_assay_reads_zero(rows: dict) -> None:
+    """mmpL3 has a structure and no assay on the Mtb protein in ChEMBL.
+
+    Zero here is the answer, not a gap: it is the difference between a target
+    you can screen on Monday and one that needs an assay built first.
+    """
+    mmpl3 = rows["Rv0206c"]
+    assert mmpl3["n_protein_assays"] == 0
+    assert mmpl3["latest_protein_assay_year"] is None
+    assert mmpl3["protein_assay_example"] is None
+
+
+def test_whole_cell_screens_are_not_protein_assays(rows: dict) -> None:
+    """Every whole-cell row is assay_type F, which is an MIC, not a protein assay.
+
+    ChEMBL files them against the organism, so counting assay_type would
+    credit 3,083 MIC screens to whichever genes the compounds touch.
+    """
+    assert any(row["n_whole_cell"] > 0 for row in rows.values())
+    for row in rows.values():
+        if row["n_activities"] == 0:
+            assert row["n_protein_assays"] == 0

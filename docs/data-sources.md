@@ -173,6 +173,31 @@ Examples kept as test fixtures:
 
 **Not verified:** any published rate limit. No API key is required.
 
+### Is there an assay, as opposed to a hit?
+
+`target_summary.n_protein_assays` counts the DISTINCT `assay_chembl_id` values
+run against a gene's own protein. It answers a question none of the other
+columns do: whether this target can be screened at all, as against whether
+anyone has already hit it. 103 genes have one; **431 essential genes have
+none**, and for those the first experiment is building the assay.
+
+Two traps, both of which would inflate the number badly:
+
+- **`assay_type` does not mean what it looks like.** ChEMBL files whole-cell
+  MICs as `F` (functional) against the organism, so the genome-wide counts are
+  3,083 `F` assays over *two* targets (`CHEMBL360`, `CHEMBL2111188`) against
+  454 `B` assays over 92. Reading `assay_type = 'F'` as "functional protein
+  assay" credits every MIC screen in the database to whichever genes its
+  compounds touch. The filter that works is `evidence = 'direct'`.
+- **Count assays, not measurements.** InhA has 86 assays behind thousands of
+  activity rows; one assay run against 400 compounds is one assay you could
+  run again.
+
+Orthologue assays are excluded. An assay on *M. smegmatis* MmpL3 is a real
+assay, but not one for the Mtb protein, so mmpL3 reads 0 here while still
+showing its orthologue chemistry — which is the honest answer to "what would
+it take to screen this".
+
 ### The orthologue bridge
 
 MmpL3 is among the most-pursued targets in TB drug discovery and has **no Mtb

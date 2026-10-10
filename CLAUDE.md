@@ -73,6 +73,11 @@ This is the rule that outranks completeness.
 - Whole-cell MIC attaches to a gene **only** through a compound that already has
   direct or orthologue activity on it. Attaching cell data to a gene with no
   protein-level link invents an association that is not in the data.
+- **"Is there an assay" is not "is there a hit."** `n_protein_assays` counts
+  distinct ChEMBL assays on the gene's own protein (`evidence = 'direct'`), and
+  431 essential genes have none. Never read `assay_type = 'F'` as a protein
+  assay: ChEMBL files whole-cell MICs that way against the organism, so the
+  genome holds 3,083 of them over two "targets".
 - Source disagreements are recorded, not resolved silently: `acc_status`,
   `conflict`, and both sources' values side by side.
 - Two of the three reference targets have **no** WHO resistance data, because the

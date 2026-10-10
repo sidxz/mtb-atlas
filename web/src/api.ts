@@ -65,6 +65,14 @@ export interface TargetSummary {
   hn878_delta_vi: number | null;
   hn878_delta_vi_norm: number | null;
   hn878_differential_reported: boolean;
+  /**
+   * Whether a way to measure this protein has been published — a different
+   * question from whether anyone has hit it. ChEMBL assays on the Mtb protein
+   * itself; orthologue and whole-cell measurements are not counted.
+   */
+  n_protein_assays: number;
+  latest_protein_assay_year: number | null;
+  protein_assay_example: string | null;
   /** The drug that already targets this gene, per Bosch 2021. */
   antibacterial: string | null;
   human_homolog: boolean;

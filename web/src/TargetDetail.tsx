@@ -685,6 +685,37 @@ function StructureTable({ detail }: { detail: Detail }) {
   );
 }
 
+/** Can this target be screened at all?
+ *
+ * Distinct from whether anyone has hit it. A gene with an essentiality call, a
+ * structure and no published assay needs the assay built before any of the
+ * rest is usable, and that is weeks of work the other panels do not show.
+ */
+function AssayReadiness({ detail }: { detail: Detail }) {
+  const assays = detail.n_protein_assays ?? 0;
+  if (!assays) {
+    return (
+      <p className="caveat" style={{ marginTop: 0 }}>
+        No published assay against this protein in ChEMBL, so screening it starts with
+        developing one. Whole-cell and orthologue measurements do not supply one.
+      </p>
+    );
+  }
+  const example = detail.protein_assay_example;
+  return (
+    <p className="note" style={{ marginTop: 0, color: "var(--fg)" }}>
+      <b>{assays}</b> published assay{assays === 1 ? "" : "s"} against this protein
+      {detail.latest_protein_assay_year ? `, most recent ${detail.latest_protein_assay_year}` : ""}.
+      {example && (
+        <span className="dim">
+          {" "}
+          Most used: {example.length > 150 ? `${example.slice(0, 150)}…` : example}
+        </span>
+      )}
+    </p>
+  );
+}
+
 function Chemistry({ detail, onOpen }: { detail: Detail; onOpen: (focus: Focus) => void }) {
   const byCompound = useMemo(() => {
     const index = new Map<string, Compound>();
@@ -712,15 +743,19 @@ function Chemistry({ detail, onOpen }: { detail: Detail; onOpen: (focus: Focus) 
 
   if (!byCompound.length) {
     return (
-      <p className="absent">
-        No ChEMBL activity against this gene. If it is essential and has a structure, that is the
-        interesting kind of nothing.
-      </p>
+      <>
+        <AssayReadiness detail={detail} />
+        <p className="absent">
+          No ChEMBL activity against this gene. If it is essential and has a structure, that is
+          the interesting kind of nothing.
+        </p>
+      </>
     );
   }
 
   return (
     <>
+      <AssayReadiness detail={detail} />
       <p className="note" style={{ marginTop: 0 }}>
         Best measurement per compound. Whole-cell potency is shown only for compounds that already
         have protein-level activity here.

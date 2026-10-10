@@ -13,6 +13,7 @@ The questions it exists to answer:
 - Does its vulnerability hold in a clinical isolate, or only in H37Rv?
 - Is there an experimental structure? A predicted one? A druggable pocket?
 - What chemical matter hits it, at what potency?
+- Is there a published assay for the protein, or does screening start by building one?
 - Which resistance mutations are known?
 - What does the protein do, where does it sit, how many papers is it in?
 - Which drugs and clinical candidates act on it, at what phase for TB, and in
@@ -31,7 +32,7 @@ make build        # whole pipeline -> data/store/*.parquet  (~15 min cold)
 uv run atlas clinical   # the clinical stage alone, then the roll-up
 make api          # FastAPI on :8099
 make web          # the app on :5173
-make test         # 221 tests against committed fixtures, no network
+make test         # 224 tests against committed fixtures, no network
 ```
 
 | Milestone | Scope | |

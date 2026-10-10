@@ -126,3 +126,24 @@ def compare(old: Path | None = None, new: Path | None = None) -> list[TableDiff]
             )
         )
     return diffs
+
+
+def as_dict(diff: TableDiff) -> dict[str, object]:
+    """The shape a scheduler consumes. A contract, so it has a test."""
+    return {
+        "table": diff.table,
+        "before": diff.before,
+        "after": diff.after,
+        "added": diff.added,
+        "removed": diff.removed,
+        "version_before": diff.version_before,
+        "version_after": diff.version_after,
+        "keyed": diff.keyed,
+        "changed": diff.changed,
+        "examples_added": list(diff.examples_added),
+        "examples_removed": list(diff.examples_removed),
+    }
+
+
+def any_changed(diffs: list[TableDiff]) -> bool:
+    return any(diff.changed for diff in diffs)

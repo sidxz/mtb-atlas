@@ -57,6 +57,39 @@ the middle ground, and they are the whole update policy:
 Cadence: trials monthly, ChEMBL/UniProt/PDB when `check` says so, Mycobrowser
 only when it moves (it re-keys every gene), papers never.
 
+### Running it unattended
+
+Nothing in the update path touches an LLM — `anthropic` is imported only by
+`atlas/agent.py`, which serves `/ask`. `check`, `refresh`, `diff` and the whole
+pipeline run under cron, launchd or CI with no API key.
+
+`--json` gives a scheduler the report, and `--exit-code` makes both commands
+exit 1 when there is something to act on, the way `git diff --exit-code` does.
+`unknown` is deliberately **not** stale: a probe that could not be reached is a
+reason to look, not a reason to rebuild, and a job that refreshed on every
+transient 503 would churn the store for nothing.
+
+```sh
+# weekly: tell me what moved, change nothing
+cd /path/to/atlas
+uv run atlas check --json --exit-code > /tmp/atlas-check.json || notify "$(cat /tmp/atlas-check.json)"
+
+# monthly: the one source safe to refresh without a person
+uv run atlas refresh clinicaltrials-gov
+uv run atlas diff --exit-code || notify "the trials refresh moved these tables"
+```
+
+**`atlas diff --exit-code` is the gate, and the reason this is safe to
+automate at all.** A refresh that silently loses a third of a table is a
+successful download, so the job exits 0 and nobody hears about it; the diff is
+the only thing that catches it.
+
+Which sources are safe unattended: **`clinicaltrials-gov`**, which reaches only
+the clinical stage and the roll-up. **`chembl` and `uniprot` re-key the
+crosswalk** and should be refreshed with someone reading the diff.
+**`mycobrowser` always needs a person** — a new release changes the gene
+universe, and every documented number in the README moves with it.
+
 No Docker Compose, and **no RDKit in the pipeline**. Add infrastructure when a
 milestone needs it; adding it earlier is scaffolding for later, and later can
 scaffold for itself.

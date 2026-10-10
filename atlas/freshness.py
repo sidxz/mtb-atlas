@@ -232,3 +232,26 @@ def check(*, expensive: bool = False, only: str | None = None) -> list[Report]:
             )
         )
     return reports
+
+
+def as_dict(report: Report) -> dict[str, Any]:
+    """The shape a scheduler consumes. A contract, so it has a test."""
+    return {
+        "source": report.source,
+        "stored": report.stored,
+        "upstream": report.upstream,
+        "state": report.state,
+        "detail": report.detail,
+        "stage": report.stage,
+        "rebuilds": list(report.rebuilds),
+    }
+
+
+def any_stale(reports: list[Report]) -> bool:
+    """Whether a run found anything worth acting on.
+
+    `unknown` is deliberately not stale: a probe that could not be reached is
+    a reason to look, not a reason to rebuild, and a scheduler that refreshed
+    on every transient 503 would churn the store for nothing.
+    """
+    return any(report.state == "stale" for report in reports)

@@ -11,6 +11,7 @@ No network here: the probes are the thin part and are passed in.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -174,3 +175,42 @@ def test_a_table_added_or_dropped_is_not_a_row_count_of_zero(tmp_path: Path) -> 
     by_table = {d.table: d for d in storediff.compare(old, new)}
     assert (by_table["trials"].before, by_table["trials"].after) == (None, 1)
     assert (by_table["drugs"].before, by_table["drugs"].after) == (1, None)
+
+
+# --- running it without a person ---------------------------------------------
+
+
+def test_a_report_is_json_serialisable() -> None:
+    """The shape a cron job or CI consumes, so it is a contract, not an accident."""
+    report = freshness.Report(
+        source="chembl",
+        stored="ChEMBL_37",
+        upstream="ChEMBL_38",
+        state="stale",
+        detail="upstream is ChEMBL_38",
+        stage="identity",
+        rebuilds=["identity", "evidence", "clinical", "summary"],
+    )
+    payload = json.loads(json.dumps(freshness.as_dict(report)))
+    assert payload["state"] == "stale"
+    assert payload["rebuilds"][0] == "identity"
+
+
+def test_a_diff_is_json_serialisable(tmp_path: Path) -> None:
+    old, new = two_stores(
+        tmp_path,
+        [{"molecule_chembl_id": "CHEMBL1"}],
+        [{"molecule_chembl_id": "CHEMBL1"}, {"molecule_chembl_id": "CHEMBL2"}],
+    )
+    (diff,) = storediff.compare(old, new)
+    payload = json.loads(json.dumps(storediff.as_dict(diff)))
+    assert payload["added"] == 1
+    assert payload["changed"] is True
+
+
+def test_staleness_is_detectable_without_reading_the_table() -> None:
+    """`--exit-code` is what lets a scheduler act; the text is for a person."""
+    stale = freshness.Report("chembl", "a", "b", "stale", "", "identity", [])
+    fine = freshness.Report("uniprot", "a", "a", "current", "", "identity", [])
+    assert freshness.any_stale([stale, fine]) is True
+    assert freshness.any_stale([fine]) is False

@@ -8,6 +8,7 @@ says what the rebuild did to the numbers.
 from __future__ import annotations
 
 import argparse
+import json
 
 from . import freshness, pipeline, storediff
 from .store import read
@@ -22,8 +23,12 @@ STATE_MARK = {
 }
 
 
-def _check(expensive: bool, only: str | None) -> int:
+def _check(expensive: bool, only: str | None, as_json: bool, exit_code: bool) -> int:
     reports = freshness.check(expensive=expensive, only=only)
+    stale_found = freshness.any_stale(reports)
+    if as_json:
+        print(json.dumps([freshness.as_dict(r) for r in reports], indent=1))
+        return 1 if exit_code and stale_found else 0
     width = max(len(r.source) for r in reports)
     for report in sorted(reports, key=lambda r: (r.state != "stale", r.source)):
         mark = STATE_MARK[report.state]
@@ -40,15 +45,19 @@ def _check(expensive: bool, only: str | None) -> int:
             print(f"  uv run atlas refresh {report.source}")
     else:
         print("Everything in the store is the current release.")
-    return 0
+    return 1 if exit_code and stale_found else 0
 
 
-def _diff() -> int:
+def _diff(as_json: bool, exit_code: bool) -> int:
     diffs = storediff.compare()
     changed = [d for d in diffs if d.changed]
+    status = 1 if exit_code and changed else 0
+    if as_json:
+        print(json.dumps([storediff.as_dict(d) for d in diffs], indent=1))
+        return status
     if not changed:
         print(f"{len(diffs)} tables, none changed.")
-        return 0
+        return status
     width = max(len(d.table) for d in changed)
     for d in changed:
         before = "absent" if d.before is None else f"{d.before:,}"
@@ -65,7 +74,7 @@ def _diff() -> int:
         if d.version_before != d.version_after:
             print(f"  {'':<{width}}  version {d.version_before} -> {d.version_after}")
     print(f"\n{len(changed)} of {len(diffs)} tables changed.")
-    return 0
+    return status
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -96,6 +105,18 @@ def main(argv: list[str] | None = None) -> int:
         help="re-download raw files instead of using the on-disk cache",
     )
     parser.add_argument(
+        "--json",
+        dest="as_json",
+        action="store_true",
+        help="for check and diff: machine-readable output, for a scheduler rather than a person",
+    )
+    parser.add_argument(
+        "--exit-code",
+        action="store_true",
+        help="for check and diff: exit 1 when something is stale or something changed, "
+        "the way `git diff --exit-code` does, so a cron job or CI step can branch on it",
+    )
+    parser.add_argument(
         "--expensive",
         action="store_true",
         help="for check: also replay the RCSB structure search, which is the only "
@@ -104,10 +125,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "check":
-        return _check(args.expensive, args.source)
+        return _check(args.expensive, args.source, args.as_json, args.exit_code)
 
     if args.command == "diff":
-        return _diff()
+        return _diff(args.as_json, args.exit_code)
 
     if args.command == "refresh":
         if not args.source:

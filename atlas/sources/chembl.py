@@ -15,11 +15,14 @@ from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
-from ..fetch import Fetched, fetch, fetch_json, fetch_json_many
+from ..fetch import RAW, Fetched, fetch, fetch_json, fetch_json_many
 from ..store import write_parquet
 
 SOURCE = "chembl"
-URL = "https://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/latest/chembl_uniprot_mapping.txt"
+# Where fetch() put the mapping file, which names the release in its first line.
+SOURCE_DIR = SOURCE
+MAPPING_FILE = "chembl_uniprot_mapping.txt"
+URL = f"https://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/latest/{MAPPING_FILE}"
 API = "https://www.ebi.ac.uk/chembl/api/data"
 
 # Whole-cell Mtb. CHEMBL360 holds the bulk (209k activities); CHEMBL2111188 is
@@ -220,18 +223,24 @@ def _float(value: Any) -> float | None:
 
 
 def release_from_api() -> str:
-    """The release ChEMBL asks to be displayed, or "unknown" if it will not say.
+    """The release ChEMBL asks to be displayed.
 
     The status endpoint 500s from time to time, and a version string is not
-    worth losing a build over -- the rule is that a source which will not state
-    its version gets "unknown" recorded, never a guess.
+    worth losing a build over. The mapping file this pipeline has already
+    downloaded names the release in its first line, so the fallback is still
+    ChEMBL stating its own version rather than a guess. Only with neither is
+    "unknown" recorded, which is the rule for a source that will not say.
     """
     try:
         status = fetch_json(f"{API}/status.json")
-    except Exception as error:  # noqa: BLE001 - any failure here means no version
+        return f"{status['chembl_db_version']} ({status['chembl_release_date']})"
+    except Exception as error:  # noqa: BLE001 - any failure here means asking elsewhere
         print(f"  chembl: no release from the status endpoint ({error})", file=sys.stderr)
-        return "unknown"
-    return f"{status['chembl_db_version']} ({status['chembl_release_date']})"
+    cached = RAW / SOURCE_DIR / MAPPING_FILE
+    if cached.exists() and (version := release(cached)) != "unknown":
+        print(f"  chembl: release from the cached mapping file: {version}", file=sys.stderr)
+        return version
+    return "unknown"
 
 
 def build_bioactivity(targets: Iterable[tuple[str, str]], *, retrieved_at: str) -> list[Path]:

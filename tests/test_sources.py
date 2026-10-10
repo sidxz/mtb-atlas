@@ -8,6 +8,7 @@ catalogue where most "resistance" is not a residue change at all.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -334,11 +335,29 @@ def test_roles_come_from_the_same_rule_as_the_structures(ligands: dict) -> None:
 # --- a source that will not state its version --------------------------------
 
 
-def test_an_unreachable_release_is_unknown_not_a_guess(monkeypatch: pytest.MonkeyPatch) -> None:
-    """ChEMBL's status endpoint 500s sometimes; the version is not worth a build."""
-
+@pytest.fixture
+def chembl_api_down(monkeypatch: pytest.MonkeyPatch) -> None:
     def down(_url: str, **_kwargs: object) -> object:
         raise RuntimeError("500 Internal Server Error")
 
     monkeypatch.setattr(chembl, "fetch_json", down)
+
+
+def test_an_unreachable_release_falls_back_to_the_file_already_downloaded(
+    chembl_api_down: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ChEMBL's status endpoint 500s sometimes, and the mapping file names the release too.
+
+    Both are ChEMBL stating its own version, so the cached one is a fact
+    rather than a guess -- and a far better provenance stamp than "unknown".
+    """
+    monkeypatch.setattr(chembl, "RAW", FIXTURES.parent)
+    monkeypatch.setattr(chembl, "SOURCE_DIR", "fixtures")
+    assert chembl.release_from_api().startswith("chembl_")
+
+
+def test_with_no_release_anywhere_it_is_unknown_not_a_guess(
+    chembl_api_down: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(chembl, "RAW", tmp_path)
     assert chembl.release_from_api() == "unknown"

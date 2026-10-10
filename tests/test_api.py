@@ -164,3 +164,33 @@ def test_a_search_that_matches_nothing_is_empty_not_an_error(client: TestClient)
     found = client.get("/search", params={"q": "zzzznotathing"})
     assert found.status_code == 200
     assert all(items == [] for items in found.json().values())
+
+
+# --- a compound, the other way round -----------------------------------------
+
+
+def test_a_compound_names_the_genes_it_hits(client: TestClient) -> None:
+    """Hit triage runs compound-first: what does this molecule touch, and how hard?"""
+    page = client.get("/compounds/CHEMBL3330226").json()  # macozinone
+    assert page["pref_name"] == "MACOZINONE"
+    (gene,) = [g for g in page["genes"] if g["rv_id"] == "Rv3790"]
+    assert gene["gene_name"] == "dprE1"
+    assert gene["evidence"] == "direct"
+    assert gene["best_pchembl"] is not None
+
+
+def test_a_compound_that_is_a_tb_drug_says_so(client: TestClient) -> None:
+    page = client.get("/compounds/CHEMBL3330226").json()
+    assert page["drug"]["max_phase_tb"] == 2
+
+
+def test_a_compound_that_is_not_a_drug_says_nothing_about_phase(client: TestClient) -> None:
+    page = client.get("/compounds/CHEMBL1076347").json()
+    assert page["drug"] is None
+
+
+def test_whole_cell_stays_separate_from_protein_activity(client: TestClient) -> None:
+    """The rule the atlas is built on: a MIC is not evidence against a protein."""
+    page = client.get("/compounds/CHEMBL3330226").json()
+    assert all(a["evidence"] != "whole_cell" for a in page["activities"])
+    assert all(a["evidence"] == "whole_cell" for a in page["whole_cell"])

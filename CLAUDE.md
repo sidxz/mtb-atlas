@@ -154,6 +154,13 @@ negative; `max_phase_tb` is not `max_phase`; a `who_resistance` link is not a
 target), because a model that writes a plausible wrong join gets silent
 nonsense rather than an error.
 
+## Querying it
+
+Four ways in, and they all read the same store: the genome canvas, the drugs
+and trials view, `/search` over every object at once, and the agent. A new kind
+of evidence is not finished until the agent's schema carries its trap, because
+that is the only surface where a wrong join is silent.
+
 ## Conventions
 
 - Small commits, conventional commit messages (`feat:`, `fix:`, `docs:`, `test:`).

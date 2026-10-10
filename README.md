@@ -12,8 +12,11 @@ The questions it exists to answer:
 - Is there an experimental structure? A predicted one? A druggable pocket?
 - What chemical matter hits it, at what potency?
 - Which resistance mutations are known?
+- What does the protein do, where does it sit, how many papers is it in?
 - Which drugs and clinical candidates act on it, at what phase for TB, and in
-  which trials?
+  which trials? What is co-crystallised with it?
+- And from a compound: what does *it* touch, at what potency, and is it in the
+  clinic?
 - Which essential targets have a structure and no ligands?
 
 ## Status
@@ -38,6 +41,7 @@ make test         # 146 tests against committed fixtures, no network
 | M4 | Genome canvas: all 4,173 genes, recolourable by any evidence axis | ✅ |
 | M5 | Agent: natural-language questions, answers cite the records | ✅ |
 | M6 | Clinical layer: TB drugs and mechanisms, trials, and every drug–gene and trial–drug link labelled with how it was made | ✅ |
+| M7 | UniProt's protein biology per gene; ligand identity; one box over genes, drugs, trials and compounds | ✅ |
 | — | Beyond the brief: CRISPRi vulnerability, STRING partners, human anti-target, domains | ✅ |
 
 ## What it answers

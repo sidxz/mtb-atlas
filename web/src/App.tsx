@@ -246,6 +246,7 @@ export function App() {
           onPick={(kind, id) => {
             if (kind === "genes") openGene(id);
             else if (kind === "trials") openClinical({ kind: "trial", id });
+            else if (kind === "compounds") openClinical({ kind: "compound", id });
             else openClinical({ kind: "drug", id });
           }}
         />

@@ -588,6 +588,12 @@ def target(rv_id: str) -> TargetDetail:
 
 @app.get("/compounds/{molecule_chembl_id}")
 def compound(molecule_chembl_id: str) -> dict[str, Any]:
+    """One molecule, the way hit triage asks: what does it touch, and how hard?
+
+    Protein-level activity and whole-cell potency are returned apart, because
+    a MIC is not evidence against a protein, and the genes it reaches carry
+    the evidence level that put them there.
+    """
     connection = _db()
     rows = _query(
         connection, "SELECT * FROM compounds WHERE molecule_chembl_id = ?", [molecule_chembl_id]
@@ -596,11 +602,47 @@ def compound(molecule_chembl_id: str) -> dict[str, Any]:
         raise HTTPException(404, f"no compound {molecule_chembl_id} in the atlas")
     activities = _query(
         connection,
-        "SELECT * FROM activities WHERE molecule_chembl_id = ?"
+        "SELECT * FROM activities WHERE molecule_chembl_id = ? AND evidence <> 'whole_cell'"
         " ORDER BY pchembl_value DESC NULLS LAST",
         [molecule_chembl_id],
     )
-    return {**rows[0], "activities": activities}
+    whole_cell = _query(
+        connection,
+        "SELECT * FROM activities WHERE molecule_chembl_id = ? AND evidence = 'whole_cell'"
+        " ORDER BY pchembl_value DESC NULLS LAST",
+        [molecule_chembl_id],
+    )
+    # Through the crosswalk's ChEMBL targets, so a gene is reached the same way
+    # it is everywhere else -- with its evidence level, never flattened.
+    genes = _query(
+        connection,
+        "WITH gene_target AS ("
+        "  SELECT w.rv_id, s.gene_name, s.product, s.essentiality, s.vulnerability_index,"
+        "         s.vulnerability_certain, t.target_id, t.evidence, t.via_organism"
+        "  FROM crosswalk w, UNNEST(w.chembl_targets) AS u(t)"
+        "  JOIN target_summary s ON s.rv_id = w.rv_id)"
+        " SELECT gt.rv_id, any_value(gt.gene_name) AS gene_name, any_value(gt.product) AS product,"
+        "   any_value(gt.essentiality) AS essentiality,"
+        "   any_value(gt.vulnerability_index) AS vulnerability_index,"
+        "   any_value(gt.vulnerability_certain) AS vulnerability_certain,"
+        "   any_value(gt.evidence) AS evidence, any_value(gt.via_organism) AS via_organism,"
+        "   count(*) AS n_activities, max(a.pchembl_value) AS best_pchembl"
+        " FROM gene_target gt JOIN activities a ON a.target_chembl_id = gt.target_id"
+        " WHERE a.molecule_chembl_id = ? AND a.evidence <> 'whole_cell'"
+        " GROUP BY gt.rv_id ORDER BY best_pchembl DESC NULLS LAST",
+        [molecule_chembl_id],
+    )
+    drug = _query(
+        connection, "SELECT * FROM drugs WHERE molecule_chembl_id = ?", [molecule_chembl_id]
+    )
+    return {
+        **rows[0],
+        "genes": genes,
+        "activities": activities,
+        "whole_cell": whole_cell,
+        # The same molecule where it has reached the clinic, or None.
+        "drug": drug[0] if drug else None,
+    }
 
 
 class Hit(BaseModel):

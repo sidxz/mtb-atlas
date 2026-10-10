@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   api,
+  type CompoundDetail,
   type DrugDetail,
   type DrugLink,
   type DrugSummary,
@@ -19,7 +20,7 @@ import {
   type TrialDetail,
 } from "./api";
 
-export type Focus = { kind: "drug" | "trial"; id: string } | null;
+export type Focus = { kind: "drug" | "trial" | "compound"; id: string } | null;
 
 const LINK_LABEL: Record<DrugLink, string> = {
   mechanism: "ChEMBL mechanism",
@@ -515,7 +516,9 @@ export function DrugsAndTrials({
       </main>
 
       <aside className="col detailcol">
-        {focus?.kind === "drug" ? (
+        {focus?.kind === "compound" ? (
+          <CompoundPanel id={focus.id} onFocus={onFocus} onSelectGene={onSelectGene} />
+        ) : focus?.kind === "drug" ? (
           <DrugPanel id={focus.id} meta={meta} onFocus={onFocus} onSelectGene={onSelectGene} />
         ) : focus?.kind === "trial" ? (
           <TrialPanel id={focus.id} meta={meta} onFocus={onFocus} onSelectGene={onSelectGene} />
@@ -539,6 +542,106 @@ function useLoaded<T>(load: () => Promise<T>, key: string): [T | null, string | 
     // Keyed on the id alone: `load` is a fresh closure every render.
   }, [key]);
   return [value, error];
+}
+
+function CompoundPanel({
+  id,
+  onFocus,
+  onSelectGene,
+}: {
+  id: string;
+  onFocus: (focus: Focus) => void;
+  onSelectGene: (rv: string) => void;
+}) {
+  const [compound, error] = useLoaded<CompoundDetail>(() => api.compound(id), id);
+  if (error) return <div className="errbox">{error}</div>;
+  if (!compound) return <div className="empty">Loading {id}…</div>;
+
+  const number = (v: number | null | undefined, d = 2) =>
+    v === null || v === undefined ? "—" : v.toFixed(d);
+
+  return (
+    <>
+      <div className="detailhead">
+        <div className="row">
+          <span className="gn">{compound.pref_name ?? compound.molecule_chembl_id}</span>
+          <span className="rv">{compound.molecule_chembl_id}</span>
+        </div>
+        <p>
+          {compound.drug ? (
+            <button
+              type="button"
+              className="chip accent"
+              onClick={() => onFocus({ kind: "drug", id: compound.molecule_chembl_id })}
+            >
+              {phaseLabel(compound.drug.max_phase_tb)} for TB — open the drug
+            </button>
+          ) : (
+            <span className="dim">Not a molecule with a TB indication in ChEMBL.</span>
+          )}
+        </p>
+      </div>
+      <div className="panel">
+        <Section label="Acts on" source="ChEMBL bioactivity · CC BY-SA 3.0">
+          {compound.genes.length === 0 ? (
+            <span className="absent">no Mtb protein in the atlas has measured activity for it</span>
+          ) : (
+            <table>
+              <tbody>
+                {compound.genes.map((g) => (
+                  <tr key={g.rv_id} onClick={() => onSelectGene(g.rv_id)}>
+                    <td className="id">{g.gene_name ?? g.rv_id}</td>
+                    <td className="n">{number(g.best_pchembl)}</td>
+                    <td className="dim">{g.essentiality ?? "—"}</td>
+                    <td>
+                      {g.evidence === "orthologue" && (
+                        <span className="chip ortho" title={g.via_organism ?? ""}>
+                          orthologue
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <div className="note">
+            Best pChEMBL per gene. An orthologue link is a family-level reach through another
+            mycobacterium, not evidence of a shared binding site.
+          </div>
+        </Section>
+
+        <Section label="Whole-cell potency" source="ChEMBL bioactivity · CC BY-SA 3.0">
+          {compound.whole_cell.length === 0 ? (
+            <span className="absent">no whole-cell measurement for this compound</span>
+          ) : (
+            <>
+              <span className="big">
+                {number(Math.max(...compound.whole_cell.map((a) => a.pchembl_value ?? 0)) || null)}
+              </span>{" "}
+              <span className="dim">best of {compound.whole_cell.length} measurements</span>
+            </>
+          )}
+          <div className="note">
+            Against the whole organism. It says nothing on its own about which protein is engaged.
+          </div>
+        </Section>
+
+        <Section label="Properties" source="ChEMBL · CC BY-SA 3.0">
+          <div className="ids">
+            <span>MW {number(compound.mw, 0)}</span>
+            <span>cLogP {number(compound.alogp, 1)}</span>
+            <span>TPSA {number(compound.psa, 0)}</span>
+            <span>HBD {compound.hbd ?? "—"}</span>
+            <span>HBA {compound.hba ?? "—"}</span>
+            <span>Ro5 violations {compound.ro5_violations ?? "—"}</span>
+            {compound.qed !== null && <span>QED {number(compound.qed, 2)}</span>}
+          </div>
+          {compound.smiles && <div className="note mono">{compound.smiles}</div>}
+        </Section>
+      </div>
+    </>
+  );
 }
 
 function DrugPanel({

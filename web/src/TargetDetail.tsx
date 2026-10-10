@@ -177,7 +177,7 @@ export function TargetDetailPanel({
           </>
         )}
 
-        {tab === "chemistry" && <Chemistry detail={detail} />}
+        {tab === "chemistry" && <Chemistry detail={detail} onOpen={onOpen} />}
 
         {tab === "clinical" && <ClinicalTab detail={detail} meta={meta} onOpen={onOpen} />}
 
@@ -592,7 +592,7 @@ function StructureTable({ detail }: { detail: Detail }) {
   );
 }
 
-function Chemistry({ detail }: { detail: Detail }) {
+function Chemistry({ detail, onOpen }: { detail: Detail; onOpen: (focus: Focus) => void }) {
   const byCompound = useMemo(() => {
     const index = new Map<string, Compound>();
     for (const c of detail.compounds) index.set(c.molecule_chembl_id, c);
@@ -647,7 +647,13 @@ function Chemistry({ detail }: { detail: Detail }) {
           </thead>
           <tbody>
             {byCompound.slice(0, 250).map(({ activity, compound, cell }) => (
-              <tr key={activity.molecule_chembl_id}>
+              <tr
+                key={activity.molecule_chembl_id}
+                onClick={() =>
+                  activity.molecule_chembl_id &&
+                  onOpen({ kind: "compound", id: activity.molecule_chembl_id })
+                }
+              >
                 <td className="id">
                   {compound?.pref_name ?? activity.molecule_chembl_id}
                   {activity.evidence === "orthologue" && (

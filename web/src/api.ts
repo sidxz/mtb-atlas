@@ -422,6 +422,25 @@ export interface Partner {
   coexpression: number;
 }
 
+/** One molecule as hit triage asks for it: what it touches, and how hard. */
+export interface CompoundDetail extends Compound {
+  genes: {
+    rv_id: string;
+    gene_name: string | null;
+    product: string | null;
+    essentiality: string | null;
+    vulnerability_index: number | null;
+    vulnerability_certain: boolean;
+    evidence: "direct" | "orthologue";
+    via_organism: string | null;
+    n_activities: number;
+    best_pchembl: number | null;
+  }[];
+  activities: Activity[];
+  whole_cell: Activity[];
+  drug: DrugSummary | null;
+}
+
 export interface Meta {
   counts: Record<string, number>;
   sources: { name: string; version: string; licence: string; retrieved: string }[];
@@ -472,7 +491,7 @@ export const api = {
       query as Record<string, unknown>,
     ),
   target: (rvId: string) => get<TargetDetail>(`/targets/${rvId}`),
-  compound: (id: string) => get<Compound & { activities: Activity[] }>(`/compounds/${id}`),
+  compound: (id: string) => get<CompoundDetail>(`/compounds/${id}`),
   drugs: () => get<Page<DrugSummary>>("/drugs", { limit: 1000 }),
   drug: (id: string) => get<DrugDetail>(`/drugs/${id}`),
   trials: () => get<Page<Trial>>("/trials", { limit: 2000 }),

@@ -1023,6 +1023,385 @@
      }
     }
    }
+  },
+  {
+   "hasResults": true,
+   "protocolSection": {
+    "armsInterventionsModule": {
+     "armGroups": [
+      {
+       "interventionNames": [
+        "Drug: SPR720"
+       ],
+       "label": "SPR720 low dose",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Drug: SPR720"
+       ],
+       "label": "SPR720 high dose",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Drug: Placebo"
+       ],
+       "label": "Placebo",
+       "type": "PLACEBO_COMPARATOR"
+      },
+      {
+       "interventionNames": [
+        "Drug: Open-label Standard of Care"
+       ],
+       "label": "Standard of Care (SOC)",
+       "type": "ACTIVE_COMPARATOR"
+      }
+     ],
+     "interventions": [
+      {
+       "armGroupLabels": [
+        "SPR720 high dose",
+        "SPR720 low dose"
+       ],
+       "name": "SPR720",
+       "type": "DRUG"
+      },
+      {
+       "armGroupLabels": [
+        "Placebo"
+       ],
+       "name": "Placebo",
+       "type": "DRUG"
+      },
+      {
+       "armGroupLabels": [
+        "Standard of Care (SOC)"
+       ],
+       "name": "Open-label Standard of Care",
+       "type": "DRUG"
+      }
+     ]
+    },
+    "conditionsModule": {
+     "conditions": [
+      "Mycobacterium Avium Complex",
+      "Non-tuberculous Mycobacterium Pulmonary Disease"
+     ]
+    },
+    "contactsLocationsModule": {
+     "locations": [
+      {
+       "country": "United States"
+      },
+      {
+       "country": "United States"
+      },
+      {
+       "country": "United States"
+      },
+      {
+       "country": "United States"
+      },
+      {
+       "country": "United States"
+      },
+      {
+       "country": "United States"
+      },
+      {
+       "country": "United States"
+      },
+      {
+       "country": "United States"
+      },
+      {
+       "country": "United States"
+      }
+     ]
+    },
+    "designModule": {
+     "designInfo": {
+      "allocation": "RANDOMIZED",
+      "primaryPurpose": "TREATMENT"
+     },
+     "enrollmentInfo": {
+      "count": 2
+     },
+     "phases": [
+      "PHASE2"
+     ],
+     "studyType": "INTERVENTIONAL"
+    },
+    "identificationModule": {
+     "briefTitle": "Safety, Tolerability, Pharmacokinetics and Efficacy of SPR720 for the Treatment of Patients With Mycobacterium Avium Complex (MAC) Pulmonary Disease",
+     "nctId": "NCT04553406",
+     "officialTitle": "A Randomized, Partially Blinded, Placebo- and Comparator-Controlled, Multicenter, Phase 2a, Dose Ranging, Proof-of-Concept Study to Evaluate the Safety, Tolerability, Pharmacokinetics, and Efficacy of SPR720 as Compared With Placebo or Standard of Care for the Treatment of Patients With Mycobacterium Avium Complex (MAC) Pulmonary Disease"
+    },
+    "sponsorCollaboratorsModule": {
+     "leadSponsor": {
+      "class": "INDUSTRY",
+      "name": "Spero Therapeutics"
+     }
+    },
+    "statusModule": {
+     "completionDateStruct": {
+      "date": "2021-01-28"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2022-02-28"
+     },
+     "overallStatus": "TERMINATED",
+     "primaryCompletionDateStruct": {
+      "date": "2021-01-28"
+     },
+     "startDateStruct": {
+      "date": "2020-12-03"
+     },
+     "studyFirstPostDateStruct": {
+      "date": "2020-09-17"
+     },
+     "whyStopped": "Business decision pending resolution of clinical hold with FDA"
+    }
+   }
+  },
+  {
+   "hasResults": false,
+   "protocolSection": {
+    "armsInterventionsModule": {
+     "armGroups": [
+      {
+       "interventionNames": [
+        "Biological: H107e"
+       ],
+       "label": "Arm 1 (phase 1a)",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Biological: CAF\u00ae10b"
+       ],
+       "label": "Arm 2 (phase 1a)",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Biological: H107e/CAF\u00ae10b - low adjuvant dose"
+       ],
+       "label": "Arm 3 (phase 1a)",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Biological: H107e/CAF\u00ae10b - full adjuvant dose",
+        "Biological: Low dose intranasal H107e"
+       ],
+       "label": "Arm 4a (phase 1a)",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Biological: H107e/CAF\u00ae10b - full adjuvant dose",
+        "Biological: Full dose intranasal H107e"
+       ],
+       "label": "Arm 4b (phase 1a)",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Biological: H107e/CAF\u00ae10b",
+        "Biological: i.d. placebo",
+        "Biological: Intranasal H107e"
+       ],
+       "label": "Arm 1 (phase 1b)",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Biological: H107e/CAF\u00ae10b",
+        "Biological: BCG",
+        "Biological: Intranasal H107e"
+       ],
+       "label": "Arm 2 (phase 1b)",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Biological: i.m. placebo",
+        "Biological: BCG",
+        "Biological: Intranasal H107e"
+       ],
+       "label": "Arm 3 (phase 1b)",
+       "type": "ACTIVE_COMPARATOR"
+      },
+      {
+       "interventionNames": [
+        "Biological: i.m. placebo",
+        "Biological: i.d. placebo",
+        "Biological: Intranasal H107e"
+       ],
+       "label": "Arm 4 (phase 1b)",
+       "type": "PLACEBO_COMPARATOR"
+      }
+     ],
+     "interventions": [
+      {
+       "armGroupLabels": [
+        "Arm 1 (phase 1a)"
+       ],
+       "name": "H107e",
+       "type": "BIOLOGICAL"
+      },
+      {
+       "armGroupLabels": [
+        "Arm 2 (phase 1a)"
+       ],
+       "name": "CAF\u00ae10b",
+       "type": "BIOLOGICAL"
+      },
+      {
+       "armGroupLabels": [
+        "Arm 3 (phase 1a)"
+       ],
+       "name": "H107e/CAF\u00ae10b - low adjuvant dose",
+       "type": "BIOLOGICAL"
+      },
+      {
+       "armGroupLabels": [
+        "Arm 4a (phase 1a)",
+        "Arm 4b (phase 1a)"
+       ],
+       "name": "H107e/CAF\u00ae10b - full adjuvant dose",
+       "type": "BIOLOGICAL"
+      },
+      {
+       "armGroupLabels": [
+        "Arm 4a (phase 1a)"
+       ],
+       "name": "Low dose intranasal H107e",
+       "type": "BIOLOGICAL"
+      },
+      {
+       "armGroupLabels": [
+        "Arm 4b (phase 1a)"
+       ],
+       "name": "Full dose intranasal H107e",
+       "type": "BIOLOGICAL"
+      },
+      {
+       "armGroupLabels": [
+        "Arm 1 (phase 1b)",
+        "Arm 2 (phase 1b)"
+       ],
+       "name": "H107e/CAF\u00ae10b",
+       "type": "BIOLOGICAL"
+      },
+      {
+       "armGroupLabels": [
+        "Arm 3 (phase 1b)",
+        "Arm 4 (phase 1b)"
+       ],
+       "name": "i.m. placebo",
+       "type": "BIOLOGICAL"
+      },
+      {
+       "armGroupLabels": [
+        "Arm 2 (phase 1b)",
+        "Arm 3 (phase 1b)"
+       ],
+       "name": "BCG",
+       "type": "BIOLOGICAL"
+      },
+      {
+       "armGroupLabels": [
+        "Arm 1 (phase 1b)",
+        "Arm 4 (phase 1b)"
+       ],
+       "name": "i.d. placebo",
+       "type": "BIOLOGICAL"
+      },
+      {
+       "armGroupLabels": [
+        "Arm 1 (phase 1b)",
+        "Arm 2 (phase 1b)",
+        "Arm 3 (phase 1b)",
+        "Arm 4 (phase 1b)"
+       ],
+       "name": "Intranasal H107e",
+       "type": "BIOLOGICAL"
+      }
+     ]
+    },
+    "conditionsModule": {
+     "conditions": [
+      "Healthy"
+     ]
+    },
+    "contactsLocationsModule": {
+     "locations": [
+      {
+       "country": "South Africa"
+      }
+     ]
+    },
+    "designModule": {
+     "designInfo": {
+      "allocation": "NON_RANDOMIZED",
+      "primaryPurpose": "PREVENTION"
+     },
+     "enrollmentInfo": {
+      "count": 140
+     },
+     "phases": [
+      "PHASE1"
+     ],
+     "studyType": "INTERVENTIONAL"
+    },
+    "identificationModule": {
+     "acronym": "nTB-01",
+     "briefTitle": "First-in-Human Trial of the Novel Tuberculosis Vaccine Candidate, H107e/CAF\u00ae10b",
+     "nctId": "NCT06050356",
+     "officialTitle": "A Phase 1a, Dose-finding, Open-label Trial Followed by a Phase 1b, Double-blind, Randomised, Placebo-controlled Trial to Evaluate the Safety, Reactogenicity, and Immunogenicity of the Tuberculosis Subunit Vaccine H107e/CAF\u00ae10b in Adults"
+    },
+    "sponsorCollaboratorsModule": {
+     "collaborators": [
+      {
+       "name": "Aurum Institute"
+      },
+      {
+       "name": "Bill and Melinda Gates Foundation"
+      },
+      {
+       "name": "Leiden University Medical Center"
+      },
+      {
+       "name": "South African Tuberculosis Vaccine Initiative"
+      }
+     ],
+     "leadSponsor": {
+      "class": "OTHER",
+      "name": "Statens Serum Institut"
+     }
+    },
+    "statusModule": {
+     "completionDateStruct": {
+      "date": "2026-12"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2026-03-10"
+     },
+     "overallStatus": "ACTIVE_NOT_RECRUITING",
+     "primaryCompletionDateStruct": {
+      "date": "2026-12"
+     },
+     "startDateStruct": {
+      "date": "2024-03-14"
+     },
+     "studyFirstPostDateStruct": {
+      "date": "2023-09-22"
+     }
+    }
+   }
   }
  ],
  "version": {

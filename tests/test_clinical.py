@@ -130,6 +130,16 @@ def test_countries_are_distinct(trials: dict) -> None:
         assert trial["countries"] == sorted(set(trial["countries"]))
 
 
+def test_nontuberculous_mycobacterial_trials_are_not_tb_trials(trials: dict) -> None:
+    """The condition search for "tuberculosis" also returns "Non-tuberculous ..." studies."""
+    assert "NCT04553406" not in trials  # SPR720 in Mycobacterium avium complex
+
+
+def test_a_tb_trial_without_a_tb_condition_stays(trials: dict) -> None:
+    """A first-in-human TB vaccine lists only 'Healthy' as its condition, and is a TB trial."""
+    assert "NCT06050356" in trials
+
+
 def test_version_names_the_processing_date(studies: dict) -> None:
     assert "2026-10-09T09:00:05" in clinicaltrials.version(studies["version"])
 

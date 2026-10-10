@@ -1,0 +1,1032 @@
+{
+ "studies": [
+  {
+   "hasResults": true,
+   "protocolSection": {
+    "armsInterventionsModule": {
+     "armGroups": [
+      {
+       "interventionNames": [
+        "Drug: Bedaquiline",
+        "Drug: PA-824",
+        "Drug: Linezolid"
+       ],
+       "label": "Bedaquiline + PA-824 + Linezolid",
+       "type": "EXPERIMENTAL"
+      }
+     ],
+     "interventions": [
+      {
+       "armGroupLabels": [
+        "Bedaquiline + PA-824 + Linezolid"
+       ],
+       "name": "Bedaquiline",
+       "otherNames": [
+        "B",
+        "TMC-207"
+       ],
+       "type": "DRUG"
+      },
+      {
+       "armGroupLabels": [
+        "Bedaquiline + PA-824 + Linezolid"
+       ],
+       "name": "PA-824",
+       "otherNames": [
+        "Pa",
+        "pretomanid"
+       ],
+       "type": "DRUG"
+      },
+      {
+       "armGroupLabels": [
+        "Bedaquiline + PA-824 + Linezolid"
+       ],
+       "name": "Linezolid",
+       "otherNames": [
+        "L",
+        "Lin"
+       ],
+       "type": "DRUG"
+      }
+     ]
+    },
+    "conditionsModule": {
+     "conditions": [
+      "Pulmonary Tuberculosis"
+     ]
+    },
+    "contactsLocationsModule": {
+     "locations": [
+      {
+       "country": "South Africa"
+      },
+      {
+       "country": "South Africa"
+      },
+      {
+       "country": "South Africa"
+      }
+     ]
+    },
+    "designModule": {
+     "designInfo": {
+      "allocation": "NA",
+      "primaryPurpose": "TREATMENT"
+     },
+     "enrollmentInfo": {
+      "count": 109
+     },
+     "phases": [
+      "PHASE3"
+     ],
+     "studyType": "INTERVENTIONAL"
+    },
+    "identificationModule": {
+     "briefTitle": "A Phase 3 Trial Assessing Safety and Efficacy of B-Pa-L in Participants With DR-TB",
+     "nctId": "NCT02333799",
+     "officialTitle": "A Phase 3 Open-label Trial Assessing the Safety and Efficacy of Bedaquiline Plus PA-824 Plus Linezolid in Participants With Pulmonary Infection of Either XDR-TB or Treatment Intolerant / Non-responsive MDR-TB."
+    },
+    "sponsorCollaboratorsModule": {
+     "leadSponsor": {
+      "class": "OTHER",
+      "name": "Global Alliance for TB Drug Development"
+     }
+    },
+    "statusModule": {
+     "completionDateStruct": {
+      "date": "2020-08-03"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2025-09-08"
+     },
+     "overallStatus": "COMPLETED",
+     "primaryCompletionDateStruct": {
+      "date": "2019-01-14"
+     },
+     "startDateStruct": {
+      "date": "2015-03"
+     },
+     "studyFirstPostDateStruct": {
+      "date": "2015-01-07"
+     }
+    }
+   }
+  },
+  {
+   "hasResults": true,
+   "protocolSection": {
+    "armsInterventionsModule": {
+     "armGroups": [
+      {
+       "interventionNames": [
+        "Drug: Rifapentine (RPT)",
+        "Drug: Isoniazid (INH)",
+        "Dietary Supplement: Pyridoxine (vitamin B6)"
+       ],
+       "label": "Cohort 1 (pregnant women enrolled in the second trimester)",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Drug: Rifapentine (RPT)",
+        "Drug: Isoniazid (INH)",
+        "Dietary Supplement: Pyridoxine (vitamin B6)"
+       ],
+       "label": "Cohort 2 (pregnant women enrolled in the third trimester)",
+       "type": "EXPERIMENTAL"
+      }
+     ],
+     "interventions": [
+      {
+       "armGroupLabels": [
+        "Cohort 1 (pregnant women enrolled in the second trimester)",
+        "Cohort 2 (pregnant women enrolled in the third trimester)"
+       ],
+       "name": "Rifapentine (RPT)",
+       "otherNames": [
+        "Rifamycin"
+       ],
+       "type": "DRUG"
+      },
+      {
+       "armGroupLabels": [
+        "Cohort 1 (pregnant women enrolled in the second trimester)",
+        "Cohort 2 (pregnant women enrolled in the third trimester)"
+       ],
+       "name": "Isoniazid (INH)",
+       "otherNames": [
+        "isonicotinyl hydrazine,"
+       ],
+       "type": "DRUG"
+      },
+      {
+       "armGroupLabels": [
+        "Cohort 1 (pregnant women enrolled in the second trimester)",
+        "Cohort 2 (pregnant women enrolled in the third trimester)"
+       ],
+       "name": "Pyridoxine (vitamin B6)",
+       "otherNames": [
+        "Vitamin B6"
+       ],
+       "type": "DIETARY_SUPPLEMENT"
+      }
+     ]
+    },
+    "conditionsModule": {
+     "conditions": [
+      "Tuberculosis"
+     ]
+    },
+    "contactsLocationsModule": {
+     "locations": [
+      {
+       "country": "Haiti"
+      },
+      {
+       "country": "Kenya"
+      },
+      {
+       "country": "Malawi"
+      },
+      {
+       "country": "Thailand"
+      },
+      {
+       "country": "Zimbabwe"
+      }
+     ]
+    },
+    "designModule": {
+     "designInfo": {
+      "allocation": "NON_RANDOMIZED",
+      "primaryPurpose": "TREATMENT"
+     },
+     "enrollmentInfo": {
+      "count": 50
+     },
+     "phases": [
+      "PHASE1",
+      "PHASE2"
+     ],
+     "studyType": "INTERVENTIONAL"
+    },
+    "identificationModule": {
+     "briefTitle": "Evaluating PK, Tolerability, and Safety of Rifapentine and Isoniazid in Pregnant and Postpartum Women",
+     "nctId": "NCT02651259",
+     "officialTitle": "A Phase I/II Trial of the Pharmacokinetics, Tolerability, and Safety of Once-Weekly Rifapentine and Isoniazid in HIV-1-infected and HIV-1-uninfected Pregnant and Postpartum Women With Latent Tuberculosis Infection"
+    },
+    "sponsorCollaboratorsModule": {
+     "leadSponsor": {
+      "class": "NIH",
+      "name": "National Institute of Allergy and Infectious Diseases (NIAID)"
+     }
+    },
+    "statusModule": {
+     "completionDateStruct": {
+      "date": "2019-04-10"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2021-11-04"
+     },
+     "overallStatus": "COMPLETED",
+     "primaryCompletionDateStruct": {
+      "date": "2019-04-10"
+     },
+     "startDateStruct": {
+      "date": "2017-03-13"
+     },
+     "studyFirstPostDateStruct": {
+      "date": "2016-01-08"
+     }
+    }
+   }
+  },
+  {
+   "hasResults": true,
+   "protocolSection": {
+    "armsInterventionsModule": {
+     "armGroups": [
+      {
+       "interventionNames": [
+        "Drug: PBTZ169 - 40 mg"
+       ],
+       "label": "Cohort 1",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Drug: PBTZ169 - 80 mg"
+       ],
+       "label": "Cohort 2",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Drug: PBTZ169 - 160 mg"
+       ],
+       "label": "Cohort 3",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Drug: PBTZ169 - 320 mg"
+       ],
+       "label": "Cohort 4",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Drug: PBTZ169 - 640 mg"
+       ],
+       "label": "Cohort 5",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Drug: PBTZ169 - 320 mg (multiple administration)"
+       ],
+       "label": "Cohort 6",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Drug: PBTZ169 - 640 mg (multiple administration)"
+       ],
+       "label": "Cohort 7",
+       "type": "EXPERIMENTAL"
+      }
+     ],
+     "interventions": [
+      {
+       "armGroupLabels": [
+        "Cohort 1"
+       ],
+       "name": "PBTZ169 - 40 mg",
+       "otherNames": [
+        "PBTZ169"
+       ],
+       "type": "DRUG"
+      },
+      {
+       "armGroupLabels": [
+        "Cohort 2"
+       ],
+       "name": "PBTZ169 - 80 mg",
+       "otherNames": [
+        "PBTZ169"
+       ],
+       "type": "DRUG"
+      },
+      {
+       "armGroupLabels": [
+        "Cohort 3"
+       ],
+       "name": "PBTZ169 - 160 mg",
+       "otherNames": [
+        "PBTZ169"
+       ],
+       "type": "DRUG"
+      },
+      {
+       "armGroupLabels": [
+        "Cohort 4"
+       ],
+       "name": "PBTZ169 - 320 mg",
+       "otherNames": [
+        "PBTZ169"
+       ],
+       "type": "DRUG"
+      },
+      {
+       "armGroupLabels": [
+        "Cohort 5"
+       ],
+       "name": "PBTZ169 - 640 mg",
+       "otherNames": [
+        "PBTZ169"
+       ],
+       "type": "DRUG"
+      },
+      {
+       "armGroupLabels": [
+        "Cohort 6"
+       ],
+       "name": "PBTZ169 - 320 mg (multiple administration)",
+       "otherNames": [
+        "PBTZ169"
+       ],
+       "type": "DRUG"
+      },
+      {
+       "armGroupLabels": [
+        "Cohort 7"
+       ],
+       "name": "PBTZ169 - 640 mg (multiple administration)",
+       "otherNames": [
+        "PBTZ169"
+       ],
+       "type": "DRUG"
+      }
+     ]
+    },
+    "conditionsModule": {
+     "conditions": [
+      "Tuberculosis"
+     ]
+    },
+    "designModule": {
+     "designInfo": {
+      "allocation": "RANDOMIZED",
+      "primaryPurpose": "BASIC_SCIENCE"
+     },
+     "enrollmentInfo": {
+      "count": 40
+     },
+     "phases": [
+      "PHASE1"
+     ],
+     "studyType": "INTERVENTIONAL"
+    },
+    "identificationModule": {
+     "briefTitle": "Phase 1 Study of PBTZ169",
+     "nctId": "NCT03036163",
+     "officialTitle": "Open-label Prospective Noncomparative Study of Safety, Tolerability and Pharmacokinetics of PBTZ169 After Single and Multiple Fasting Oral Administration in Increasing Doses in Healthy Volunteers"
+    },
+    "sponsorCollaboratorsModule": {
+     "collaborators": [
+      {
+       "name": "OCT LLC"
+      }
+     ],
+     "leadSponsor": {
+      "class": "INDUSTRY",
+      "name": "Nearmedic Plus LLC"
+     }
+    },
+    "statusModule": {
+     "completionDateStruct": {
+      "date": "2016-11"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2020-04-13"
+     },
+     "overallStatus": "COMPLETED",
+     "primaryCompletionDateStruct": {
+      "date": "2016-09"
+     },
+     "startDateStruct": {
+      "date": "2016-01"
+     },
+     "studyFirstPostDateStruct": {
+      "date": "2017-01-30"
+     }
+    }
+   }
+  },
+  {
+   "hasResults": false,
+   "protocolSection": {
+    "armsInterventionsModule": {
+     "armGroups": [
+      {
+       "interventionNames": [
+        "Drug: PBTZ169 Formulation"
+       ],
+       "label": "Panel A - Active",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Drug: Placebo"
+       ],
+       "label": "Panel A - Placebo",
+       "type": "PLACEBO_COMPARATOR"
+      },
+      {
+       "interventionNames": [
+        "Drug: PBTZ169 Formulation"
+       ],
+       "label": "Panel B - Active",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Drug: Placebo"
+       ],
+       "label": "Panel B - Placebo",
+       "type": "PLACEBO_COMPARATOR"
+      },
+      {
+       "interventionNames": [
+        "Drug: PBTZ169 Formulation",
+        "Drug: PBTZ169 NCP"
+       ],
+       "label": "Panel C - Active",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Drug: Placebo"
+       ],
+       "label": "Panel C - Placebo",
+       "type": "ACTIVE_COMPARATOR"
+      },
+      {
+       "interventionNames": [
+        "Drug: PBTZ169 Formulation",
+        "Drug: PBTZ169 NCP"
+       ],
+       "label": "Panel D - Active",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Drug: Placebo"
+       ],
+       "label": "Panel D - Placebo",
+       "type": "ACTIVE_COMPARATOR"
+      }
+     ],
+     "interventions": [
+      {
+       "armGroupLabels": [
+        "Panel A - Active",
+        "Panel B - Active",
+        "Panel C - Active",
+        "Panel D - Active"
+       ],
+       "name": "PBTZ169 Formulation",
+       "type": "DRUG"
+      },
+      {
+       "armGroupLabels": [
+        "Panel A - Placebo",
+        "Panel B - Placebo",
+        "Panel C - Placebo",
+        "Panel D - Placebo"
+       ],
+       "name": "Placebo",
+       "type": "DRUG"
+      },
+      {
+       "armGroupLabels": [
+        "Panel C - Active",
+        "Panel D - Active"
+       ],
+       "name": "PBTZ169 NCP",
+       "type": "DRUG"
+      }
+     ]
+    },
+    "conditionsModule": {
+     "conditions": [
+      "Tuberculosis",
+      "Tuberculosis, Pulmonary"
+     ]
+    },
+    "contactsLocationsModule": {
+     "locations": [
+      {
+       "country": "Switzerland"
+      }
+     ]
+    },
+    "designModule": {
+     "designInfo": {
+      "allocation": "RANDOMIZED",
+      "primaryPurpose": "TREATMENT"
+     },
+     "enrollmentInfo": {
+      "count": 32
+     },
+     "phases": [
+      "PHASE1"
+     ],
+     "studyType": "INTERVENTIONAL"
+    },
+    "identificationModule": {
+     "briefTitle": "Study to Evaluate the Safety, Tolerability, Pharmacokinetics and Ex-vivo Antitubercular Activity of PBTZ169 Formulation",
+     "nctId": "NCT03423030",
+     "officialTitle": "Safety, Tolerability, Pharmacokinetic Profile and Ex-vivo Antitubercular Activity of PBTZ169 Formulated as Spray- Dried Dispersion Versus Native Crystal Powder: Single Ascending Doses, Randomized, Placebo- Controlled, Cross-over Phase Ia Trial in Healthy Volunteers"
+    },
+    "sponsorCollaboratorsModule": {
+     "collaborators": [
+      {
+       "name": "Bill and Melinda Gates Foundation"
+      }
+     ],
+     "leadSponsor": {
+      "class": "OTHER",
+      "name": "Innovative Medicines for Tuberculosis"
+     }
+    },
+    "statusModule": {
+     "completionDateStruct": {
+      "date": "2018-03-28"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2018-07-13"
+     },
+     "overallStatus": "COMPLETED",
+     "primaryCompletionDateStruct": {
+      "date": "2018-03-28"
+     },
+     "startDateStruct": {
+      "date": "2017-12-05"
+     },
+     "studyFirstPostDateStruct": {
+      "date": "2018-02-06"
+     }
+    }
+   }
+  },
+  {
+   "hasResults": false,
+   "protocolSection": {
+    "armsInterventionsModule": {
+     "armGroups": [
+      {
+       "interventionNames": [
+        "Drug: SQ109"
+       ],
+       "label": "SQ109 75 mg",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Drug: SQ109"
+       ],
+       "label": "SQ109 150 mg",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Drug: SQ109"
+       ],
+       "label": "SQ109 300 mg",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Drug: SQ109",
+        "Drug: Rifampicin"
+       ],
+       "label": "SQ109 150 mg + RIF",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Drug: SQ109",
+        "Drug: Rifampicin"
+       ],
+       "label": "SQ109 300 mg + RIF",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Drug: Rifampicin"
+       ],
+       "label": "RIF Mono",
+       "type": "ACTIVE_COMPARATOR"
+      }
+     ],
+     "interventions": [
+      {
+       "armGroupLabels": [
+        "SQ109 150 mg",
+        "SQ109 150 mg + RIF",
+        "SQ109 300 mg",
+        "SQ109 300 mg + RIF",
+        "SQ109 75 mg"
+       ],
+       "name": "SQ109",
+       "type": "DRUG"
+      },
+      {
+       "armGroupLabels": [
+        "RIF Mono",
+        "SQ109 150 mg + RIF",
+        "SQ109 300 mg + RIF"
+       ],
+       "name": "Rifampicin",
+       "type": "DRUG"
+      }
+     ]
+    },
+    "conditionsModule": {
+     "conditions": [
+      "Tuberculosis, Pulmonary"
+     ]
+    },
+    "contactsLocationsModule": {
+     "locations": [
+      {
+       "country": "South Africa"
+      },
+      {
+       "country": "South Africa"
+      }
+     ]
+    },
+    "designModule": {
+     "designInfo": {
+      "allocation": "RANDOMIZED",
+      "primaryPurpose": "TREATMENT"
+     },
+     "enrollmentInfo": {
+      "count": 90
+     },
+     "phases": [
+      "PHASE2"
+     ],
+     "studyType": "INTERVENTIONAL"
+    },
+    "identificationModule": {
+     "acronym": "SQ109EBA",
+     "briefTitle": "Early Bactericidal Activity (EBA) of SQ109 in Adult Subjects With Pulmonary TB",
+     "nctId": "NCT01218217",
+     "officialTitle": "A Phase 2A Trial to Evaluate the Extended Early Bactericidal Activity, Safety, Tolerability, and Pharmacokinetics of SQ109 in Adult Subjects With Newly Diagnosed, Uncomplicated, Smear-Positive, Pulmonary Tuberculosis"
+    },
+    "sponsorCollaboratorsModule": {
+     "collaborators": [
+      {
+       "name": "Sequella, Inc."
+      },
+      {
+       "name": "European and Developing Countries Clinical Trials Partnership (EDCTP)"
+      },
+      {
+       "name": "German Federal Ministry of Education and Research"
+      },
+      {
+       "name": "Quintiles, Inc."
+      },
+      {
+       "name": "CMed Technologies Inc."
+      },
+      {
+       "name": "PathCare"
+      },
+      {
+       "name": "Parexel"
+      }
+     ],
+     "leadSponsor": {
+      "class": "OTHER",
+      "name": "Michael Hoelscher"
+     }
+    },
+    "statusModule": {
+     "completionDateStruct": {
+      "date": "2012-05"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2013-01-14"
+     },
+     "overallStatus": "COMPLETED",
+     "primaryCompletionDateStruct": {
+      "date": "2011-09"
+     },
+     "startDateStruct": {
+      "date": "2010-11"
+     },
+     "studyFirstPostDateStruct": {
+      "date": "2010-10-11"
+     }
+    }
+   }
+  },
+  {
+   "hasResults": true,
+   "protocolSection": {
+    "armsInterventionsModule": {
+     "armGroups": [
+      {
+       "interventionNames": [
+        "Drug: Bedaquiline (BDQ)",
+        "Drug: Clofazimine (CFZ)",
+        "Drug: Pyrazinamide (PZA)",
+        "Drug: Delamanid (DLM)"
+       ],
+       "label": "Arm 1 BCZD",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Drug: Rifampicin (RIF)",
+        "Drug: Isoniazid (INH)",
+        "Drug: Ethambutol (EMB)",
+        "Drug: Pyrazinamide (PZA)"
+       ],
+       "label": "Arm 2 RHZE",
+       "type": "ACTIVE_COMPARATOR"
+      }
+     ],
+     "interventions": [
+      {
+       "armGroupLabels": [
+        "Arm 1 BCZD"
+       ],
+       "name": "Bedaquiline (BDQ)",
+       "type": "DRUG"
+      },
+      {
+       "armGroupLabels": [
+        "Arm 1 BCZD"
+       ],
+       "name": "Clofazimine (CFZ)",
+       "type": "DRUG"
+      },
+      {
+       "armGroupLabels": [
+        "Arm 1 BCZD"
+       ],
+       "name": "Pyrazinamide (PZA)",
+       "type": "DRUG"
+      },
+      {
+       "armGroupLabels": [
+        "Arm 1 BCZD"
+       ],
+       "name": "Delamanid (DLM)",
+       "type": "DRUG"
+      },
+      {
+       "armGroupLabels": [
+        "Arm 2 RHZE"
+       ],
+       "name": "Rifampicin (RIF)",
+       "type": "DRUG"
+      },
+      {
+       "armGroupLabels": [
+        "Arm 2 RHZE"
+       ],
+       "name": "Isoniazid (INH)",
+       "type": "DRUG"
+      },
+      {
+       "armGroupLabels": [
+        "Arm 2 RHZE"
+       ],
+       "name": "Ethambutol (EMB)",
+       "type": "DRUG"
+      },
+      {
+       "armGroupLabels": [
+        "Arm 2 RHZE"
+       ],
+       "name": "Pyrazinamide (PZA)",
+       "type": "DRUG"
+      }
+     ]
+    },
+    "conditionsModule": {
+     "conditions": [
+      "Tuberculosis, Pulmonary",
+      "HIV"
+     ]
+    },
+    "contactsLocationsModule": {
+     "locations": [
+      {
+       "country": "Haiti"
+      },
+      {
+       "country": "South Africa"
+      }
+     ]
+    },
+    "designModule": {
+     "designInfo": {
+      "allocation": "RANDOMIZED",
+      "primaryPurpose": "TREATMENT"
+     },
+     "enrollmentInfo": {
+      "count": 94
+     },
+     "phases": [
+      "PHASE2"
+     ],
+     "studyType": "INTERVENTIONAL"
+    },
+    "identificationModule": {
+     "acronym": "PRESCIENT",
+     "briefTitle": "Ultra-Short Course Bedaquiline, Clofazimine, Pyrazinamide and Delamanid Versus Standard Therapy for Drug-Susceptible Tuberculosis",
+     "nctId": "NCT05556746",
+     "officialTitle": "A Phase IIc, Open-Label, Randomized Controlled Trial of Ultra-Short Course Bedaquiline, Clofazimine, Pyrazinamide and Delamanid Versus Standard Therapy for Drug-Susceptible Tuberculosis (PRESCIENT)"
+    },
+    "sponsorCollaboratorsModule": {
+     "collaborators": [
+      {
+       "name": "University of Cape Town"
+      },
+      {
+       "name": "Haitian Group for the Study of Kaposi's Sarcoma and Opportunistic"
+      },
+      {
+       "name": "University of Stellenbosch"
+      },
+      {
+       "name": "University of California, Los Angeles"
+      },
+      {
+       "name": "Harvard School of Public Health (HSPH)"
+      },
+      {
+       "name": "National Institute of Allergy and Infectious Diseases (NIAID)"
+      }
+     ],
+     "leadSponsor": {
+      "class": "OTHER",
+      "name": "Brigham and Women's Hospital"
+     }
+    },
+    "statusModule": {
+     "completionDateStruct": {
+      "date": "2027-01"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2026-08-05"
+     },
+     "overallStatus": "ACTIVE_NOT_RECRUITING",
+     "primaryCompletionDateStruct": {
+      "date": "2025-06-12"
+     },
+     "startDateStruct": {
+      "date": "2023-11-24"
+     },
+     "studyFirstPostDateStruct": {
+      "date": "2022-09-27"
+     }
+    }
+   }
+  },
+  {
+   "hasResults": false,
+   "protocolSection": {
+    "armsInterventionsModule": {
+     "armGroups": [
+      {
+       "interventionNames": [
+        "Biological: ChAdOx1 85A"
+       ],
+       "label": "Starter Group",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Biological: ChAdOx1 85A"
+       ],
+       "label": "Group A",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Biological: ChAdOx1 85A",
+        "Biological: MVA85A"
+       ],
+       "label": "Group B",
+       "type": "EXPERIMENTAL"
+      },
+      {
+       "interventionNames": [
+        "Biological: ChAdOx1 85A",
+        "Biological: MVA85A"
+       ],
+       "label": "Group C",
+       "type": "EXPERIMENTAL"
+      }
+     ],
+     "interventions": [
+      {
+       "armGroupLabels": [
+        "Group A",
+        "Group B",
+        "Group C",
+        "Starter Group"
+       ],
+       "name": "ChAdOx1 85A",
+       "type": "BIOLOGICAL"
+      },
+      {
+       "armGroupLabels": [
+        "Group B",
+        "Group C"
+       ],
+       "name": "MVA85A",
+       "type": "BIOLOGICAL"
+      }
+     ]
+    },
+    "conditionsModule": {
+     "conditions": [
+      "Tuberculosis"
+     ]
+    },
+    "contactsLocationsModule": {
+     "locations": [
+      {
+       "country": "United Kingdom"
+      },
+      {
+       "country": "United Kingdom"
+      }
+     ]
+    },
+    "designModule": {
+     "designInfo": {
+      "allocation": "RANDOMIZED",
+      "primaryPurpose": "PREVENTION"
+     },
+     "enrollmentInfo": {
+      "count": 42
+     },
+     "phases": [
+      "PHASE1"
+     ],
+     "studyType": "INTERVENTIONAL"
+    },
+    "identificationModule": {
+     "briefTitle": "Safety Study of ChAdOx1 85A Vaccination With and Without MVA85A Boost in Healthy Adults",
+     "nctId": "NCT01829490",
+     "officialTitle": "Phase I Trial to Evaluate the Safety and Immunogenicity of a ChAdOx1 85A Vaccination With and Without MVA85A Boost in Healthy BCG Vaccinated Adults"
+    },
+    "sponsorCollaboratorsModule": {
+     "collaborators": [
+      {
+       "name": "University of Birmingham"
+      }
+     ],
+     "leadSponsor": {
+      "class": "OTHER",
+      "name": "University of Oxford"
+     }
+    },
+    "statusModule": {
+     "completionDateStruct": {
+      "date": "2016-04"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2016-05-12"
+     },
+     "overallStatus": "COMPLETED",
+     "primaryCompletionDateStruct": {
+      "date": "2016-04"
+     },
+     "startDateStruct": {
+      "date": "2013-07"
+     },
+     "studyFirstPostDateStruct": {
+      "date": "2013-04-11"
+     }
+    }
+   }
+  }
+ ],
+ "version": {
+  "apiVersion": "2.0.5",
+  "dataTimestamp": "2026-10-09T09:00:05"
+ }
+}

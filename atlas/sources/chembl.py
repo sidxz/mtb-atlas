@@ -8,6 +8,7 @@ is why `source_version` is parsed from the file rather than hardcoded.
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
@@ -183,30 +184,31 @@ def molecules(molecule_ids: Sequence[str]) -> list[dict[str, Any]]:
     for payload in fetch_json_many(
         urls, workers=6, min_interval=0.1, label="chembl molecules"
     ).values():
-        for molecule in payload["molecules"]:
-            properties = molecule.get("molecule_properties") or {}
-            structures = molecule.get("molecule_structures") or {}
-            rows.append(
-                {
-                    "molecule_chembl_id": molecule["molecule_chembl_id"],
-                    "pref_name": molecule.get("pref_name"),
-                    "molecule_type": molecule.get("molecule_type"),
-                    "max_phase": molecule.get("max_phase"),
-                    "first_approval": molecule.get("first_approval"),
-                    "smiles": structures.get("canonical_smiles"),
-                    "inchi_key": structures.get("standard_inchi_key"),
-                    "mw": _float(properties.get("full_mwt")),
-                    "alogp": _float(properties.get("alogp")),
-                    "hba": properties.get("hba"),
-                    "hbd": properties.get("hbd"),
-                    "psa": _float(properties.get("psa")),
-                    "rotatable_bonds": properties.get("rtb"),
-                    "aromatic_rings": properties.get("aromatic_rings"),
-                    "ro5_violations": properties.get("num_ro5_violations"),
-                    "qed": _float(properties.get("qed_weighted")),
-                }
-            )
+        rows.extend(_compound_row(molecule) for molecule in payload["molecules"])
     return rows
+
+
+def _compound_row(molecule: dict[str, Any]) -> dict[str, Any]:
+    properties = molecule.get("molecule_properties") or {}
+    structures = molecule.get("molecule_structures") or {}
+    return {
+        "molecule_chembl_id": molecule["molecule_chembl_id"],
+        "pref_name": molecule.get("pref_name"),
+        "molecule_type": molecule.get("molecule_type"),
+        "max_phase": molecule.get("max_phase"),
+        "first_approval": molecule.get("first_approval"),
+        "smiles": structures.get("canonical_smiles"),
+        "inchi_key": structures.get("standard_inchi_key"),
+        "mw": _float(properties.get("full_mwt")),
+        "alogp": _float(properties.get("alogp")),
+        "hba": properties.get("hba"),
+        "hbd": properties.get("hbd"),
+        "psa": _float(properties.get("psa")),
+        "rotatable_bonds": properties.get("rtb"),
+        "aromatic_rings": properties.get("aromatic_rings"),
+        "ro5_violations": properties.get("num_ro5_violations"),
+        "qed": _float(properties.get("qed_weighted")),
+    }
 
 
 def _float(value: Any) -> float | None:
@@ -238,4 +240,231 @@ def build_bioactivity(targets: Iterable[tuple[str, str]], *, retrieved_at: str) 
         write_parquet(
             "compounds", compounds, source=SOURCE, source_version=version, retrieved_at=retrieved_at
         ),
+    ]
+
+
+# --- TB drugs and clinical candidates ----------------------------------------
+
+# A molecule is in the drug layer when ChEMBL records a tuberculosis indication
+# for it: a MeSH heading containing "Tuberculosis" (plain, Pulmonary,
+# Multidrug-Resistant, Meningeal in ChEMBL 37). "Mycobacterium Infections" and
+# the MAC headings are broader than TB and stay out.
+TB_INDICATIONS = "mesh_heading__icontains=tuberculosis"
+DRUG_MOLECULE_FIELDS = (
+    "molecule_chembl_id,pref_name,molecule_type,max_phase,first_approval,oral,"
+    "atc_classifications,molecule_synonyms,molecule_hierarchy,molecule_properties,"
+    "molecule_structures"
+)
+
+
+def _batches(ids: Sequence[str]) -> list[str]:
+    return [",".join(ids[i : i + ID_BATCH]) for i in range(0, len(ids), ID_BATCH)]
+
+
+def _pages(endpoint: str, query: str, key: str, dest: str, *, force: bool) -> list[dict[str, Any]]:
+    """Every record of one ChEMBL list query, each page cached as `<dest>-<offset>.json`."""
+    records: list[dict[str, Any]] = []
+    offset = 0
+    while True:
+        page = fetch(
+            f"{API}/{endpoint}.json?{query}&limit={PAGE}&offset={offset}",
+            f"{dest}-{offset}.json",
+            source=SOURCE,
+            force=force,
+            json_body=True,
+        )
+        payload = json.loads(page.text)
+        records += payload[key]
+        offset += PAGE
+        if offset >= payload["page_meta"]["total_count"]:
+            return records
+
+
+def fetch_drugs(*, force: bool = False) -> tuple[dict[str, list[dict[str, Any]]], Fetched]:
+    """The raw ChEMBL records behind the drug layer, plus the cached release status.
+
+    Indications first, because they define the molecule set; then molecules and
+    mechanisms for every molecule an indication names (salts as well as
+    parents); then the targets those mechanisms point at, for their organism
+    and component accessions.
+    """
+    status = fetch(
+        f"{API}/status.json", "drugs/status.json", source=SOURCE, force=force, json_body=True
+    )
+    indications = _pages(
+        "drug_indication", TB_INDICATIONS, "drug_indications", "drugs/indications", force=force
+    )
+    ids = sorted(
+        {i["molecule_chembl_id"] for i in indications}
+        | {i["parent_molecule_chembl_id"] for i in indications}
+    )
+    molecules: list[dict[str, Any]] = []
+    mechanisms: list[dict[str, Any]] = []
+    for n, batch in enumerate(_batches(ids)):
+        molecules += _pages(
+            "molecule",
+            f"molecule_chembl_id__in={batch}&only={DRUG_MOLECULE_FIELDS}",
+            "molecules",
+            f"drugs/molecules-{n}",
+            force=force,
+        )
+        mechanisms += _pages(
+            "mechanism",
+            f"molecule_chembl_id__in={batch}",
+            "mechanisms",
+            f"drugs/mechanisms-{n}",
+            force=force,
+        )
+    target_ids = sorted({m["target_chembl_id"] for m in mechanisms if m["target_chembl_id"]})
+    targets: list[dict[str, Any]] = []
+    for n, batch in enumerate(_batches(target_ids)):
+        targets += _pages(
+            "target", f"target_chembl_id__in={batch}", "targets", f"drugs/targets-{n}", force=force
+        )
+    payloads = {
+        "indications": indications,
+        "molecules": molecules,
+        "mechanisms": mechanisms,
+        "targets": targets,
+    }
+    return payloads, status
+
+
+# Taxonomy ids, never organism strings (see the module docstring of orthologue.py):
+# M. tuberculosis, H37Rv, CDC1551 and H37Ra are all filed as Mtb targets.
+MTB_TAXA = frozenset({1773, 83332, 83331, 419947})
+HUMAN = 9606
+
+
+def normalize_drugs(
+    payloads: dict[str, list[dict[str, Any]]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """(drugs, drug_mechanisms): one drug row per parent molecule, salts folded in.
+
+    `max_phase_tb` comes from the TB indications alone. `max_phase` is ChEMBL's
+    phase for any indication, kept beside it because linezolid -- approved, and
+    phase 3 for TB -- is exactly the confusion a single phase column invites.
+    """
+    targets = {t["target_chembl_id"]: t for t in payloads["targets"]}
+    parent_of = {
+        m["molecule_chembl_id"]: (m.get("molecule_hierarchy") or {}).get("parent_chembl_id")
+        or m["molecule_chembl_id"]
+        for m in payloads["molecules"]
+    }
+    for indication in payloads["indications"]:
+        parent_of[indication["molecule_chembl_id"]] = indication["parent_molecule_chembl_id"]
+
+    mechanisms: dict[tuple, dict[str, Any]] = {}
+    for record in payloads["mechanisms"]:
+        parent = record.get("parent_molecule_chembl_id") or parent_of.get(
+            record["molecule_chembl_id"], record["molecule_chembl_id"]
+        )
+        target = targets.get(record.get("target_chembl_id")) or {}
+        row = {
+            "molecule_chembl_id": parent,
+            "mechanism_of_action": record.get("mechanism_of_action"),
+            "action_type": record.get("action_type"),
+            # Where ChEMBL says a prodrug needs activating, and by what (EthA).
+            "mechanism_comment": record.get("mechanism_comment"),
+            "direct_interaction": bool(record.get("direct_interaction")),
+            "disease_efficacy": bool(record.get("disease_efficacy")),
+            "target_chembl_id": record.get("target_chembl_id"),
+            "target_name": target.get("pref_name"),
+            "target_type": target.get("target_type"),
+            "target_organism": target.get("organism"),
+            "target_tax_id": target.get("tax_id"),
+            "component_accessions": [
+                c["accession"] for c in target.get("target_components") or [] if c.get("accession")
+            ],
+            "refs": [
+                {"type": r.get("ref_type"), "id": r.get("ref_id"), "url": r.get("ref_url")}
+                for r in record.get("mechanism_refs") or []
+            ],
+        }
+        mechanisms[(parent, row["target_chembl_id"], row["mechanism_of_action"])] = row
+
+    by_parent: dict[str, list[dict[str, Any]]] = {}
+    for indication in payloads["indications"]:
+        by_parent.setdefault(indication["parent_molecule_chembl_id"], []).append(indication)
+    molecules = {m["molecule_chembl_id"]: m for m in payloads["molecules"]}
+
+    drugs = []
+    for parent, indications in sorted(by_parent.items()):
+        forms = [m for mid, m in molecules.items() if parent_of.get(mid) == parent]
+        names = {
+            name
+            for form in forms
+            for name in [
+                form.get("pref_name"),
+                *(s["molecule_synonym"] for s in form.get("molecule_synonyms") or []),
+            ]
+            if name
+        }
+        refs = [r for i in indications for r in i.get("indication_refs") or []]
+        acting = [m for m in mechanisms.values() if m["molecule_chembl_id"] == parent]
+        molecule = molecules.get(parent) or {"molecule_chembl_id": parent}
+        drugs.append(
+            {
+                **_compound_row(molecule),
+                "max_phase": _float(molecule.get("max_phase")),
+                "max_phase_tb": max(
+                    (
+                        p
+                        for i in indications
+                        if (p := _float(i.get("max_phase_for_ind"))) is not None
+                    ),
+                    default=None,
+                ),
+                "synonyms": sorted(names),
+                "salt_chembl_ids": sorted(
+                    mid for mid, p in parent_of.items() if p == parent and mid != parent
+                ),
+                "tb_indications": sorted({i["mesh_heading"] for i in indications}),
+                "atc_codes": sorted(molecule.get("atc_classifications") or []),
+                "oral": molecule.get("oral"),
+                # ChEMBL packs every trial behind an indication into one ref,
+                # comma-separated.
+                "nct_ids": sorted(
+                    {
+                        nct.strip()
+                        for r in refs
+                        if r["ref_type"] == "ClinicalTrials"
+                        for nct in r["ref_id"].split(",")
+                        if nct.strip()
+                    }
+                ),
+                # Labels and approvals: DailyMed, FDA, EMA, ATC.
+                "label_refs": [
+                    {"type": t, "id": i, "url": u}
+                    for t, i, u in sorted(
+                        {
+                            (r["ref_type"], r["ref_id"], r.get("ref_url"))
+                            for r in refs
+                            if r["ref_type"] != "ClinicalTrials"
+                        }
+                    )
+                ],
+                "mechanisms_of_action": sorted(
+                    {m["mechanism_of_action"] for m in acting if m["mechanism_of_action"]}
+                ),
+                "target_organisms": sorted(
+                    {m["target_organism"] for m in acting if m["target_organism"]}
+                ),
+                "acts_on_mtb": any(m["target_tax_id"] in MTB_TAXA for m in acting),
+                "host_targeted": any(m["target_tax_id"] == HUMAN for m in acting),
+            }
+        )
+    return drugs, list(mechanisms.values())
+
+
+def build_drugs(*, force: bool = False) -> list[Path]:
+    payloads, status = fetch_drugs(force=force)
+    drugs, mechanisms = normalize_drugs(payloads)
+    state = json.loads(status.text)
+    version = f"{state['chembl_db_version']} ({state['chembl_release_date']})"
+    return [
+        write_parquet(
+            name, rows, source=SOURCE, source_version=version, retrieved_at=status.retrieved_at
+        )
+        for name, rows in (("drugs", drugs), ("drug_mechanisms", mechanisms))
     ]

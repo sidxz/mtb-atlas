@@ -26,6 +26,7 @@ from .sources import (
     conditional,
     essentiality,
     homology,
+    mtbtndb,
     mycobrowser,
     pdb,
     resistance,
@@ -102,6 +103,8 @@ def build_evidence(*, force: bool = False) -> list[Path]:
     paths.append(resistance.build(force=force))
     _say("[evidence] conditional fitness (Griffin 2011, cholesterol)")
     paths.append(conditional.build(force=force))
+    _say("[evidence] conditional TnSeq, 136 screens (MtbTnDB)")
+    paths += mtbtndb.build(force=force)
     _say("[evidence] vulnerability (Bosch 2021 CRISPRi, H37Rv)")
     paths.append(vulnerability.build(force=force))
     _say("[evidence] vulnerability in a clinical strain (Bosch 2021, HN878)")

@@ -44,6 +44,8 @@ TABLES = (
     "compounds",
     "essentiality",
     "conditional_fitness",
+    "conditional_tnseq",
+    "tnseq_screens",
     "resistance",
     "vulnerability",
     "strain_vulnerability",
@@ -103,7 +105,33 @@ TABLE_NOTES = {
     "that tolerates no transposon insertions, which is every in-vitro-essential gene** -- "
     "dprE1, inhA and mmpL3 are all unmeasured here, which is NOT the same as unaffected. "
     "A gene absent from this table was never screened.",
-    "vulnerability": "CRISPRi in H37Rv, the lab strain. `vulnerability_index` is NEGATIVE: "
+    "conditional_tnseq": "MtbTnDB: TRANSIT resampling over 136 screens, one row per gene per "
+    "screen, keyed on (rv_id, screen_id). What each screen WAS is in `tnseq_screens` -- join "
+    "it on `screen_id`, this table holds only numbers. `log2fc` NEGATIVE means depleted in "
+    "the experimental condition. **Two traps.** (1) `measured` is false where the gene took "
+    "no insertions in either condition -- TRANSIT still prints `log2fc` 0.00 and `q_value` "
+    "1.0 for those, so filtering on q alone reads 13% of the genome as 'no effect'; always "
+    "add `measured`. (2) A value here does NOT mean a fitness effect for an essential gene: "
+    "TRANSIT counts TA sites over the whole ORF while Griffin counted 5-80%, so dprE1 and "
+    "mmpL3 carry fold changes built on non-disruptive terminal insertions and read `n/a` in "
+    "`conditional_fitness`. Join `essentiality` and show the call beside any `log2fc`.",
+    "tnseq_screens": "One row per screen in `conditional_tnseq`, keyed on `screen_id`: what "
+    "was compared to what, and the authors' own description of the condition "
+    "(`condition_class` in_vitro/in_vivo/in_cell, `medium`, `carbon_source`, `stress`, "
+    "`mouse_strain`). **27 of the screens are genetic-interaction backgrounds, not "
+    "conditions** -- a transposon library in a knockout host, so a hit is an interaction with "
+    "that gene and NOT a conditional requirement. Both `interaction_gene` (Rv id) and "
+    "`interaction_gene_name` are sparse and sparse independently -- 11 have only the id, 5 "
+    "only the name -- so test `COALESCE` of the two or read `description`; filtering on one "
+    "field alone silently keeps interaction screens in a condition query. **`annotated` is false "
+    "for 72 of the 136**, where the authors' table names the screen differently and the atlas "
+    "will not guess: a NULL `condition_class` means NOT RECORDED, never 'in vitro'. "
+    "**SCREENS ARE NOT INDEPENDENT -- never count them as evidence weight.** Group by "
+    "`study`: 61 of the 136 are single mouse strains from one host-genetics panel, and the "
+    "1,833 strain-against-strain comparisons in the source are deliberately not ingested. "
+    "`cross_study` means the control library came from a different study than the "
+    "experimental data, a batch-effect caveat the authors raise themselves.",
+    "vulnerability": "CRISPRi in H37Rv, the lab strain.`vulnerability_index` is NEGATIVE: "
     "more negative is more vulnerable. Only rows with `certain` are confident estimates.",
     "strain_vulnerability": "The SAME CRISPRi series in HN878, a Beijing-lineage CLINICAL "
     "isolate, one row per gene. H37Rv is not in here -- it is in `vulnerability`, so a "

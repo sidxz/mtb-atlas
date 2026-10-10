@@ -91,6 +91,24 @@ def _mycobrowser() -> str:
     return current
 
 
+def _mtbtndb() -> str:
+    """Ask Zenodo's concept DOI which version is newest.
+
+    The ingester pins a *versioned* DOI, so the download is reproducible and
+    cannot drift. The concept record is what knows a newer deposit exists --
+    there have already been two -- so the probe reads that and the comparison
+    is the versioned DOI the store was stamped with.
+    """
+    from .sources.mtbtndb import CITATION, CONCEPT_ID
+
+    payload = fetch_json(f"https://zenodo.org/api/records/{CONCEPT_ID}")
+    doi = (payload or {}).get("doi")
+    date = ((payload or {}).get("metadata") or {}).get("publication_date")
+    if not doi or not date:
+        raise RuntimeError("Zenodo did not state a version")
+    return f"Zenodo {doi} ({date}), via {CITATION}"
+
+
 def _string() -> str:
     from .sources.string_db import TAXON
 
@@ -145,6 +163,7 @@ SOURCES: tuple[Source, ...] = (
     Source("alphafold", "predicted_structures", "evidence", _alphafold),
     Source("string-db", "interactions", "evidence", _string),
     Source("clinicaltrials-gov", "trials", "clinical", _clinicaltrials),
+    Source("mtbtndb", "conditional_tnseq", "evidence", _mtbtndb),
     Source("dejesus-2017", "essentiality", "evidence", frozen="a 2017 paper's supplementary table"),
     Source("bosch-2021", "vulnerability", "evidence", frozen="a 2021 paper's supplementary table"),
     Source(

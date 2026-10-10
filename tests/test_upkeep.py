@@ -72,6 +72,7 @@ def test_every_source_is_registered_with_a_stage() -> None:
         "string-db",
         "phmmer-human",
         "clinicaltrials-gov",
+        "mtbtndb",
     }
     assert all(s.stage in freshness.STAGES for s in freshness.SOURCES)
 

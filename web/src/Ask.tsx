@@ -27,6 +27,9 @@ export function Ask({ base }: { base: string }) {
   const [result, setResult] = useState<Result | null>(null);
   const [state, setState] = useState<"idle" | "asking" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
+  // The examples are onboarding. Shown always they cost 85px of every session
+  // forever, which on a laptop is three rows of the gene table.
+  const [focused, setFocused] = useState(false);
 
   const submit = async (text: string) => {
     if (!text.trim()) return;
@@ -63,18 +66,22 @@ export function Ask({ base }: { base: string }) {
           value={question}
           placeholder="Ask the atlas — answers cite the records they came from"
           onChange={(event) => setQuestion(event.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
         />
         <button className="iconbtn" type="submit" disabled={state === "asking"}>
           {state === "asking" ? "Asking…" : "Ask"}
         </button>
       </form>
 
-      {!result && state === "idle" && !error && (
+      {focused && !result && state === "idle" && !error && (
         <div className="askexamples">
           {EXAMPLES.map((example) => (
             <button
               key={example}
               type="button"
+              // Before blur, so clicking an example does not first close the list.
+              onMouseDown={(event) => event.preventDefault()}
               onClick={() => {
                 setQuestion(example);
                 void submit(example);

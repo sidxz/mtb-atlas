@@ -72,13 +72,115 @@ const COLUMNS: [string, string, boolean][] = [
   ["n_pdb", "PDB", true],
   ["plddt_mean", "pLDDT", true],
   ["n_compounds", "Cpds", true],
+  ["n_protein_assays", "Assays", true],
   ["best_pchembl", "Best pChEMBL", true],
   ["best_whole_cell_pchembl", "Cell", true],
   ["n_variants_associated", "WHO", true],
   ["best_drug_phase", "TB phase", true],
   ["n_partners", "Partners", true],
   ["n_references", "Refs", true],
+  ["product", "Product", false],
 ];
+
+/** What you scan down while reading one gene, as against what you triage on.
+ *
+ * With a gene open the table gives up most of its width to the detail panel,
+ * so it keeps only the columns you move between rows by. The active sort
+ * column is always kept too -- sorting by potency and then watching the
+ * column vanish is the kind of thing that makes a tool feel hostile.
+ */
+const SCAN_COLUMNS = new Set([
+  "rv_id",
+  "gene_name",
+  "essentiality",
+  "vulnerability_index",
+  "n_pdb",
+  "n_compounds",
+]);
+
+const cellClass = (key: string, numeric: boolean) =>
+  key === "rv_id" ? "id" : key === "product" ? "prodcell" : numeric ? "n" : undefined;
+
+/** One cell renderer per column, so the header and the body cannot drift apart. */
+function cell(gene: TargetSummary, key: string): React.ReactNode {
+  switch (key) {
+    case "rv_id":
+      return gene.rv_id;
+    case "gene_name":
+      return gene.gene_name && gene.gene_name !== gene.rv_id ? gene.gene_name : "—";
+    case "essentiality":
+      return gene.essentiality ? (
+        <>
+          <i className="dot" style={{ background: colourOf(gene, "essentiality") }} />
+          {gene.essentiality_label}
+        </>
+      ) : (
+        <span className="absent">—</span>
+      );
+    case "vulnerability_index":
+      return gene.vulnerability_index === null ? (
+        "—"
+      ) : (
+        // Faint where the study does not stand behind the number.
+        <span className={gene.vulnerability_certain ? undefined : "faint"}>
+          {gene.vulnerability_index.toFixed(1)}
+        </span>
+      );
+    case "n_pdb":
+      return gene.n_pdb || "—";
+    case "plddt_mean":
+      return gene.plddt_mean ? gene.plddt_mean.toFixed(0) : "—";
+    case "n_compounds":
+      return gene.n_compounds || "—";
+    case "n_protein_assays":
+      return gene.n_protein_assays || "—";
+    case "best_pchembl":
+      return (
+        <>
+          {gene.best_pchembl?.toFixed(2) ?? "—"}
+          {gene.chembl_evidence === "orthologue" && (
+            <span className="chip ortho" style={{ marginLeft: 4 }}>
+              o
+            </span>
+          )}
+        </>
+      );
+    case "best_whole_cell_pchembl":
+      return gene.best_whole_cell_pchembl?.toFixed(2) ?? "—";
+    case "n_variants_associated":
+      return gene.n_variants_associated || "—";
+    case "best_drug_phase":
+      return gene.best_drug_phase === null ? "—" : phaseLabel(gene.best_drug_phase);
+    case "n_partners":
+      return gene.n_partners || "—";
+    case "n_references":
+      return gene.n_references ?? "—";
+    case "product":
+      return (
+        <>
+          {gene.antibacterial && (
+            <span className="chip accent" style={{ marginRight: 5 }}>
+              {gene.antibacterial}
+            </span>
+          )}
+          {gene.close_human_homolog && (
+            <span
+              className="chip warn"
+              style={{ marginRight: 5 }}
+              title={`Human homolog ${gene.human_homolog_gene ?? ""} at ${Math.round(
+                (gene.human_homolog_identity ?? 0) * 100,
+              )}% identity`}
+            >
+              human
+            </span>
+          )}
+          {gene.product}
+        </>
+      );
+    default:
+      return null;
+  }
+}
 
 function useTheme() {
   const [theme, setTheme] = useState<string>(
@@ -130,9 +232,18 @@ export function App() {
       .then(([m, page]) => {
         setMeta(m);
         setAll(page.items);
-        setSelected((current) => current ?? page.items.find((g) => g.rv_id === "Rv3790")?.rv_id ?? null);
       })
       .catch((e: unknown) => setError(String(e)));
+  }, []);
+
+  // Landing on a pre-opened gene meant landing in the narrow layout. The whole
+  // table at full width is the better first screen; dprE1 is one click away.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelected(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   useEffect(() => {
@@ -176,6 +287,15 @@ export function App() {
   }, [filtered, sort]);
 
   const matching = useMemo(() => new Set(filtered.map((g) => g.rv_id)), [filtered]);
+  const narrowed = filtered.length !== all.length && all.length > 0;
+  // With a gene open the table yields most of its width to the detail panel.
+  const columns = useMemo(
+    () =>
+      selected
+        ? COLUMNS.filter(([key]) => SCAN_COLUMNS.has(key) || key === sort.key)
+        : COLUMNS,
+    [selected, sort.key],
+  );
   const counted = useCallback(
     (predicate: (gene: TargetSummary) => boolean) => all.filter(predicate).length,
     [all],
@@ -216,33 +336,36 @@ export function App() {
           <h1>Mtb Target Atlas</h1>
           <em>H37Rv</em>
         </div>
+        {/* Eight static facts about the store restated what the rail already
+            counts per filter. What is worth a permanent line is the answer to
+            "what have I narrowed to", which changes as you work. */}
         {meta && (
           <div className="topstats">
-            <span>
-              <b>{meta.counts.genes.toLocaleString()}</b> genes
-            </span>
+            {view === "genome" && narrowed ? (
+              <span className="hero">
+                <b>{filtered.length.toLocaleString()}</b> of{" "}
+                {meta.counts.genes.toLocaleString()} genes match
+              </span>
+            ) : (
+              <span>
+                <b>{meta.counts.genes.toLocaleString()}</b> genes
+              </span>
+            )}
             <span>
               <b>{meta.counts.essential.toLocaleString()}</b> essential
             </span>
             <span>
-              <b>{meta.counts.with_structure.toLocaleString()}</b> with a structure
-            </span>
-            <span>
-              <b>{meta.counts.with_ligands.toLocaleString()}</b> with chemistry
-            </span>
-            <span>
-              <b>{meta.counts.with_resistance.toLocaleString()}</b> with resistance
-            </span>
-            <span>
-              <b>{(meta.counts.vulnerability_measured ?? 0).toLocaleString()}</b> vulnerability measured
+              <b>{(meta.counts.vulnerability_measured ?? 0).toLocaleString()}</b> vulnerability
+              measured
             </span>
             {/* Absent, not zero, when the clinical stage has not run here. */}
             <span>
               <b>{meta.counts.with_clinical_drug?.toLocaleString() ?? "—"}</b> with a TB drug ·{" "}
               <b>{meta.counts.trials?.toLocaleString() ?? "—"}</b> trials
             </span>
-            <span className="hero">
-              <b>{meta.counts.structural_gap.toLocaleString()}</b> essential · structure · no ligands
+            <span className={narrowed ? undefined : "hero"}>
+              <b>{meta.counts.structural_gap.toLocaleString()}</b> essential · structure · no
+              ligands
             </span>
           </div>
         )}
@@ -272,8 +395,23 @@ export function App() {
       {view === "clinical" ? (
         <DrugsAndTrials meta={meta} focus={focus} onFocus={setFocus} onSelectGene={openGene} />
       ) : (
-        <div className="body">
+        <div className={`body${selected ? " detail-open" : ""}`}>
           <aside className="col col-pad">
+            {/* The ring lives with the control that colours it: it is that
+                control's legend, and it was reserving a 1,237px band to draw a
+                340px circle. Filtered-out genes draw faint, so it answers
+                "where do my 281 sit" rather than "here is a genome". */}
+            <div className="railring">
+              <GenomeCanvas
+                genes={all}
+                matching={matching}
+                colourBy={colourBy}
+                selected={selected}
+                onSelect={setSelected}
+                theme={theme}
+              />
+            </div>
+
             <div className="group">
               <p className="lab">Search</p>
               <input
@@ -287,6 +425,10 @@ export function App() {
 
             <div className="group">
               <p className="lab">Colour the genome by</p>
+              <p className="ringkey">
+                outer ring: {COLOUR_MODES.find(([k]) => k === colourBy)?.[1].toLowerCase()} · inner
+                rings: structure, chemical matter, resistance
+              </p>
               <div className="seg">
                 {COLOUR_MODES.map(([key, label]) => (
                   <button
@@ -380,18 +522,6 @@ export function App() {
           </aside>
 
           <main className="col canvascol">
-            <GenomeCanvas
-              genes={all}
-              matching={matching}
-              colourBy={colourBy}
-              selected={selected}
-              onSelect={setSelected}
-              theme={theme}
-            />
-            <p className="ringkey">
-              outer ring: {COLOUR_MODES.find(([k]) => k === colourBy)?.[1].toLowerCase()} · inner
-              rings: structure, chemical matter, resistance
-            </p>
             <div className="listhead">
               <h2>
                 {flags.size || essentiality.size || category.size || query
@@ -403,11 +533,11 @@ export function App() {
                 {sorted.length > 300 ? " · showing first 300" : ""}
               </span>
             </div>
-            <div className="scroller" style={{ flex: "0 0 auto", maxHeight: "38vh" }}>
+            <div className="scroller" style={{ flex: 1, minHeight: 0 }}>
               <table>
                 <thead>
                   <tr>
-                    {COLUMNS.map(([key, label, numeric]) => (
+                    {columns.map(([key, label, numeric]) => (
                       <th
                         key={key}
                         className={numeric ? "n" : undefined}
@@ -433,7 +563,6 @@ export function App() {
                         {sort.key === key ? (sort.order === "asc" ? " ↑" : " ↓") : ""}
                       </th>
                     ))}
-                    <th>Product</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -443,67 +572,11 @@ export function App() {
                       aria-selected={gene.rv_id === selected}
                       onClick={() => setSelected(gene.rv_id)}
                     >
-                      <td className="id">{gene.rv_id}</td>
-                      <td>{gene.gene_name && gene.gene_name !== gene.rv_id ? gene.gene_name : "—"}</td>
-                      <td>
-                        {gene.essentiality ? (
-                          <>
-                            <i
-                              className="dot"
-                              style={{ background: colourOf(gene, "essentiality") }}
-                            />
-                            {gene.essentiality_label}
-                          </>
-                        ) : (
-                          <span className="absent">—</span>
-                        )}
-                      </td>
-                      <td className="n">
-                        {gene.vulnerability_index === null ? (
-                          "—"
-                        ) : (
-                          <span className={gene.vulnerability_certain ? undefined : "faint"}>
-                            {gene.vulnerability_index.toFixed(1)}
-                          </span>
-                        )}
-                      </td>
-                      <td className="n">{gene.n_pdb || "—"}</td>
-                      <td className="n">{gene.plddt_mean ? gene.plddt_mean.toFixed(0) : "—"}</td>
-                      <td className="n">{gene.n_compounds || "—"}</td>
-                      <td className="n">
-                        {gene.best_pchembl?.toFixed(2) ?? "—"}
-                        {gene.chembl_evidence === "orthologue" && (
-                          <span className="chip ortho" style={{ marginLeft: 4 }}>
-                            o
-                          </span>
-                        )}
-                      </td>
-                      <td className="n">{gene.best_whole_cell_pchembl?.toFixed(2) ?? "—"}</td>
-                      <td className="n">{gene.n_variants_associated || "—"}</td>
-                      <td className="n">
-                        {gene.best_drug_phase === null ? "—" : phaseLabel(gene.best_drug_phase)}
-                      </td>
-                      <td className="n">{gene.n_partners || "—"}</td>
-                    <td className="n">{gene.n_references ?? "—"}</td>
-                      <td className="prodcell">
-                        {gene.antibacterial && (
-                          <span className="chip accent" style={{ marginRight: 5 }}>
-                            {gene.antibacterial}
-                          </span>
-                        )}
-                        {gene.close_human_homolog && (
-                          <span
-                            className="chip warn"
-                            style={{ marginRight: 5 }}
-                            title={`Human homolog ${gene.human_homolog_gene ?? ""} at ${Math.round(
-                              (gene.human_homolog_identity ?? 0) * 100,
-                            )}% identity`}
-                          >
-                            human
-                          </span>
-                        )}
-                        {gene.product}
-                      </td>
+                      {columns.map(([key, , numeric]) => (
+                        <td key={key} className={cellClass(key, numeric)}>
+                          {cell(gene, key)}
+                        </td>
+                      ))}
                     </tr>
                   ))}
                 </tbody>
@@ -512,14 +585,23 @@ export function App() {
           </main>
 
           <aside className="col detailcol">
+            {/* Closing returns the table to its full width, which is the other
+                half of the trade: browse wide, or read wide. */}
+            <button
+              className="closedetail"
+              type="button"
+              title="Close and widen the gene table (Esc)"
+              aria-label="Close gene detail"
+              onClick={() => setSelected(null)}
+            >
+              ×
+            </button>
             {detailError ? (
               <div className="errbox">{detailError}</div>
             ) : detail ? (
               <TargetDetailPanel detail={detail} meta={meta} onOpen={openClinical} />
             ) : (
-              <div className="empty">
-                {selected ? `Loading ${selected}…` : "Pick a gene on the ring, or a row below."}
-              </div>
+              <div className="empty">Loading {selected}…</div>
             )}
           </aside>
         </div>

@@ -104,7 +104,10 @@ export function GenomeCanvas({ genes, matching, colourBy, selected, onSelect, th
     if (!element) return;
     const observer = new ResizeObserver(([entry]) => {
       const box = entry.contentRect;
-      setSize(Math.max(300, Math.min(box.width - 20, box.height - 20, 680)));
+      // The floor is low enough for the rail, where the ring sits beside the
+      // colour control it is the legend for. Everything below scales off
+      // `size`, so the only thing that breaks small is the Mb axis text.
+      setSize(Math.max(180, Math.min(box.width - 16, box.height - 16, 680)));
     });
     observer.observe(element);
     return () => observer.disconnect();
@@ -206,6 +209,9 @@ export function GenomeCanvas({ genes, matching, colourBy, selected, onSelect, th
     }
     context.globalAlpha = 1;
 
+    // Below this the Mb labels render at under 6px, which is noise rather than
+    // an axis. The ticks stay; only the text goes.
+    const roomForAxis = size >= 320;
     context.font = `500 ${Math.round(size * 0.019)}px ${token("--mono")}`;
     context.fillStyle = token("--fg-faint");
     context.textAlign = "center";
@@ -215,6 +221,7 @@ export function GenomeCanvas({ genes, matching, colourBy, selected, onSelect, th
     for (let bp = 0; bp < GENOME_LENGTH; bp += 500_000) {
       const angle = (bp / GENOME_LENGTH) * Math.PI * 2 - Math.PI / 2;
       radial(angle, geneRadius + geneHeight / 2, geneRadius + geneHeight / 2 + size * 0.012);
+      if (!roomForAxis) continue;
       const labelRadius = geneRadius + geneHeight / 2 + size * 0.036;
       context.fillText(
         `${bp / 1e6} Mb`,
@@ -232,14 +239,16 @@ export function GenomeCanvas({ genes, matching, colourBy, selected, onSelect, th
 
     context.textAlign = "center";
     context.fillStyle = token("--fg");
-    context.font = `600 ${Math.round(size * 0.052)}px ${token("--mono")}`;
+    // Floored: the centre readout is the one thing that must stay legible when
+    // the ring is small, since it carries the live match count.
+    context.font = `600 ${Math.max(11, Math.round(size * 0.052))}px ${token("--mono")}`;
     context.fillText(
       chosen ? chosen.rv_id : matching.size.toLocaleString("en-US"),
       cx,
       cy - size * 0.012,
     );
     context.fillStyle = token("--fg-dim");
-    context.font = `400 ${Math.round(size * 0.025)}px ${token("--sans")}`;
+    context.font = `400 ${Math.max(9, Math.round(size * 0.025))}px ${token("--sans")}`;
     context.fillText(
       chosen ? (chosen.gene_name ?? "unnamed") : filtered ? "genes match" : "genes",
       cx,

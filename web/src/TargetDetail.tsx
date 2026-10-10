@@ -106,7 +106,9 @@ export function TargetDetailPanel({
         ))}
       </div>
 
-      <div className="panel">
+      {/* Only the evidence tab columnises: its rows are independent blocks.
+          The others hold one table or one viewer, which want the full width. */}
+      <div className={tab === "evidence" ? "panel evidence" : "panel"}>
         {tab === "evidence" && <Evidence detail={detail} />}
 
         {tab === "structure" && (

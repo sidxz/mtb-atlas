@@ -10,6 +10,7 @@ import { CATEGORIES, GenomeCanvas, colourOf, type ColourBy } from "./GenomeCanva
 import { TargetDetailPanel } from "./TargetDetail";
 import { Ask } from "./Ask";
 import { DrugsAndTrials, phaseLabel, type Focus } from "./Clinical";
+import { Search } from "./Search";
 
 const ESSENTIALITY: [string, string][] = [
   ["ES", "Essential"],
@@ -241,6 +242,13 @@ export function App() {
             </span>
           </div>
         )}
+        <Search
+          onPick={(kind, id) => {
+            if (kind === "genes") openGene(id);
+            else if (kind === "trials") openClinical({ kind: "trial", id });
+            else openClinical({ kind: "drug", id });
+          }}
+        />
         <div className="viewswitch" role="group" aria-label="View">
           <button type="button" aria-pressed={view === "genome"} onClick={() => setView("genome")}>
             Genome

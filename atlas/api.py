@@ -603,6 +603,98 @@ def compound(molecule_chembl_id: str) -> dict[str, Any]:
     return {**rows[0], "activities": activities}
 
 
+class Hit(BaseModel):
+    """One thing the atlas holds, named well enough to pick from a list."""
+
+    id: str
+    label: str
+    detail: str | None = None
+
+
+# Each kind of object, with: the view, the id, the label, a line of context, the
+# columns to match on, and the column to rank by when nothing is an exact hit.
+SEARCHES: dict[str, tuple[str, str, str, str, tuple[str, ...], str]] = {
+    "genes": (
+        "target_summary",
+        "rv_id",
+        "coalesce(nullif(gene_name, rv_id), rv_id)",
+        "product",
+        ("rv_id", "gene_name", "uniprot_acc", "product"),
+        "n_pdb DESC NULLS LAST",
+    ),
+    "drugs": (
+        "drugs",
+        "molecule_chembl_id",
+        "coalesce(pref_name, molecule_chembl_id)",
+        "list_aggr(tb_indications, 'string_agg', ', ')",
+        ("molecule_chembl_id", "pref_name", "list_aggr(synonyms, 'string_agg', '|')"),
+        "max_phase_tb DESC NULLS LAST",
+    ),
+    "trials": (
+        "trials",
+        "nct_id",
+        "coalesce(acronym, nct_id)",
+        "brief_title",
+        (
+            "nct_id",
+            "acronym",
+            "brief_title",
+            "lead_sponsor",
+            # What the trial actually gave people, so a drug name finds it.
+            "list_aggr(list_transform(interventions, i -> i.name), 'string_agg', '|')",
+        ),
+        "start_date DESC NULLS LAST",
+    ),
+    "compounds": (
+        "compounds",
+        "molecule_chembl_id",
+        "coalesce(pref_name, molecule_chembl_id)",
+        "molecule_type",
+        ("molecule_chembl_id", "pref_name", "inchi_key"),
+        "max_phase DESC NULLS LAST",
+    ),
+}
+
+
+@app.get("/search", response_model=dict[str, list[Hit]])
+def search(
+    q: Annotated[str, Query(min_length=1, description="An id, a name, or part of one")],
+    limit: Annotated[int, Query(ge=1, le=50)] = 8,
+) -> dict[str, list[Hit]]:
+    """One box over genes, drugs, trials and compounds.
+
+    An exact id wins, then a name that starts with the term, then anything that
+    mentions it -- so typing `dprE1` opens the gene rather than the list of
+    everything whose description mentions it.
+    """
+    term = q.strip().lower()
+    connection = _db()
+    found: dict[str, list[Hit]] = {}
+    for kind, (view, key, label, detail, columns, fallback) in SEARCHES.items():
+        if not connection.execute(
+            "SELECT count(*) FROM duckdb_views() WHERE view_name = ?", [view]
+        ).fetchone()[0]:
+            found[kind] = []
+            continue
+        haystacks = [f"lower(coalesce({column}, ''))" for column in columns]
+        where = " OR ".join(f"{h} LIKE ?" for h in haystacks)
+        rank = (
+            f"CASE WHEN lower({key}) = ? THEN 0"
+            f" WHEN lower({label}) = ? THEN 1"
+            f" WHEN lower({label}) LIKE ? THEN 2 ELSE 3 END"
+        )
+        rows = _query(
+            connection,
+            f"SELECT {key} AS id, {label} AS label, {detail} AS detail, {rank} AS rank"
+            f" FROM {view} WHERE {where} ORDER BY rank, {fallback}, id LIMIT ?",
+            # Placeholders bind in the order they appear in the text, and the
+            # rank expression is in the SELECT list, ahead of the WHERE.
+            [term, term, f"{term}%", *[f"%{term}%"] * len(haystacks), limit],
+        )
+        found[kind] = [Hit(**{k: v for k, v in row.items() if k != "rank"}) for row in rows]
+    return found
+
+
 @app.get("/drugs")
 def drugs(
     q: Annotated[str | None, Query(description="Name, synonym or ChEMBL id")] = None,

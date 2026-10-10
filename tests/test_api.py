@@ -122,3 +122,45 @@ def test_a_bound_ligand_that_is_no_known_drug_is_still_named(client: TestClient)
     assert ligand["comp_id"] == "ZID"
     assert "NICOTINAMIDE" in ligand["name"]
     assert ligand["drug_name"] is None
+
+
+# --- one box over everything -------------------------------------------------
+
+
+def hits(client: TestClient, q: str) -> dict[str, list[str]]:
+    found = client.get("/search", params={"q": q}).json()
+    return {kind: [item["id"] for item in items] for kind, items in found.items()}
+
+
+def test_an_identifier_finds_its_own_object(client: TestClient) -> None:
+    assert hits(client, "Rv3790")["genes"][0] == "Rv3790"
+    assert hits(client, "CHEMBL376488")["drugs"][0] == "CHEMBL376488"
+    assert hits(client, "NCT02333799")["trials"][0] == "NCT02333799"
+    assert hits(client, "P9WJF1")["genes"][0] == "Rv3790"  # the accession, not the tag
+
+
+def test_a_drug_name_finds_the_drug_and_its_trials(client: TestClient) -> None:
+    found = hits(client, "bedaquiline")
+    assert "CHEMBL376488" in found["drugs"]
+    assert "NCT02333799" in found["trials"]
+
+
+def test_a_synonym_finds_the_drug(client: TestClient) -> None:
+    assert "CHEMBL376488" in hits(client, "TMC207")["drugs"]
+
+
+def test_a_gene_name_beats_a_product_mention(client: TestClient) -> None:
+    """Typing a gene name should not bury it under everything that mentions it."""
+    assert hits(client, "dprE1")["genes"][0] == "Rv3790"
+
+
+def test_every_hit_says_what_it_is(client: TestClient) -> None:
+    for items in client.get("/search", params={"q": "rif"}).json().values():
+        for item in items:
+            assert item["id"] and item["label"]
+
+
+def test_a_search_that_matches_nothing_is_empty_not_an_error(client: TestClient) -> None:
+    found = client.get("/search", params={"q": "zzzznotathing"})
+    assert found.status_code == 200
+    assert all(items == [] for items in found.json().values())

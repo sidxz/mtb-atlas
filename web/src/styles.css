@@ -127,7 +127,7 @@ button { font: inherit; }
 .brand { display: flex; align-items: baseline; gap: 9px; margin-right: auto; min-width: 0; }
 .brand h1 { font-size: 1.05rem; font-weight: 700; letter-spacing: -0.02em; margin: 0; white-space: nowrap; }
 .brand em { font-style: italic; font-weight: 400; color: var(--fg-dim); font-size: 0.85rem; }
-.topstats { display: flex; gap: 2px 18px; flex-wrap: wrap; font-size: 11.5px; color: var(--fg-dim); }
+.topstats { display: flex; gap: 2px 18px; flex-wrap: wrap; font-size: 11.5px; color: var(--fg-dim); flex: 1 1 auto; }
 .topstats b { font-family: var(--mono); color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
 .topstats .hero b { color: var(--accent); }
 
@@ -182,6 +182,23 @@ button { font: inherit; }
 button.chip { background: none; cursor: pointer; }
 button.chip:hover { background: var(--surface-2); }
 .chips { display: inline-flex; flex-wrap: wrap; gap: 3px 4px; }
+
+.globalsearch { position: relative; flex: 0 1 340px; min-width: 150px; }
+.globalsearch .search { width: 100%; }
+.searchdrop {
+  position: absolute; z-index: 40; top: calc(100% + 4px); left: 0; right: 0; max-height: 60vh;
+  overflow: auto; background: var(--surface); border: 1px solid var(--line-strong);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.14); padding: 6px;
+}
+.searchdrop .lab { margin: 6px 0 3px 6px; }
+.searchdrop .absent { display: block; padding: 8px; font-size: 12.5px; }
+.searchdrop button {
+  display: flex; gap: 8px; align-items: baseline; width: 100%; text-align: left;
+  background: none; border: 0; cursor: pointer; padding: 4px 6px; font-size: 12.5px; color: var(--fg);
+}
+.searchdrop button[aria-selected="true"] { background: var(--accent-soft); }
+.searchdrop button .id { font-family: var(--mono); font-size: 11.5px; flex: none; }
+.searchdrop button .dim { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .viewswitch { display: flex; gap: 1px; background: var(--line); border: 1px solid var(--line); }
 .viewswitch button {

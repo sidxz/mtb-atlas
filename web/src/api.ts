@@ -396,6 +396,15 @@ export interface TrialDetail extends Omit<Trial, "drugs"> {
   genes: { rv_id: string; gene_name: string | null }[];
 }
 
+/** One thing the atlas holds, named well enough to pick from a list. */
+export interface Hit {
+  id: string;
+  label: string;
+  detail: string | null;
+}
+
+export type SearchResults = Record<"genes" | "drugs" | "trials" | "compounds", Hit[]>;
+
 export interface Page<T> {
   total: number;
   limit: number;
@@ -468,4 +477,5 @@ export const api = {
   drug: (id: string) => get<DrugDetail>(`/drugs/${id}`),
   trials: () => get<Page<Trial>>("/trials", { limit: 2000 }),
   trial: (nctId: string) => get<TrialDetail>(`/trials/${nctId}`),
+  search: (q: string) => get<SearchResults>("/search", { q, limit: 6 }),
 };

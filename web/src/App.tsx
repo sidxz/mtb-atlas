@@ -240,7 +240,11 @@ export function App() {
   // table at full width is the better first screen; dprE1 is one click away.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSelected(null);
+      if (event.key !== "Escape") return;
+      // Both views hide their detail panel when nothing is picked, so Esc
+      // widens whichever table is in front of you.
+      setSelected(null);
+      setFocus(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

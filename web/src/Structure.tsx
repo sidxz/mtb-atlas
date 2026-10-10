@@ -129,3 +129,32 @@ export function Structure({
     </div>
   );
 }
+
+/** Out to ChEMBL's own record, so a number can be chased to its source.
+ *
+ * `/explore/` is the live path; the older `*_report_card/` URLs 301 to it.
+ * Click is stopped from bubbling, because the row underneath opens the
+ * compound panel and a link that also navigates the page is a trap.
+ */
+export function ChemblLink({
+  kind,
+  id,
+  label,
+}: {
+  kind: "compound" | "assay" | "document";
+  id: string;
+  label?: string;
+}) {
+  return (
+    <a
+      className="chembl"
+      href={`https://www.ebi.ac.uk/chembl/explore/${kind}/${id}`}
+      target="_blank"
+      rel="noreferrer"
+      onClick={(event) => event.stopPropagation()}
+      title={`${id} at ChEMBL`}
+    >
+      {label ?? id}
+    </a>
+  );
+}

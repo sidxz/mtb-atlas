@@ -533,6 +533,8 @@ def target(rv_id: str) -> TargetDetail:
             "SELECT g.link, g.target_chembl_id, g.target_name, g.n_target_accessions,"
             " g.target_type,"
             " g.shared_accession, g.source_text, g.n_variants, d.molecule_chembl_id, d.pref_name,"
+            # The gene page draws these too, so it needs the SMILES.
+            " d.smiles,"
             " d.max_phase_tb, d.max_phase, d.first_approval, d.molecule_type"
             " FROM drug_genes g JOIN drugs d USING (molecule_chembl_id) WHERE g.rv_id = ?"
             " ORDER BY d.max_phase_tb DESC NULLS LAST, d.pref_name, g.link",
@@ -834,6 +836,9 @@ def drugs(
         "SELECT d.molecule_chembl_id, d.pref_name, d.synonyms, d.max_phase_tb, d.max_phase,"
         " d.first_approval, d.molecule_type, d.atc_codes, d.acts_on_mtb, d.host_targeted,"
         " d.target_organisms, d.mechanisms_of_action,"
+        # The list draws each molecule, so it needs the SMILES. 112 rows, and
+        # the depiction is made in the browser -- nothing is stored.
+        " d.smiles,"
         " coalesce(g.genes, []) AS genes, coalesce(t.n_trials, 0) AS n_trials"
         " FROM drugs d"
         " LEFT JOIN (SELECT g.molecule_chembl_id,"

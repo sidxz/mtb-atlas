@@ -297,6 +297,8 @@ interface LinkDetail {
 export interface GeneDrug extends LinkDetail {
   molecule_chembl_id: string;
   pref_name: string | null;
+  /** Drawn in the browser; see Structure.tsx. Nothing is stored. */
+  smiles: string | null;
   max_phase_tb: number | null;
   max_phase: number | null;
   first_approval: number | null;
@@ -324,6 +326,8 @@ export interface GeneTrial extends TrialSummary {
 export interface DrugSummary {
   molecule_chembl_id: string;
   pref_name: string | null;
+  /** Drawn in the browser; see Structure.tsx. Nothing is stored. */
+  smiles: string | null;
   synonyms: string[];
   max_phase_tb: number | null;
   max_phase: number | null;
@@ -383,6 +387,7 @@ export interface DrugDetail {
   acts_on_mtb: boolean;
   host_targeted: boolean;
   smiles: string | null;
+  inchi_key: string | null;
   mw: number | null;
   alogp: number | null;
   mechanisms: Mechanism[];

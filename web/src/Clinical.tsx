@@ -8,6 +8,9 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
+// Clinical.tsx cannot import from TargetDetail.tsx -- that is the wrong way
+// round -- so both views share the chemistry presentation module.
+import { ChemblLink, Structure } from "./Structure";
 import {
   api,
   type CompoundDetail,
@@ -138,7 +141,18 @@ export function ClinicalTab({
                 const drug = links[0];
                 return (
                   <tr key={drug.molecule_chembl_id} onClick={() => onOpen({ kind: "drug", id: drug.molecule_chembl_id })}>
-                    <td className="id">{drug.pref_name ?? drug.molecule_chembl_id}</td>
+                    <td>
+                      <Structure
+                        smiles={drug.smiles}
+                        title={drug.pref_name ?? drug.molecule_chembl_id}
+                        width={132}
+                        height={72}
+                      />
+                    </td>
+                    <td className="id">
+                      {drug.pref_name && <div>{drug.pref_name}</div>}
+                      <ChemblLink kind="compound" id={drug.molecule_chembl_id} />
+                    </td>
                     <td>
                       <span className={`chip ${drug.max_phase_tb !== null && drug.max_phase_tb >= 4 ? "accent" : "ortho"}`}>
                         {phaseLabel(drug.max_phase_tb)}
@@ -357,7 +371,7 @@ export function DrugsAndTrials({
   if (error) return <div className="errbox">{error}</div>;
 
   return (
-    <div className="body">
+    <div className={`body clinical${focus ? " detail-open" : ""}`}>
       <aside className="col col-pad">
         <div className="group">
           <p className="lab">Search</p>
@@ -451,6 +465,7 @@ export function DrugsAndTrials({
             <table>
               <thead>
                 <tr>
+                  <th>Structure</th>
                   <th>Drug</th>
                   <th>TB phase</th>
                   <th className="n">Approved</th>
@@ -466,7 +481,16 @@ export function DrugsAndTrials({
                     aria-selected={focus?.kind === "drug" && focus.id === d.molecule_chembl_id}
                     onClick={() => onFocus({ kind: "drug", id: d.molecule_chembl_id })}
                   >
-                    <td className="id">{d.pref_name ?? d.molecule_chembl_id}</td>
+                    <td>
+                      <Structure
+                        smiles={d.smiles}
+                        title={d.pref_name ?? d.molecule_chembl_id}
+                      />
+                    </td>
+                    <td className="id">
+                      {d.pref_name && <div>{d.pref_name}</div>}
+                      <ChemblLink kind="compound" id={d.molecule_chembl_id} />
+                    </td>
                     <td className="dim">{phaseLabel(d.max_phase_tb)}</td>
                     <td className="n">{d.first_approval ?? "—"}</td>
                     <td>
@@ -518,6 +542,15 @@ export function DrugsAndTrials({
       </main>
 
       <aside className="col detailcol">
+        <button
+          className="closedetail"
+          type="button"
+          title="Close and widen the table (Esc)"
+          aria-label="Close detail"
+          onClick={() => onFocus(null)}
+        >
+          ×
+        </button>
         {focus?.kind === "compound" ? (
           <CompoundPanel id={focus.id} onFocus={onFocus} onSelectGene={onSelectGene} />
         ) : focus?.kind === "drug" ? (
@@ -678,7 +711,7 @@ function DrugPanel({
       <div className="detailhead">
         <div className="row">
           <span className="gn">{drug.pref_name ?? drug.molecule_chembl_id}</span>
-          <span className="rv">{drug.molecule_chembl_id}</span>
+          <ChemblLink kind="compound" id={drug.molecule_chembl_id} />
         </div>
         <p>
           <span className={`chip ${drug.max_phase_tb !== null && drug.max_phase_tb >= 4 ? "accent" : "ortho"}`}>
@@ -689,6 +722,27 @@ function DrugPanel({
           )}{" "}
           {drug.first_approval && <span className="dim">first approved {drug.first_approval}</span>}
         </p>
+        {/* The molecule itself, where a reader arrives: a name and a phase say
+            nothing about what it is, and these are the compounds people are
+            deciding whether to work on. */}
+        <div className="headstruct">
+          <Structure
+            smiles={drug.smiles}
+            title={drug.pref_name ?? drug.molecule_chembl_id}
+            width={230}
+            height={130}
+          />
+          <div className="note">
+            {drug.mw ? `MW ${Math.round(drug.mw)}` : null}
+            {drug.alogp !== null && drug.alogp !== undefined ? ` · cLogP ${drug.alogp.toFixed(1)}` : null}
+            {drug.inchi_key && (
+              <>
+                <br />
+                <span className="faint">{drug.inchi_key}</span>
+              </>
+            )}
+          </div>
+        </div>
       </div>
       <div className="panel">
         <Section label="Mechanism of action" source={chemblSource(meta)}>

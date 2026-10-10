@@ -160,7 +160,11 @@ button { font: inherit; }
 }
 /* 648px is what the six scan columns actually measure; narrower and the table
    clips again, which is the thing this layout exists to stop. */
+/* The genome table sheds to six scan columns when a gene is open, so 648px
+   is all it needs. The drugs table keeps all of its columns, so there the
+   detail takes a fixed share instead of the remainder. */
 .body.detail-open { grid-template-columns: 272px minmax(0, 648px) minmax(0, 1fr); }
+.body.clinical.detail-open { grid-template-columns: 272px minmax(0, 1fr) minmax(0, 640px); }
 .body:not(.detail-open) .detailcol { display: none; }
 @media (max-width: 1400px) { .body.detail-open { grid-template-columns: 240px minmax(0, 420px) minmax(0, 1fr); } }
 @media (max-width: 1180px) { .body, .body.detail-open { grid-template-columns: 210px minmax(0, 1fr); } .body.detail-open .canvascol { display: none; } }
@@ -392,3 +396,8 @@ td:has(> .struct) { padding: 4px 8px; }
 .assaycell { white-space: normal; max-width: 300px; font-size: 11px; color: var(--fg-dim); }
 .assaycell > div { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .assaylinks { display: flex; gap: 10px; margin-top: 3px; }
+
+/* The molecule at the top of a drug page, beside its physical properties. */
+.headstruct { display: flex; align-items: center; gap: 14px; margin-top: 10px; flex-wrap: wrap; }
+.headstruct .note { margin: 0; }
+.detailhead .row .chembl { font-size: 11px; }

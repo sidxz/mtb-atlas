@@ -16,7 +16,10 @@ All sources are public. No consortium data, ever.
 | [RCSB PDB](#rcsb-pdb) | live | CC0 1.0 | Experimental structures (M1) |
 | [AlphaFold DB](#alphafold-db) | v6 (2025-08-24) | CC BY 4.0 | Predicted structures (M1) |
 | [DeJesus 2017](#essentiality-dejesus-2017) | mBio, Table S3 | CC BY 4.0 | Essentiality (M1) |
-| [WHO catalogue](#who-mutation-catalogue) | 2nd ed. (2023) | ODC-By 1.0 | Resistance mutations (M1) |
+| [WHO catalogue](#who-mutation-catalogue) | 2nd ed. (2023) | ODC-By 1.0 | Resistance mutations |
+| [Bosch 2021 CRISPRi](#vulnerability-bosch-2021) | Cell, Table S3 | CC BY 4.0 | Vulnerability index |
+| [STRING](#string) | v12.5, taxon 83332 | CC BY 4.0 | Interaction partners |
+| [UniRef co-membership](#human-homology) | UniRef90 / UniRef50 | CC BY 4.0 | Human anti-target flag |
 
 Licences differ, so they are tracked per source rather than rolled up. The code
 in this repository is MIT; the data is not.
@@ -278,6 +281,120 @@ M1 acceptance criteria were adjusted accordingly.
 Joining to the gene universe is by gene symbol → Rv tag, which works because the
 65 symbols are all standard (`katG`, `rpoB`, `gyrA`, …) or are themselves Rv tags
 (`Rv0678`, `Rv1258c`, …).
+
+## Vulnerability: Bosch 2021
+
+Bosch B, DeJesus MA, Poulton NC, et al. *Genome-wide gene expression tuning
+reveals diverse vulnerabilities of M. tuberculosis.* Cell 2021;184(17):
+4579-4592.e24. PMC8382161, doi 10.1016/j.cell.2021.06.033. **CC BY 4.0**
+(stated in the article's JATS `<permissions>` block and confirmed by Crossref).
+
+- **File:** `https://ars.els-cdn.com/content/image/1-s2.0-S0092867421008242-mmc3.xlsx`
+  — 3,088,676 bytes, verified byte-identical to the copy inside the Europe PMC
+  zip. PMC's own supplementary path returns a 1,817-byte HTML interstitial to
+  scripted requests, and the Europe PMC zip is 50 MB for the same file.
+- **Sheet to use: `(1) Mtb H37Rv`**, 28 columns, 4,052 rows (4,005 `RVBD*`
+  genes plus 47 RNA features).
+- **Key:** `locus_tag` is **`RVBD3790`, not `Rv3790`**. The `c` suffix survives
+  (`RVBD0206c`), so the transform is a prefix swap.
+
+**Why this matters more than essentiality.** TnSeq answers "can this gene be
+deleted" — yes or no. CRISPRi titration answers "how much of this protein can
+the organism lose before it suffers", which is the question an inhibitor
+actually poses: a drug reduces a target, it rarely removes one. Three genes
+can all be `ES` and differ by orders of magnitude in required engagement.
+
+The index is negative; more negative is more vulnerable. Reference targets,
+all flagged `certain`: **MmpL3 −11.01, InhA −9.91, DprE1 −9.42**, and for
+contrast KatG +0.96, not certain.
+
+**`certain` is the authors' own flag** for a confident estimate and is true for
+only 594 of 4,005 genes. It is carried alongside the index rather than used to
+filter, so the UI can show an uncertain number as uncertain.
+
+Bonus: the sheet's `antibacterial` column names the drug already targeting each
+gene — SQ109→mmpL3, PBTZ169→dprE1, Q203, bedaquiline, rifamycins and others.
+That is a machine-readable, openly licensed list of validated TB targets, which
+is exactly what the newtbdrugs pipeline page could not supply.
+
+## STRING
+
+- **Version:** v12.5 (since 2026-09-29; v12.0 is archived).
+- **Files:** `https://stringdb-downloads.org/download/protein.links.detailed.v12.5/83332.protein.links.detailed.v12.5.txt.gz`
+  (10,248,889 bytes) and the matching `protein.info` file (443,953 bytes).
+- **Licence: CC BY 4.0**, stated explicitly: "All data and download files in
+  STRING are freely available under a 'Creative Commons BY 4.0' license",
+  covering "tables, data files, individual scores and data points". STRING also
+  asks that bulk users take the flat files rather than the API, which is what
+  this does.
+- **Key:** `string_protein_id` is literally `83332.Rv0001`. Strip the prefix and
+  4,026 of 4,026 are Rv tags. This is the only source in the pipeline that keys
+  with nothing but a prefix strip.
+
+The ingester keeps edges with `combined_score >= 700` — STRING's own
+high-confidence cut — which leaves 28,739 unordered pairs over 3,375 genes out
+of 1.39M raw edges, most of which are low-confidence text mining. **The
+download lists every edge twice** (A→B and B→A); emitting both would double
+every partner count. Per-channel scores are kept, because an edge supported
+only by text mining is a far weaker claim than one with experimental support
+and the combined score hides which it is.
+
+## Human homology
+
+A target whose closest relative is human is a selectivity problem first. **No
+public resource publishes this for Mtb in a downloadable form:**
+
+- UniProt exposes **no** orthology or UniRef field on UniProtKB — `uniref_cluster_50`
+  is rejected as an invalid field, and a cross-taxon UniRef query
+  (`taxonomy_id:83332 AND taxonomy_id:9606`) returns 0 results, as does the
+  human/mouse control, so that field is not a member index.
+- OrthoDB's current download path returns 403; v11's files are 1.8 GB and 21 GB.
+- eggNOG 7's family files are ~1 GB.
+- InParanoiDB 9's download is a CSRF-protected Django form that returns HTML,
+  not a file, to every scripted attempt.
+- DIAMOND and BLAST are not installed in this environment.
+
+**What this pipeline does instead:** four bulk UniProt ID-mapping jobs, mapping
+both proteomes into UniRef90 and UniRef50 and intersecting the cluster ids. No
+local tooling, no multi-gigabyte download.
+
+**What that claim is worth.** UniRef clusters at N% identity *to the
+representative*, so two members are not guaranteed to be N% identical to each
+other. UniRef50 co-membership means "same broad family" — true of most kinases
+and ABC transporters — and is a flag to investigate. UniRef90 co-membership is
+a much stronger claim and is rare. Both levels are reported separately and
+neither is ever described as a percent identity, because neither is one. A
+measured identity needs DIAMOND; that is the upgrade path if the flag proves
+too coarse.
+
+## Rejected: the TB clinical pipeline
+
+`newtbdrugs.org/pipeline/clinical` is HTML only: no tables, no JSON-LD, no
+CSV/JSON endpoint, and `/api/pipeline`, `/pipeline.json` and `/wp-json/...` all
+404. The compound names are in the markup but **the target annotation is not** —
+grepping for `dprE1|MmpL3|InhA|QcrB` returns zero hits on the clinical page. A
+separate `/pipeline/drug-targets` page lists targets as free text with no
+identifiers and inconsistent casing. The footer reads "©2016 Working Group on
+New TB Drugs. All Rights Reserved" — no open licence.
+
+Not ingested. The validated-target information the atlas needed is available,
+openly licensed, from Bosch 2021's `antibacterial` column instead.
+
+## Noted but not ingested: MtbTnDB
+
+`github.com/ajinich/mtb_tn_db` carries 158 conditional TnSeq screens
+reprocessed uniformly, keyed directly on Rv tag
+(`data/standardized_data_dash.tsv`, 59 MB, 583,346 rows over 4,055 genes and
+146 screens), including cholesterol, hypoxia, acid stress and mouse infection.
+The paper is CC BY. **The repository has no LICENSE file** — `LICENSE`,
+`LICENSE.md`, `LICENSE.txt` and `COPYING` all 404 and the GitHub API reports
+`license: null` — while its README links to one. That is unresolved, and worth
+an email to the authors before shipping.
+
+There is also a scientific caveat: TnSeq log2FC is structurally uninformative
+for essential genes, which have few insertions to count. `inhA` reads 0.00 with
+q = 1.0 in all 146 screens. This dataset would complement Bosch 2021 for
+conditional shifts in non-essential genes; it cannot substitute for it.
 
 ## Residue-level structure mapping (M3)
 

@@ -24,7 +24,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 @pytest.fixture(scope="session")
 def store(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """The three source tables, normalized from fixtures into a temp store."""
+    """The identity stage: three source tables plus the crosswalk they join into."""
     out = tmp_path_factory.mktemp("store")
     write_parquet(
         "genes",
@@ -50,6 +50,7 @@ def store(tmp_path_factory: pytest.TempPathFactory) -> Path:
         retrieved_at="2026-10-09",
         store=out,
     )
+    crosswalk.build(store=out, with_orthologues=False)
     return out
 
 
@@ -114,6 +115,19 @@ def evidence_store(store: Path) -> Path:
         retrieved_at="2026-10-09",
         store=store,
     )
-    crosswalk.build(store=store, with_orthologues=False)
+    extra = json.loads((FIXTURES / "extra_evidence.json").read_text())
+    for name, source, version in (
+        ("vulnerability", "bosch-2021", "Bosch 2021 Table S3"),
+        ("interactions", "string-db", "STRING v12.5"),
+        ("homology", "phmmer-human", "phmmer vs reviewed human proteome"),
+    ):
+        write_parquet(
+            name,
+            extra[name],
+            source=source,
+            source_version=version,
+            retrieved_at="2026-10-09",
+            store=store,
+        )
     summary.build(store=store)
     return store

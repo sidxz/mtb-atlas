@@ -1,0 +1,266 @@
+[
+ {
+  "rcsb_id": "4KW5",
+  "struct": {
+   "title": "M. tuberculosis DprE1 in complex with inhibitor TCA1"
+  },
+  "exptl": [
+   {
+    "method": "X-RAY DIFFRACTION"
+   }
+  ],
+  "rcsb_entry_info": {
+   "resolution_combined": [
+    2.612
+   ],
+   "deposited_polymer_entity_instance_count": 2
+  },
+  "rcsb_accession_info": {
+   "initial_release_date": "2013-07-10T00:00:00Z"
+  },
+  "polymer_entities": [
+   {
+    "rcsb_polymer_entity": {
+     "pdbx_description": "Oxidoreductase"
+    },
+    "rcsb_polymer_entity_container_identifiers": {
+     "auth_asym_ids": [
+      "A",
+      "B"
+     ],
+     "reference_sequence_identifiers": [
+      {
+       "database_accession": "P9WJF1",
+       "database_name": "UniProt"
+      }
+     ]
+    }
+   }
+  ],
+  "nonpolymer_entities": [
+   {
+    "nonpolymer_comp": {
+     "chem_comp": {
+      "id": "1W6",
+      "name": "ethyl ({2-[(1,3-benzothiazol-2-ylcarbonyl)amino]thiophen-3-yl}carbonyl)carbamate",
+      "formula_weight": 375.422
+     }
+    },
+    "rcsb_nonpolymer_entity_container_identifiers": {
+     "auth_asym_ids": [
+      "A",
+      "B"
+     ]
+    }
+   },
+   {
+    "nonpolymer_comp": {
+     "chem_comp": {
+      "id": "IMD",
+      "name": "IMIDAZOLE",
+      "formula_weight": 69.085
+     }
+    },
+    "rcsb_nonpolymer_entity_container_identifiers": {
+     "auth_asym_ids": [
+      "A"
+     ]
+    }
+   },
+   {
+    "nonpolymer_comp": {
+     "chem_comp": {
+      "id": "GOL",
+      "name": "GLYCEROL",
+      "formula_weight": 92.094
+     }
+    },
+    "rcsb_nonpolymer_entity_container_identifiers": {
+     "auth_asym_ids": [
+      "A",
+      "B"
+     ]
+    }
+   },
+   {
+    "nonpolymer_comp": {
+     "chem_comp": {
+      "id": "FAD",
+      "name": "FLAVIN-ADENINE DINUCLEOTIDE",
+      "formula_weight": 785.55
+     }
+    },
+    "rcsb_nonpolymer_entity_container_identifiers": {
+     "auth_asym_ids": [
+      "A",
+      "B"
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "rcsb_id": "1ZID",
+  "struct": {
+   "title": "LONG FATTY ACID CHAIN ENOYL-ACP REDUCTASE (INHA) IN COMPLEX WITH AN ISONICOTINIC-ACYL-NADH INHIBITOR"
+  },
+  "exptl": [
+   {
+    "method": "X-RAY DIFFRACTION"
+   }
+  ],
+  "rcsb_entry_info": {
+   "resolution_combined": [
+    2.7
+   ],
+   "deposited_polymer_entity_instance_count": 1
+  },
+  "rcsb_accession_info": {
+   "initial_release_date": "1998-03-25T00:00:00Z"
+  },
+  "polymer_entities": [
+   {
+    "rcsb_polymer_entity": {
+     "pdbx_description": "ENOYL-[ACYL-CARRIER-PROTEIN] REDUCTASE"
+    },
+    "rcsb_polymer_entity_container_identifiers": {
+     "auth_asym_ids": [
+      "A"
+     ],
+     "reference_sequence_identifiers": [
+      {
+       "database_accession": "P9WGR1",
+       "database_name": "UniProt"
+      }
+     ]
+    }
+   }
+  ],
+  "nonpolymer_entities": [
+   {
+    "nonpolymer_comp": {
+     "chem_comp": {
+      "id": "ZID",
+      "name": "ISONICOTINIC-ACETYL-NICOTINAMIDE-ADENINE DINUCLEOTIDE",
+      "formula_weight": 768.519
+     }
+    },
+    "rcsb_nonpolymer_entity_container_identifiers": {
+     "auth_asym_ids": [
+      "A"
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "rcsb_id": "2CCA",
+  "struct": {
+   "title": "Crystal structure of the catalase-peroxidase (KatG) and S315T mutant from Mycobacterium tuberculosis"
+  },
+  "exptl": [
+   {
+    "method": "X-RAY DIFFRACTION"
+   }
+  ],
+  "rcsb_entry_info": {
+   "resolution_combined": [
+    2.0
+   ],
+   "deposited_polymer_entity_instance_count": 2
+  },
+  "rcsb_accession_info": {
+   "initial_release_date": "2006-01-19T00:00:00Z"
+  },
+  "polymer_entities": [
+   {
+    "rcsb_polymer_entity": {
+     "pdbx_description": "PEROXIDASE/CATALASE T"
+    },
+    "rcsb_polymer_entity_container_identifiers": {
+     "auth_asym_ids": [
+      "A",
+      "B"
+     ],
+     "reference_sequence_identifiers": [
+      {
+       "database_accession": "P9WIE5",
+       "database_name": "UniProt"
+      }
+     ]
+    }
+   }
+  ],
+  "nonpolymer_entities": [
+   {
+    "nonpolymer_comp": {
+     "chem_comp": {
+      "id": "HEM",
+      "name": "PROTOPORPHYRIN IX CONTAINING FE",
+      "formula_weight": 616.487
+     }
+    },
+    "rcsb_nonpolymer_entity_container_identifiers": {
+     "auth_asym_ids": [
+      "A",
+      "B"
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "rcsb_id": "7NVH",
+  "struct": {
+   "title": "Cryo-EM structure of the mycolic acid transporter MmpL3 from M. tuberculosis"
+  },
+  "exptl": [
+   {
+    "method": "ELECTRON MICROSCOPY"
+   }
+  ],
+  "rcsb_entry_info": {
+   "resolution_combined": [
+    3.0
+   ],
+   "deposited_polymer_entity_instance_count": 1
+  },
+  "rcsb_accession_info": {
+   "initial_release_date": "2021-06-16T00:00:00Z"
+  },
+  "polymer_entities": [
+   {
+    "rcsb_polymer_entity": {
+     "pdbx_description": "Trehalose monomycolate exporter MmpL3"
+    },
+    "rcsb_polymer_entity_container_identifiers": {
+     "auth_asym_ids": [
+      "A"
+     ],
+     "reference_sequence_identifiers": [
+      {
+       "database_accession": "P9WJV5",
+       "database_name": "UniProt"
+      }
+     ]
+    }
+   }
+  ],
+  "nonpolymer_entities": [
+   {
+    "nonpolymer_comp": {
+     "chem_comp": {
+      "id": "AV0",
+      "name": "Lauryl Maltose Neopentyl Glycol",
+      "formula_weight": 1005.188
+     }
+    },
+    "rcsb_nonpolymer_entity_container_identifiers": {
+     "auth_asym_ids": [
+      "A"
+     ]
+    }
+   }
+  ]
+ }
+]

@@ -13,3 +13,5 @@ dist/
 
 # POC display data: rebuilt by poc/build_poc_data.py, same rule as data/raw/
 poc/data/
+web/node_modules/
+web/dist/

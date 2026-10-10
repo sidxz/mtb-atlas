@@ -1,0 +1,209 @@
+/**
+ * The only way this app reaches data. Types mirror the Pydantic models in
+ * atlas/api.py; if they drift, the API's /openapi.json is the arbiter.
+ */
+
+const BASE = import.meta.env.VITE_API_BASE ?? "/api";
+
+export type Essentiality = "ES" | "ESD" | "GD" | "NE" | "GA" | "Uncertain";
+
+export interface TargetSummary {
+  rv_id: string;
+  gene_name: string | null;
+  product: string | null;
+  category: string | null;
+  start: number;
+  stop: number;
+  strand: string;
+  length: number | null;
+  uniprot_acc: string | null;
+  essentiality: Essentiality | null;
+  essentiality_label: string | null;
+  feature: string;
+  essentiality_essential: boolean;
+  essentiality_fitness_cost: boolean;
+  essentiality_condition: string | null;
+  ta_sites: number | null;
+  n_pdb: number;
+  best_resolution: number | null;
+  has_predicted: boolean;
+  plddt_mean: number | null;
+  n_activities: number;
+  n_compounds: number;
+  best_pchembl: number | null;
+  n_whole_cell: number;
+  best_whole_cell_pchembl: number | null;
+  chembl_evidence: "direct" | "orthologue" | null;
+  in_who_catalogue: boolean;
+  n_variants_associated: number;
+  n_variants_mappable: number;
+  resistance_drugs: string[];
+  has_structure: boolean;
+  has_ligands: boolean;
+  structural_gap: boolean;
+  conflict: boolean;
+}
+
+export interface StructureComponent {
+  comp_id: string;
+  name: string | null;
+  formula_weight: number | null;
+  role: "ligand" | "cofactor" | "incidental";
+  chains: string[];
+}
+
+export interface Structure {
+  pdb_id: string;
+  title: string | null;
+  method: string | null;
+  resolution: number | null;
+  released: string | null;
+  chains: string[];
+  entity_description: string | null;
+  components: StructureComponent[];
+  ligand_ids: string[];
+  n_ligands: number;
+}
+
+export interface ChemblTarget {
+  target_id: string;
+  target_type: string | null;
+  pref_name: string | null;
+  evidence: "direct" | "orthologue";
+  via_accession: string | null;
+  via_organism: string | null;
+  via_gene: string | null;
+  uniref_cluster: string | null;
+  identity_level: string | null;
+  cluster_size: number | null;
+}
+
+export interface Activity {
+  activity_id: number | null;
+  molecule_chembl_id: string | null;
+  target_chembl_id: string | null;
+  target_organism: string | null;
+  evidence: "direct" | "orthologue" | "whole_cell";
+  standard_type: string | null;
+  standard_relation: string | null;
+  standard_value: number | null;
+  standard_units: string | null;
+  pchembl_value: number | null;
+  assay_chembl_id: string | null;
+  assay_description: string | null;
+  document_chembl_id: string | null;
+  document_year: number | null;
+  data_validity_comment: string | null;
+  potential_duplicate: boolean;
+}
+
+export interface Compound {
+  molecule_chembl_id: string;
+  pref_name: string | null;
+  molecule_type: string | null;
+  max_phase: number | null;
+  first_approval: number | null;
+  smiles: string | null;
+  inchi_key: string | null;
+  mw: number | null;
+  alogp: number | null;
+  hba: number | null;
+  hbd: number | null;
+  psa: number | null;
+  rotatable_bonds: number | null;
+  aromatic_rings: number | null;
+  ro5_violations: number | null;
+  qed: number | null;
+}
+
+export interface Variant {
+  gene: string;
+  mutation: string;
+  variant: string;
+  drug: string;
+  grading: string;
+  associated: boolean;
+  tier: string | null;
+  effect: string | null;
+  genomic_position: string | null;
+  residue_position: number | null;
+  residue_label: string | null;
+}
+
+export interface PredictedStructure {
+  uniprot_acc: string;
+  entry_id: string | null;
+  version: number | null;
+  created: string | null;
+  plddt_mean: number | null;
+  plddt_very_high: number | null;
+  plddt_confident: number | null;
+  plddt_low: number | null;
+  plddt_very_low: number | null;
+  cif_url: string | null;
+  pae_url: string | null;
+}
+
+export interface TargetDetail extends TargetSummary {
+  protein_name: string | null;
+  acc_status: string | null;
+  shares_accession_with: string[];
+  is_pseudogene: boolean;
+  alphafold: PredictedStructure | null;
+  structures: Structure[];
+  chembl_targets: ChemblTarget[];
+  activities: Activity[];
+  whole_cell: Activity[];
+  compounds: Compound[];
+  variants: Variant[];
+  /** What the atlas does NOT know, stated rather than left as a blank cell. */
+  absences: string[];
+}
+
+export interface Meta {
+  counts: Record<string, number>;
+  sources: { name: string; version: string; licence: string; retrieved: string }[];
+  caveats: string[];
+}
+
+export interface TargetQuery {
+  q?: string;
+  essentiality?: string[];
+  category?: string[];
+  has_structure?: boolean;
+  has_predicted?: boolean;
+  has_ligands?: boolean;
+  in_who_catalogue?: boolean;
+  structural_gap?: boolean;
+  conflict?: boolean;
+  min_pchembl?: number;
+  sort?: string;
+  order?: "asc" | "desc";
+  limit?: number;
+  offset?: number;
+}
+
+async function get<T>(path: string, params?: Record<string, unknown>): Promise<T> {
+  const url = new URL(`${BASE}${path}`, window.location.origin);
+  for (const [key, value] of Object.entries(params ?? {})) {
+    if (value === undefined || value === null || value === "") continue;
+    if (Array.isArray(value)) value.forEach((v) => url.searchParams.append(key, String(v)));
+    else url.searchParams.set(key, String(value));
+  }
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText} from ${path}`);
+  }
+  return (await response.json()) as T;
+}
+
+export const api = {
+  meta: () => get<Meta>("/meta"),
+  targets: (query: TargetQuery) =>
+    get<{ total: number; limit: number; offset: number; items: TargetSummary[] }>(
+      "/targets",
+      query as Record<string, unknown>,
+    ),
+  target: (rvId: string) => get<TargetDetail>(`/targets/${rvId}`),
+  compound: (id: string) => get<Compound & { activities: Activity[] }>(`/compounds/${id}`),
+};

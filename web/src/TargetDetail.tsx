@@ -362,6 +362,7 @@ function Evidence({ detail }: { detail: Detail }) {
                 Already targeted by <b>{detail.antibacterial}</b>.
               </div>
             )}
+            <ClinicalStrain detail={detail} />
           </>
         )}
       </Row>
@@ -564,6 +565,51 @@ function PlddtBar({ predicted }: { predicted: NonNullable<Detail["alphafold"]> }
         {Math.round((predicted.plddt_very_low ?? 0) * 100)}% very low
       </div>
     </>
+  );
+}
+
+/** The same knockdown series in HN878, a clinical isolate.
+ *
+ * Three states, kept apart on purpose: measured here, measured in H37Rv and
+ * never in HN878, and measured in both with no differential reported. The
+ * middle one is the common case and the easiest to misread as agreement.
+ */
+function ClinicalStrain({ detail }: { detail: Detail }) {
+  const clinical = detail.hn878_vulnerability_index;
+  if (clinical === null || clinical === undefined) {
+    return (
+      <p className="caveat">
+        Not measured in HN878, so this number holds for H37Rv — a strain in culture since
+        1905 — and is untested in a clinical isolate.
+      </p>
+    );
+  }
+  const delta = detail.hn878_delta_vi;
+  const direction = delta === null ? null : delta > 0 ? "less" : "more";
+  return (
+    <div className="note" style={{ color: "var(--fg)" }}>
+      In <b>HN878</b>, a Beijing-lineage clinical isolate:{" "}
+      <b style={{ color: detail.hn878_vi_certain ? "var(--accent)" : "var(--fg-dim)" }}>
+        {clinical.toFixed(2)}
+      </b>
+      {!detail.hn878_vi_certain && <span className="dim"> (not a confident estimate there)</span>}
+      {delta !== null && direction !== null && (
+        <>
+          {" — "}
+          <b>
+            {Math.abs(delta).toFixed(1)} {direction} vulnerable
+          </b>{" "}
+          than in H37Rv, by the paper&rsquo;s own differential.
+        </>
+      )}
+      {delta === null && (
+        <span className="dim">
+          {" "}
+          — Bosch reports no differential for this gene, so compare the two by eye rather than
+          as a tested difference.
+        </span>
+      )}
+    </div>
   );
 }
 

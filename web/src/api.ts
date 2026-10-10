@@ -54,6 +54,17 @@ export interface TargetSummary {
   vi_upper: number | null;
   vulnerability_certain: boolean;
   crispr_essential: boolean;
+  /**
+   * The same CRISPRi series in HN878, a clinical isolate. `hn878_delta_vi` runs
+   * HN878 minus H37Rv, so positive means *less* vulnerable in the clinic. Null
+   * where the strain sheet never covered the locus, and null delta where the
+   * authors reported no differential for it -- not a difference of zero.
+   */
+  hn878_vulnerability_index: number | null;
+  hn878_vi_certain: boolean | null;
+  hn878_delta_vi: number | null;
+  hn878_delta_vi_norm: number | null;
+  hn878_differential_reported: boolean;
   /** The drug that already targets this gene, per Bosch 2021. */
   antibacterial: string | null;
   human_homolog: boolean;

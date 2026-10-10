@@ -119,6 +119,21 @@
    "antibacterial": "PBTZ169",
    "condition": "CRISPRi knockdown, in vitro",
    "citation": "Bosch et al. 2021 Cell 184(17):4579-4592, Table S3 sheet 1"
+  },
+  {
+   "rv_id": "Rv1305",
+   "gene_name": "atpE",
+   "vulnerability_index": -8.676,
+   "vi_lower": -9.572,
+   "vi_upper": -7.661,
+   "certain": true,
+   "crispr_essential": false,
+   "crispr_call": "NonEssential",
+   "tnseq_call": "Essential",
+   "n_guides": 7,
+   "antibacterial": "bedaquiline",
+   "condition": "CRISPRi knockdown, in vitro",
+   "citation": "Bosch et al. 2021 Cell 184(17):4579-4592, Table S3 sheet 1"
   }
  ],
  "interactions": [

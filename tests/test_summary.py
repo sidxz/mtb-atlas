@@ -140,4 +140,49 @@ def test_counts_cover_every_summary_flag(evidence_store: Path) -> None:
     assert result["genes"] == len(read("target_summary", store=evidence_store).fetchall())
     assert result["essential"] <= result["any_fitness_cost"]
     assert result["structural_gap"] <= result["with_structure"]
+    assert 0 < result["with_clinical_drug"] <= result["genes"]
+    assert result["drugs"] > 0
+    assert result["trials"] > 0
     assert all(isinstance(v, int) for v in result.values())
+
+
+# --- drugs and trials ------------------------------------------------------------
+
+
+def test_drugs_acting_on_a_gene(rows: dict) -> None:
+    dpre1 = rows["Rv3790"]
+    assert dpre1["drug_names"] == ["MACOZINONE"]  # ChEMBL mechanism and Bosch's PBTZ169
+    assert dpre1["n_drugs"] == 1
+    assert dpre1["best_drug_phase"] == 2
+    assert dpre1["has_clinical_drug"] is True
+    assert rows["Rv0206c"]["drug_names"] == ["SQ109"]  # Bosch 2021 is the only link
+    assert rows["Rv1484"]["best_drug_phase"] == 4  # isoniazid, ethionamide
+
+
+def test_complex_membership_is_not_counted_twice(rows: dict) -> None:
+    """Bedaquiline reaches atpE as Bosch's annotation and as an ATP synthase member."""
+    atpe = rows["Rv1305"]
+    assert atpe["n_drugs"] == 1
+    assert atpe["n_complex_drugs"] == 0
+
+
+def test_resistance_does_not_make_a_drug_target(rows: dict) -> None:
+    """rpoB carries rifampicin resistance, but no source here calls it the target."""
+    rpob = rows["Rv0667"]
+    assert "Rifampicin" in rpob["resistance_drugs"]
+    assert rpob["n_drugs"] == 0
+    assert rpob["best_drug_phase"] is None
+    assert rpob["has_clinical_drug"] is False
+
+
+def test_trials_reach_genes_through_their_drugs(rows: dict) -> None:
+    assert rows["Rv3790"]["n_trials"] == 2  # NCT03036163, NCT03423030
+    assert rows["Rv0206c"]["n_trials"] == 1  # NCT01218217
+    assert rows["Rv0667"]["n_trials"] == 0
+
+
+def test_genes_with_no_drug_say_so(rows: dict) -> None:
+    for row in rows.values():
+        if not row["n_drugs"]:
+            assert row["drug_names"] == []
+            assert row["has_clinical_drug"] is False

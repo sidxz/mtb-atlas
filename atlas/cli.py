@@ -13,8 +13,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="atlas", description=__doc__)
     parser.add_argument(
         "command",
-        choices=("build", "identity", "evidence", "summary"),
-        help="build everything, just the identity or evidence stage, or summarise the store",
+        choices=("build", "identity", "evidence", "clinical", "summary"),
+        help="build everything, one stage (identity, evidence, clinical), or summarise the store",
     )
     parser.add_argument(
         "--force",
@@ -23,11 +23,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    if args.command in ("build", "identity", "evidence"):
+    if args.command in ("build", "identity", "evidence", "clinical"):
+        # A single stage assumes the earlier ones are already in the store, and
+        # the evidence and clinical stages refresh the per-gene roll-up after.
         runner = {
             "build": pipeline.build_all,
             "identity": pipeline.build_identity,
-            "evidence": pipeline.build_evidence,
+            "evidence": lambda force: [
+                *pipeline.build_evidence(force=force),
+                pipeline.build_summary(),
+            ],
+            "clinical": lambda force: [
+                *pipeline.build_clinical(force=force),
+                pipeline.build_summary(),
+            ],
         }[args.command]
         for path in runner(force=args.force):
             print(f"wrote {path.relative_to(path.parent.parent.parent)}")

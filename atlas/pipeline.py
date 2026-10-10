@@ -1,10 +1,15 @@
-"""The build, in two stages.
+"""The build, in three stages and a roll-up.
 
-Identity first, evidence second. The crosswalk has to exist before the evidence
-ingesters run, because PDB, AlphaFold and ChEMBL are keyed on UniProt accession
-or ChEMBL target id rather than on the Rv tag, and the crosswalk is what maps
-those back to a gene. An evidence ingester may therefore read the crosswalk for
-its key set; it must never read another source's raw cache.
+Identity first, evidence second, clinical third. The crosswalk has to exist
+before the evidence ingesters run, because PDB, AlphaFold and ChEMBL are keyed
+on UniProt accession or ChEMBL target id rather than on the Rv tag, and the
+crosswalk is what maps those back to a gene. An evidence ingester may therefore
+read the crosswalk for its key set; it must never read another source's raw
+cache.
+
+The clinical stage comes last because its links reach genes through the
+crosswalk, Bosch 2021 and the WHO catalogue, all of which must already be in
+the store. The per-gene summary rolls up everything, so it runs once at the end.
 """
 
 from __future__ import annotations
@@ -12,10 +17,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from . import crosswalk, summary
+from . import clinical, crosswalk, summary
 from .sources import (
     alphafold,
     chembl,
+    clinicaltrials,
     essentiality,
     homology,
     mycobrowser,
@@ -84,10 +90,28 @@ def build_evidence(*, force: bool = False) -> list[Path]:
     paths.append(string_db.build(force=force))
     _say("[evidence] human homology (phmmer vs human proteome)")
     paths.append(homology.build(retrieved_at=retrieved_at, force=force))
-    _say("[summary] target_summary")
-    paths.append(summary.build())
     return paths
 
 
+def build_clinical(*, force: bool = False) -> list[Path]:
+    _say("[clinical] TB drugs, indications and mechanisms (ChEMBL)")
+    paths = chembl.build_drugs(force=force)
+    _say("[clinical] interventional TB trials (ClinicalTrials.gov)")
+    paths.append(clinicaltrials.build(force=force))
+    _say("[clinical] drug -> gene and trial -> drug links")
+    paths += clinical.build()
+    return paths
+
+
+def build_summary() -> Path:
+    _say("[summary] target_summary")
+    return summary.build()
+
+
 def build_all(*, force: bool = False) -> list[Path]:
-    return build_identity(force=force) + build_evidence(force=force)
+    return [
+        *build_identity(force=force),
+        *build_evidence(force=force),
+        *build_clinical(force=force),
+        build_summary(),
+    ]

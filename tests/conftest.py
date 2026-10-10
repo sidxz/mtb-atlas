@@ -7,10 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from atlas import crosswalk, summary
+from atlas import clinical, crosswalk, summary
 from atlas.sources import (
     alphafold,
     chembl,
+    clinicaltrials,
     essentiality,
     mycobrowser,
     pdb,
@@ -56,11 +57,12 @@ def store(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 @pytest.fixture(scope="session")
 def evidence_store(store: Path) -> Path:
-    """The identity store plus every evidence table, all from fixtures.
+    """The identity store plus every evidence and clinical table, all from fixtures.
 
     Built once so the summary roll-up can be tested end to end: the whole-cell
-    attribution rule and the structural-gap definition are the parts most
-    likely to drift, and they only exist once the tables are joined.
+    attribution rule, the structural-gap definition and the drug link levels
+    are the parts most likely to drift, and they only exist once the tables
+    are joined.
     """
     entries = json.loads((FIXTURES / "rcsb_entries.json").read_text())
     accessions = {
@@ -129,5 +131,28 @@ def evidence_store(store: Path) -> Path:
             retrieved_at="2026-10-09",
             store=store,
         )
+
+    drug_rows, mechanism_rows = chembl.normalize_drugs(
+        json.loads((FIXTURES / "chembl_drugs.json").read_text())
+    )
+    for name, rows in (("drugs", drug_rows), ("drug_mechanisms", mechanism_rows)):
+        write_parquet(
+            name,
+            rows,
+            source=chembl.SOURCE,
+            source_version="chembl_37",
+            retrieved_at="2026-10-10",
+            store=store,
+        )
+    studies = json.loads((FIXTURES / "clinicaltrials_studies.json").read_text())
+    write_parquet(
+        "trials",
+        clinicaltrials.normalize(studies["studies"]),
+        source=clinicaltrials.SOURCE,
+        source_version=clinicaltrials.version(studies["version"]),
+        retrieved_at="2026-10-10",
+        store=store,
+    )
+    clinical.build(store=store)
     summary.build(store=store)
     return store

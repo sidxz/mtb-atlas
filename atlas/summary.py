@@ -67,6 +67,40 @@ inter AS (
     )
     GROUP BY 1
 ),
+drug_link AS (
+    -- A drug counts on a gene only when a source says it acts on that gene's
+    -- own protein. Complex membership and resistance are shown on the page,
+    -- never counted here. See atlas/clinical.py.
+    SELECT g.rv_id,
+           count(DISTINCT g.molecule_chembl_id) FILTER (WHERE g.link IN ('mechanism', 'bosch_2021'))
+               AS n_drugs,
+           max(d.max_phase_tb) FILTER (WHERE g.link IN ('mechanism', 'bosch_2021'))
+               AS best_drug_phase,
+           list_sort(list_distinct(
+               list(d.pref_name) FILTER (WHERE g.link IN ('mechanism', 'bosch_2021'))
+           )) AS drug_names
+    FROM drug_genes g
+    JOIN drugs d USING (molecule_chembl_id)
+    GROUP BY 1
+),
+complex_only AS (
+    -- Drugs whose only link to this gene is membership of the complex they act on.
+    SELECT g.rv_id, count(DISTINCT g.molecule_chembl_id) AS n_complex_drugs
+    FROM drug_genes g
+    WHERE g.link = 'mechanism_complex'
+      AND NOT EXISTS (
+          SELECT 1 FROM drug_genes t
+          WHERE t.rv_id = g.rv_id AND t.molecule_chembl_id = g.molecule_chembl_id
+            AND t.link IN ('mechanism', 'bosch_2021'))
+    GROUP BY 1
+),
+gene_trials AS (
+    SELECT g.rv_id, count(DISTINCT t.nct_id) AS n_trials
+    FROM drug_genes g
+    JOIN trial_drugs t USING (molecule_chembl_id)
+    WHERE g.link IN ('mechanism', 'bosch_2021')
+    GROUP BY 1
+),
 res AS (
     SELECT r.gene,
            count(*)                                            AS n_catalogued,
@@ -121,6 +155,13 @@ SELECT
     coalesce(ca.n_whole_cell, 0) AS n_whole_cell,
     ca.best_whole_cell_pchembl,
 
+    coalesce(dl.n_drugs, 0)             AS n_drugs,
+    dl.best_drug_phase,
+    coalesce(dl.drug_names, [])         AS drug_names,
+    coalesce(co.n_complex_drugs, 0)     AS n_complex_drugs,
+    coalesce(gt.n_trials, 0)            AS n_trials,
+    (coalesce(dl.n_drugs, 0) > 0)       AS has_clinical_drug,
+
     (res.gene IS NOT NULL)              AS in_who_catalogue,
     coalesce(res.n_catalogued, 0)       AS n_variants_catalogued,
     coalesce(res.n_associated, 0)       AS n_variants_associated,
@@ -144,6 +185,9 @@ LEFT JOIN res ON res.gene = coalesce(w.gene_name, w.rv_id)
 LEFT JOIN vuln v ON v.rv_id = w.rv_id
 LEFT JOIN hom  h ON h.uniprot_acc = w.uniprot_acc
 LEFT JOIN inter i ON i.rv_id = w.rv_id
+LEFT JOIN drug_link    dl ON dl.rv_id = w.rv_id
+LEFT JOIN complex_only co ON co.rv_id = w.rv_id
+LEFT JOIN gene_trials  gt ON gt.rv_id = w.rv_id
 ORDER BY w.start
 """
 
@@ -157,6 +201,9 @@ TABLES = {
     "vuln": "vulnerability",
     "hom": "homology",
     "interactions": "interactions",
+    "drugs": "drugs",
+    "drug_genes": "drug_genes",
+    "trial_drugs": "trial_drugs",
 }
 
 
@@ -196,7 +243,11 @@ def counts(*, store: Path | None = None) -> dict[str, int]:
             sum((vulnerability_index IS NOT NULL
                  AND vulnerability_certain)::int) AS vulnerability_measured,
             sum(human_homolog::int) AS with_human_homolog,
-            sum(close_human_homolog::int) AS with_close_human_homolog
+            sum(close_human_homolog::int) AS with_close_human_homolog,
+            sum(has_clinical_drug::int) AS with_clinical_drug
         """)
     row = relation.fetchone()
-    return {name: int(value or 0) for name, value in zip(relation.columns, row, strict=True)}
+    out = {name: int(value or 0) for name, value in zip(relation.columns, row, strict=True)}
+    for name in ("drugs", "trials"):
+        out[name] = int(read(name, store=store).aggregate("count(*)").fetchone()[0])
+    return out

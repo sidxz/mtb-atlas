@@ -27,11 +27,14 @@ URL = (
     "?dir=txt&file=Mycobacterium_tuberculosis_H37Rv.txt"
 )
 
-# The gene universe is Mycobrowser's CDS rows (4031 loci). The file also carries
-# ncRNA/tRNA/rRNA genes and, on separate rows re-using a gene's locus tag,
-# regulatory features (promoter, -10_signal, -35_signal) -- those are not genes
-# and would otherwise duplicate a locus.
-GENE_FEATURE = "CDS"
+# The gene universe is Mycobrowser's gene-level rows: 4031 CDS plus 142 RNA
+# genes. The RNA genes earn their place because rrs and rrl carry the WHO's
+# resistance variants for streptomycin, amikacin, kanamycin, capreomycin and
+# linezolid; a CDS-only atlas silently loses all of them.
+#
+# Excluded are the regulatory rows (promoter, -10_signal, -35_signal), which
+# re-use a gene's own locus tag and would otherwise duplicate that locus.
+GENE_FEATURES = frozenset({"CDS", "rRNA", "tRNA", "ncRNA", "misc_RNA"})
 
 
 def fetch_raw(*, force: bool = False) -> Fetched:
@@ -39,7 +42,7 @@ def fetch_raw(*, force: bool = False) -> Fetched:
 
 
 def normalize(path: Path) -> Iterator[dict[str, Any]]:
-    """Rows -> one record per CDS locus.
+    """Rows -> one record per gene-level locus.
 
     Reads by column index rather than `csv.DictReader` because the release file
     has a duplicated header name (`Orthologues M. tuberculosis` appears twice),
@@ -50,10 +53,11 @@ def normalize(path: Path) -> Iterator[dict[str, Any]]:
         header = next(reader)
         col = {name: i for i, name in enumerate(header)}
         for row in reader:
-            if row[col["Feature"]] != GENE_FEATURE:
+            if row[col["Feature"]] not in GENE_FEATURES:
                 continue
             yield {
                 "rv_id": row[col["Locus"]].strip(),
+                "feature": row[col["Feature"]],
                 "gene_name": row[col["Name"]].strip() or None,
                 "product": row[col["Product"]].strip() or None,
                 "function": row[col["Function"]].strip() or None,

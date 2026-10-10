@@ -1,8 +1,8 @@
 """The ID crosswalk: Rv locus tag -> everything else.
 
-The Rv tag is the canonical key, and the gene universe is Mycobrowser's 4031
-CDS loci. Every other source is reached through this table, so its failure modes
-matter more than its happy path:
+The Rv tag is the canonical key, and the gene universe is Mycobrowser's
+gene-level loci: 4031 CDS plus the RNA genes. Every other source is reached
+through this table, so its failure modes matter more than its happy path:
 
 * Mycobrowser and UniProt disagree on the accession for 13 loci, and Mycobrowser
   names 5 accessions that are not in the reference proteome at all.
@@ -24,7 +24,6 @@ from pathlib import Path
 from typing import Any
 
 from . import orthologue
-from .sources import chembl, mycobrowser, uniprot
 from .store import provenance, write_parquet
 from .store import rows as rows_of
 
@@ -172,6 +171,7 @@ def build(*, store: Path | None = None, with_orthologues: bool = True) -> Path:
         out.append(
             {
                 "rv_id": rv_id,
+                "feature": gene[gene_cols["feature"]],
                 "gene_name": gene[gene_cols["gene_name"]],
                 "product": gene[gene_cols["product"]],
                 "functional_category": gene[gene_cols["functional_category"]],
@@ -181,7 +181,11 @@ def build(*, store: Path | None = None, with_orthologues: bool = True) -> Path:
                 "is_pseudogene": gene[gene_cols["is_pseudogene"]],
                 "uniprot_acc": acc,
                 "acc_status": status,
-                "conflict": status in CONFLICTS,
+                # An RNA gene having no UniProt accession is correct, not a
+                # disagreement between sources; only a protein-coding gene
+                # without one is a problem worth flagging.
+                "conflict": status in CONFLICTS
+                and not (status == NO_ACCESSION and gene[gene_cols["feature"]] != "CDS"),
                 "mycobrowser_uniprot_ac": gene[gene_cols["mycobrowser_uniprot_ac"]],
                 "shared_accession": bool(siblings),
                 "shares_accession_with": siblings,
@@ -209,9 +213,3 @@ def build(*, store: Path | None = None, with_orthologues: bool = True) -> Path:
         retrieved_at=max(retrieved for _, retrieved in inputs.values()),
         store=store,
     )
-
-
-def build_all(*, force: bool = False) -> list[Path]:
-    """The whole M0 pipeline: three ingesters, then the crosswalk."""
-    paths = [source.build(force=force) for source in (mycobrowser, uniprot, chembl)]
-    return [*paths, build()]

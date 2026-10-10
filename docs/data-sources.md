@@ -221,6 +221,38 @@ for target lookup: `MmpL3` + organism returns `6T0J`, which is CYP124.
 `results_verbosity: "verbose"` is required to get sequence-identity scores back
 from a `sequence` service query; the default omits the `services` block.
 
+### A ligand belongs to a chain, not to the entry (M7)
+
+**This is a modification of the upstream data, and the most consequential one
+in the pipeline.** An entry's `nonpolymer_entities` list covers the whole
+entry. Attributing it to every protein in the entry makes each subunit of a
+complex claim its neighbours' chemical matter: in `5UHB` rifampicin is modelled
+on chain C, which is rpoB, while rpoA, rpoC, rpoZ and sigA are other chains
+entirely. A ligand therefore counts for an accession only when the ligand's
+`auth_asym_ids` meet that accession's; the rest are kept in
+`ligand_ids_elsewhere`, shown and never counted. Live: 662 of 2,655 structure
+rows had been claiming a neighbour's ligand.
+
+**The trap inside the trap.** One accession can own more than one polymer
+entity — a precursor processed into alpha and beta chains, as in `6OYY`, where
+panD is listed twice and pyrazinoic acid sits on the second entity's chains.
+Taking the first entity's chains alone reported "no ligand" for the structure
+of pyrazinamide's active metabolite on its own target, across 41 entries. Every
+chain an accession owns is pooled before the comparison.
+
+### Chemical components (M7)
+
+- **Query:** `chem_comps(comp_ids: [...])` on the same GraphQL endpoint, 100
+  ids per call, for every component id the structures table saw (1,486).
+- **What it gives:** the component's name and formula weight, an InChIKey for
+  **1,484** of them, and RCSB's own cross-reference to ChEMBL for **546**.
+- **What it is for:** a three-character PDB code says nothing on its own. With
+  the InChIKey or the ChEMBL id, 151 of them match a compound the atlas already
+  holds bioactivity for, and 16 are molecules with a TB indication — which is
+  how the atlas can say that the PDB holds rifampicin on rpoB in five entries
+  and quabodepistat on dprE1, neither of which ChEMBL's mechanism annotation
+  states. Licence unchanged: CC0 1.0, same archive.
+
 **Not verified:** published rate limits. RCSB documents none numerically; the
 convention is a few requests per second, backing off on HTTP 429. `fetch`
 throttles and retries 429/5xx.

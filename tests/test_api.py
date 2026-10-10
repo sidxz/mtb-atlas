@@ -194,3 +194,11 @@ def test_whole_cell_stays_separate_from_protein_activity(client: TestClient) -> 
     page = client.get("/compounds/CHEMBL3330226").json()
     assert all(a["evidence"] != "whole_cell" for a in page["activities"])
     assert all(a["evidence"] == "whole_cell" for a in page["whole_cell"])
+
+
+def test_a_wildcard_in_the_term_is_a_character_not_a_pattern(client: TestClient) -> None:
+    """`%` and `_` are LIKE wildcards; typing one should mean itself."""
+    for term in ("%", "_", "   "):
+        found = client.get("/search", params={"q": term}).json()
+        assert all(items == [] for items in found.values()), term
+    assert client.get("/targets", params={"q": "%"}).json()["total"] == 0

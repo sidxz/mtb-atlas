@@ -197,6 +197,8 @@ export function TargetDetailPanel({
 
 function Protein({ detail }: { detail: Detail }) {
   const [open, setOpen] = useState(false);
+  // Defaulted, not asserted: an older API is a degraded page, not a blank one.
+  const list = <T,>(value: T[] | null | undefined): T[] => value ?? [];
   if (!detail.uniprot_acc) {
     return (
       <Row label="Protein">
@@ -225,7 +227,7 @@ function Protein({ detail }: { detail: Detail }) {
         <span className="absent">UniProt states no function for this entry</span>
       )}
       <div className="ids" style={{ marginTop: 6 }}>
-        {detail.locations.map((l) => (
+        {list(detail.locations).map((l) => (
           <span key={l}>{l}</span>
         ))}
         <span>
@@ -235,23 +237,25 @@ function Protein({ detail }: { detail: Detail }) {
         </span>
         {detail.signal_peptide && <span>signal peptide</span>}
       </div>
-      {detail.pathways.map((p) => (
+      {list(detail.pathways).map((p) => (
         <div className="note" key={p} style={{ color: "var(--fg)" }}>
           Pathway: {p}
         </div>
       ))}
-      {detail.reactions.slice(0, 2).map((r) => (
+      {list(detail.reactions).slice(0, 2).map((r) => (
         <div className="note mono" key={r}>
           {r}
         </div>
       ))}
-      {detail.cofactors.length > 0 && <div className="note">Cofactor: {detail.cofactors.join(", ")}</div>}
-      {detail.go_process.length > 0 && (
+      {list(detail.cofactors).length > 0 && (
+        <div className="note">Cofactor: {detail.cofactors.join(", ")}</div>
+      )}
+      {list(detail.go_process).length > 0 && (
         <div className="note">Process: {detail.go_process.slice(0, 6).join(" · ")}</div>
       )}
       {detail.disruption_phenotype && <p className="caveat">Disruption: {detail.disruption_phenotype}</p>}
       <div className="note">
-        UniProt cites {detail.pubmed_ids.length} paper{detail.pubmed_ids.length === 1 ? "" : "s"} for this
+        UniProt cites {list(detail.pubmed_ids).length} paper{list(detail.pubmed_ids).length === 1 ? "" : "s"} for this
         entry ·{" "}
         <a href={`https://www.uniprot.org/uniprotkb/${detail.uniprot_acc}/entry`} target="_blank" rel="noreferrer">
           {detail.uniprot_acc} ↗

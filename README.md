@@ -30,7 +30,7 @@ make build        # whole pipeline -> data/store/*.parquet  (~15 min cold)
 uv run atlas clinical   # the clinical stage alone, then the roll-up
 make api          # FastAPI on :8099
 make web          # the app on :5173
-make test         # 146 tests against committed fixtures, no network
+make test         # 204 tests against committed fixtures, no network
 ```
 
 | Milestone | Scope | |

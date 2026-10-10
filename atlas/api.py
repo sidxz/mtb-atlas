@@ -14,9 +14,9 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from .clinical import TARGET_LINKS
-from .store import STORE, provenance
-from .summary import EMPTY_CLINICAL, built, counts
+from .clinical import TARGET_LINK_SQL, TARGET_LINKS
+from .store import STORE, built, provenance
+from .summary import EMPTY_CLINICAL, counts
 
 # Licences differ per source and the UI shows them, so they live beside the
 # versions rather than in a footnote.
@@ -43,7 +43,6 @@ LICENCES = {
 # Store tables with no licence of their own: joins, and a second table from a
 # source already listed above.
 DERIVED = ("crosswalk", "target_summary", "drug_mechanisms", "drug_genes", "trial_drugs")
-TARGET_LINK_SQL = ", ".join(f"'{link}'" for link in TARGET_LINKS)
 # Read off the gene's UniProt entry for the target page.
 PROTEIN_FIELDS = (
     "reviewed",
@@ -114,6 +113,16 @@ def _db() -> duckdb.DuckDBPyConnection:
             # replacement scan and binds the route function of the same name.
             connection.sql(f"CREATE VIEW {name} AS {EMPTY_CLINICAL[name]}")
     return connection
+
+
+def _like(term: str) -> str:
+    r"""A search term as a LIKE pattern, with the wildcards taken literally.
+
+    Typing `%` means the character, not "match everything"; without this, `_`
+    returned an arbitrary handful of rows where no match is the truth.
+    """
+    escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
 
 
 def _require_clinical() -> None:
@@ -201,16 +210,16 @@ class TargetSummary(BaseModel):
     # Drugs said to act on this gene's own protein (ChEMBL mechanism or Bosch
     # 2021), their best phase *for TB*, and the trials testing them.
     # None where the clinical layer has not been built; [] means none found.
-    drug_names: list[str] | None = Field(default_factory=list)
+    drug_names: list[str] | None = None
     # From the UniProt entry; None where there is no protein (RNA genes).
     n_transmembrane: int | None = None
     n_references: int | None = None
     # None, not 0, where the clinical stage has not run in this store.
-    n_drugs: int | None = 0
+    n_drugs: int | None = None
     best_drug_phase: float | None = None
-    n_complex_drugs: int | None = 0
-    n_trials: int | None = 0
-    has_clinical_drug: bool | None = False
+    n_complex_drugs: int | None = None
+    n_trials: int | None = None
+    has_clinical_drug: bool | None = None
 
 
 class TargetPage(BaseModel):
@@ -245,7 +254,7 @@ class TargetDetail(TargetSummary):
     function: str | None = None
     subcellular_location: str | None = None
     locations: list[str] = Field(default_factory=list)
-    signal_peptide: bool = False
+    signal_peptide: bool | None = None
     pathways: list[str] = Field(default_factory=list)
     reactions: list[str] = Field(default_factory=list)
     rhea_ids: list[str] = Field(default_factory=list)
@@ -358,11 +367,11 @@ def targets(
     params: list[Any] = []
     if q:
         where.append(
-            "(lower(rv_id) LIKE ? OR lower(coalesce(gene_name, '')) LIKE ?"
-            " OR lower(coalesce(product, '')) LIKE ?"
-            " OR lower(coalesce(uniprot_acc, '')) LIKE ?)"
+            "(lower(rv_id) LIKE ? ESCAPE '\\' OR lower(coalesce(gene_name, '')) LIKE ? ESCAPE '\\'"
+            " OR lower(coalesce(product, '')) LIKE ? ESCAPE '\\'"
+            " OR lower(coalesce(uniprot_acc, '')) LIKE ? ESCAPE '\\')"
         )
-        params += [f"%{q.lower()}%"] * 4
+        params += [_like(q.lower())] * 4
     if essentiality:
         where.append(f"essentiality IN ({','.join('?' * len(essentiality))})")
         params += essentiality
@@ -592,11 +601,7 @@ def target(rv_id: str) -> TargetDetail:
         compounds=compounds,
         variants=variants,
         partners=partners,
-        **{
-            name: value
-            for name, value in annotation.items()
-            if value is not None and name not in ("n_transmembrane", "n_references")
-        },
+        **{name: value for name, value in annotation.items() if value is not None},
         bound_ligands=bound_ligands,
         drugs=drugs,
         trials=trials,
@@ -728,20 +733,23 @@ def search(
     everything whose description mentions it.
     """
     term = q.strip().lower()
+    found: dict[str, list[Hit]] = {kind: [] for kind in SEARCHES}
+    if not term:
+        return found
     connection = _db()
-    found: dict[str, list[Hit]] = {}
     for kind, (view, key, label, detail, columns, fallback) in SEARCHES.items():
-        if not connection.execute(
-            "SELECT count(*) FROM duckdb_views() WHERE view_name = ?", [view]
-        ).fetchone()[0]:
+        # Whether the table is in the store, not whether a view is bound: the
+        # empty stand-ins exist precisely to let queries bind, and they carry
+        # only the columns the roll-up needs.
+        if not built(view):
             found[kind] = []
             continue
         haystacks = [f"lower(coalesce({column}, ''))" for column in columns]
-        where = " OR ".join(f"{h} LIKE ?" for h in haystacks)
+        where = " OR ".join(f"{h} LIKE ? ESCAPE '\\'" for h in haystacks)
         rank = (
             f"CASE WHEN lower({key}) = ? THEN 0"
             f" WHEN lower({label}) = ? THEN 1"
-            f" WHEN lower({label}) LIKE ? THEN 2 ELSE 3 END"
+            f" WHEN lower({label}) LIKE ? ESCAPE '\\' THEN 2 ELSE 3 END"
         )
         rows = _query(
             connection,
@@ -749,7 +757,7 @@ def search(
             f" FROM {view} WHERE {where} ORDER BY rank, {fallback}, id LIMIT ?",
             # Placeholders bind in the order they appear in the text, and the
             # rank expression is in the SELECT list, ahead of the WHERE.
-            [term, term, f"{term}%", *[f"%{term}%"] * len(haystacks), limit],
+            [term, term, _like(term)[1:], *[_like(term)] * len(haystacks), limit],
         )
         found[kind] = [Hit(**{k: v for k, v in row.items() if k != "rank"}) for row in rows]
     return found
@@ -770,10 +778,11 @@ def drugs(
     params: list[Any] = []
     if q:
         where.append(
-            "(lower(d.pref_name) LIKE ? OR lower(list_aggr(d.synonyms, 'string_agg', '|')) LIKE ?"
+            "(lower(d.pref_name) LIKE ? ESCAPE '\\'"
+            " OR lower(list_aggr(d.synonyms, 'string_agg', '|')) LIKE ? ESCAPE '\\'"
             " OR lower(d.molecule_chembl_id) = ?)"
         )
-        params += [f"%{q.lower()}%", f"%{q.lower()}%", q.lower()]
+        params += [_like(q.lower()), _like(q.lower()), q.lower()]
     if min_phase is not None:
         where.append("d.max_phase_tb >= ?")
         params.append(min_phase)
@@ -878,12 +887,12 @@ def trials(
     params: list[Any] = []
     if q:
         where.append(
-            "(lower(t.nct_id) = ? OR lower(t.brief_title) LIKE ?"
-            " OR lower(coalesce(t.acronym, '')) LIKE ?"
-            " OR lower(coalesce(t.lead_sponsor, '')) LIKE ?"
-            " OR lower(CAST(t.interventions AS VARCHAR)) LIKE ?)"
+            "(lower(t.nct_id) = ? OR lower(t.brief_title) LIKE ? ESCAPE '\\'"
+            " OR lower(coalesce(t.acronym, '')) LIKE ? ESCAPE '\\'"
+            " OR lower(coalesce(t.lead_sponsor, '')) LIKE ? ESCAPE '\\'"
+            " OR lower(CAST(t.interventions AS VARCHAR)) LIKE ? ESCAPE '\\')"
         )
-        params += [q.lower()] + [f"%{q.lower()}%"] * 4
+        params += [q.lower()] + [_like(q.lower())] * 4
     if min_phase is not None:
         where.append("t.phase_max >= ?")
         params.append(min_phase)

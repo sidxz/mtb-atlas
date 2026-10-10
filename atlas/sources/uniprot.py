@@ -61,9 +61,16 @@ _GO_ID = re.compile(r"\s*\[GO:\d+\]")
 
 
 def _comments(field: str, prefix: str) -> list[str]:
-    """`PATHWAY: a. {ECO:..}. PATHWAY: b.` -> ["a", "b"]. Empty field, empty list."""
+    """`PATHWAY: a. {ECO:..}. PATHWAY: b.` -> ["a", "b"]. Empty field, empty list.
+
+    Repeated comments are separated by `.; `, which survives the split, so the
+    punctuation is stripped from both ends -- otherwise it collides with the
+    full stop `_comment` adds back and leaves `..;.` inside the sentence. A
+    part that is nothing but punctuation once the evidence codes are gone is
+    dropped, so an entry that says nothing stays None rather than becoming ".".
+    """
     text = _ECO.sub("", field or "")
-    return [part.strip().rstrip(".").strip() for part in text.split(f"{prefix}:") if part.strip()]
+    return [part.strip(".; \t\n") for part in text.split(f"{prefix}:") if part.strip(".; \t\n")]
 
 
 def _comment(field: str, prefix: str) -> str | None:

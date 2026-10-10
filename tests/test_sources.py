@@ -85,6 +85,21 @@ def test_a_ligand_on_another_subunits_chain_is_not_this_proteins(entries: list[d
     assert rpoc["ligand_ids_elsewhere"] == ["RFP"]
 
 
+def test_one_accession_split_over_two_entities_keeps_all_its_chains(entries: list[dict]) -> None:
+    """6OYY is panD bound to pyrazinoic acid, pyrazinamide's active metabolite.
+
+    RCSB emits two polymer entities for the one accession -- the alpha and beta
+    chains of the processed precursor -- and the ligand sits on the second.
+    Taking only the first entity's chains would report "no ligand" about the
+    structure of the drug on its target.
+    """
+    (pand,) = pdb.normalize(iter(entries), {"P9WIL3"})
+    assert set(pand["chains"]) == set("ABCDEFGHIJKL")
+    assert pand["ligand_ids"] == ["VGL"]
+    assert pand["n_ligands"] == 1
+    assert pand["ligand_ids_elsewhere"] == []
+
+
 def test_components_say_which_chain_they_sit_on(entries: list[dict]) -> None:
     rows = {r["uniprot_acc"]: r for r in pdb.normalize(iter(entries), {"P9WGY9", "P9WGY7"})}
     roles = {c["comp_id"]: c["on_chain"] for c in rows["P9WGY7"]["components"]}
@@ -270,7 +285,19 @@ def test_absent_comments_are_none_not_empty_strings(proteins: dict) -> None:
     """An entry UniProt says nothing about must read as an absence, not as blank text."""
     for row in proteins.values():
         for key in ("function", "disruption_phenotype", "subcellular_location"):
-            assert row[key] is None or row[key].strip()
+            assert row[key] is None or row[key].strip(".; ")
+
+
+def test_a_comment_that_is_only_an_evidence_tag_is_an_absence() -> None:
+    assert uniprot._comment("FUNCTION: {ECO:0000256|HAMAP:MF_1}.", "FUNCTION") is None
+
+
+def test_repeated_comments_join_without_the_separator_showing(proteins: dict) -> None:
+    """UniProt separates repeated comments with `.; `, inside the text the page leads with."""
+    for accession in ("P9WGR1", "P9WJF1", "P9WJV5"):  # InhA, DprE1, MmpL3
+        function = proteins[accession]["function"]
+        assert "..;." not in function
+        assert ".;" not in function
 
 
 # --- ligand identity ---------------------------------------------------------

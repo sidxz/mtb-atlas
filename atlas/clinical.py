@@ -48,10 +48,11 @@ from pathlib import Path
 from typing import Any
 
 from .sources.chembl import MTB_TAXA
-from .store import provenance, records, write_parquet
+from .store import built, provenance, records, write_parquet
 
 # Links that say the drug acts on the gene itself. The others are shown, not counted.
 TARGET_LINKS = ("mechanism", "bosch_2021")
+TARGET_LINK_SQL = ", ".join(f"'{link}'" for link in TARGET_LINKS)
 
 _PAREN = re.compile(r"\(([^)]*)\)")
 _SPLIT = re.compile(r"\s*(?:\+|/|,|;|&|\band\b|\bplus\b|\bwith\b)\s*", re.IGNORECASE)
@@ -193,15 +194,28 @@ def drug_gene_links(
         if molecule:
             molecule_of_comp[ligand["comp_id"]] = molecule
     entries: dict[tuple[str, str], set[str]] = defaultdict(set)
+    shared: dict[tuple[str, str], bool] = {}
     for structure in structures:
         # Only the ligands on this protein's own chains: in 5UHB rifampicin is
         # rpoB's, not rpoC's. See atlas/sources/pdb.py.
         for comp_id in structure["ligand_ids"] or []:
             molecule = molecule_of_comp.get(comp_id)
-            for rv_id in genes_of_acc.get(structure["uniprot_acc"], []) if molecule else []:
+            if not molecule:
+                continue
+            # The same accession fan-out as a mechanism link, so the same flag:
+            # siblings behind one accession must not claim it silently.
+            rv_ids = genes_of_acc.get(structure["uniprot_acc"], [])
+            for rv_id in rv_ids:
                 entries[(molecule, rv_id)].add(structure["pdb_id"])
+                shared[(molecule, rv_id)] = len(rv_ids) > 1
     for (molecule, rv_id), pdb_ids in entries.items():
-        add(molecule, rv_id, "structure", source_text=" ".join(sorted(pdb_ids)))
+        add(
+            molecule,
+            rv_id,
+            "structure",
+            source_text=" ".join(sorted(pdb_ids)),
+            shared_accession=shared[(molecule, rv_id)],
+        )
 
     return list(links.values())
 
@@ -264,7 +278,9 @@ def build(*, store: Path | None = None) -> list[Path]:
         records("resistance", store=store),
         index,
         structures=records("structures", store=store),
-        ligands=records("ligands", store=store),
+        # Absent on a store built before the ligand table; then there are no
+        # co-crystals to find, which is an absence rather than a failure.
+        ligands=records("ligands", store=store) if built("ligands", store=store) else (),
         drugs=drugs,
     )
     trial_links = trial_drug_links(drugs, records("trials", store=store), index)
@@ -272,6 +288,7 @@ def build(*, store: Path | None = None) -> list[Path]:
     inputs = {
         name: provenance(name, store=store)
         for name in ("drugs", "trials", "crosswalk", "vulnerability", "resistance", "ligands")
+        if built(name, store=store)
     }
     stamp = {
         "source": "atlas-clinical",

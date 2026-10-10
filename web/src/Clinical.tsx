@@ -64,8 +64,10 @@ const trialUrl = (nctId: string) => `https://clinicaltrials.gov/study/${nctId}`;
 
 /** ChEMBL asks that the release be displayed wherever its data is shown. */
 function chemblSource(meta: Meta | null): string {
-  const version = meta?.sources.find((s) => s.name.startsWith("ChEMBL"))?.version;
-  return version ? `${SOURCE.chembl.replace("ChEMBL ", `ChEMBL ${version} `)}` : SOURCE.chembl;
+  const version = meta?.sources.find(
+    (s) => s.name === "ChEMBL drug indications and mechanisms",
+  )?.version;
+  return version ? SOURCE.chembl.replace("ChEMBL ", `ChEMBL ${version} `) : SOURCE.chembl;
 }
 
 function trialSource(meta: Meta | null): string {
@@ -544,6 +546,14 @@ function useLoaded<T>(load: () => Promise<T>, key: string): [T | null, string | 
   return [value, error];
 }
 
+/** The best measured pChEMBL, or null when none of them carries one. */
+function bestOf(activities: { pchembl_value: number | null }[]): number | null {
+  const values = activities
+    .map((a) => a.pchembl_value)
+    .filter((v): v is number => v !== null && v !== undefined);
+  return values.length ? Math.max(...values) : null;
+}
+
 function CompoundPanel({
   id,
   onFocus,
@@ -617,7 +627,7 @@ function CompoundPanel({
           ) : (
             <>
               <span className="big">
-                {number(Math.max(...compound.whole_cell.map((a) => a.pchembl_value ?? 0)) || null)}
+                {number(bestOf(compound.whole_cell))}
               </span>{" "}
               <span className="dim">best of {compound.whole_cell.length} measurements</span>
             </>

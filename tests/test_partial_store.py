@@ -82,3 +82,17 @@ def test_the_clinical_routes_say_so_rather_than_answering_empty(client: TestClie
 def test_rebuilding_the_summary_does_not_need_the_network(evidence_only_store: Path) -> None:
     """The evidence stage ends in a roll-up, and must not need a later stage to do it."""
     assert summary.build(store=evidence_only_store).exists()
+
+
+def test_search_still_answers(client: TestClient) -> None:
+    """The search box is the app's main navigation; a 500 there is the whole UI."""
+    found = client.get("/search", params={"q": "dprE1"})
+    assert found.status_code == 200
+    assert found.json()["genes"][0]["id"] == "Rv3790"
+    assert found.json()["drugs"] == []
+
+
+def test_a_compound_page_still_answers(client: TestClient) -> None:
+    page = client.get("/compounds/CHEMBL3330226")
+    assert page.status_code == 200
+    assert page.json()["drug"] is None

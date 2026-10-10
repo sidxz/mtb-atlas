@@ -431,5 +431,90 @@
     }
    }
   ]
+ },
+ {
+  "rcsb_id": "6OYY",
+  "struct": {
+   "title": "Crystal structure of Mtb aspartate decarboxylase, pyrazinoic acid complex"
+  },
+  "exptl": [
+   {
+    "method": "X-RAY DIFFRACTION"
+   }
+  ],
+  "rcsb_entry_info": {
+   "resolution_combined": [
+    2.7
+   ],
+   "deposited_polymer_entity_instance_count": 12
+  },
+  "rcsb_accession_info": {
+   "initial_release_date": "2020-02-05T00:00:00Z"
+  },
+  "polymer_entities": [
+   {
+    "rcsb_polymer_entity": {
+     "pdbx_description": "Aspartate 1-decarboxylase beta chain"
+    },
+    "rcsb_polymer_entity_container_identifiers": {
+     "auth_asym_ids": [
+      "A",
+      "C",
+      "E",
+      "G",
+      "I",
+      "K"
+     ],
+     "reference_sequence_identifiers": [
+      {
+       "database_accession": "P9WIL3",
+       "database_name": "UniProt"
+      }
+     ]
+    }
+   },
+   {
+    "rcsb_polymer_entity": {
+     "pdbx_description": "Aspartate 1-decarboxylase alpha chain"
+    },
+    "rcsb_polymer_entity_container_identifiers": {
+     "auth_asym_ids": [
+      "B",
+      "D",
+      "F",
+      "H",
+      "J",
+      "L"
+     ],
+     "reference_sequence_identifiers": [
+      {
+       "database_accession": "P9WIL3",
+       "database_name": "UniProt"
+      }
+     ]
+    }
+   }
+  ],
+  "nonpolymer_entities": [
+   {
+    "nonpolymer_comp": {
+     "chem_comp": {
+      "id": "VGL",
+      "name": "PYRAZINE-2-CARBOXYLIC ACID",
+      "formula_weight": 124.097
+     }
+    },
+    "rcsb_nonpolymer_entity_container_identifiers": {
+     "auth_asym_ids": [
+      "B",
+      "D",
+      "F",
+      "H",
+      "J",
+      "L"
+     ]
+    }
+   }
+  ]
  }
 ]

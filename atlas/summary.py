@@ -15,8 +15,8 @@ from pathlib import Path
 
 import duckdb
 
-from .clinical import TARGET_LINKS
-from .store import STORE, provenance, read, write_parquet
+from .clinical import TARGET_LINK_SQL
+from .store import STORE, built, provenance, read, write_parquet
 
 # Whole-cell potency is attributed to a gene only through a compound that
 # already has protein-level activity on it. See CLAUDE.md.
@@ -201,9 +201,6 @@ LEFT JOIN gene_trials  gt ON gt.rv_id = w.rv_id
 ORDER BY w.start
 """
 
-# The one place that says which links count as a drug acting on a gene.
-TARGET_LINK_SQL = ", ".join(f"'{link}'" for link in TARGET_LINKS)
-
 CLINICAL_COLUMNS = """
     coalesce(dl.n_drugs, 0)             AS n_drugs,
     dl.best_drug_phase,
@@ -252,10 +249,6 @@ TABLES = {
     "drug_genes": "drug_genes",
     "trial_drugs": "trial_drugs",
 }
-
-
-def built(name: str, *, store: Path | None = None) -> bool:
-    return ((store or STORE) / f"{name}.parquet").exists()
 
 
 def build(*, store: Path | None = None) -> Path:

@@ -210,49 +210,56 @@ def normalize(entries: Iterator[dict[str, Any]], accessions: set[str]) -> Iterat
             if (c := (n.get("nonpolymer_comp") or {}).get("chem_comp"))
         ]
 
-        seen: set[str] = set()
+        # One accession can own more than one polymer entity: a precursor
+        # processed into alpha and beta chains (6OYY, panD) lists two, and its
+        # ligand sits on the second. The entry still belongs to the accession
+        # once, but with every chain the accession owns -- keeping only the
+        # first entity's chains reported "no ligand" for panD bound to
+        # pyrazinoic acid, which is pyrazinamide's active metabolite.
+        chains_of: dict[str, list[str]] = {}
+        entity_of: dict[str, dict[str, Any]] = {}
         for polymer in entry.get("polymer_entities") or []:
             identifiers = polymer.get("rcsb_polymer_entity_container_identifiers") or {}
             for reference in identifiers.get("reference_sequence_identifiers") or []:
                 accession = reference.get("database_accession")
                 if reference.get("database_name") != "UniProt" or accession not in accessions:
                     continue
-                # A homodimer lists one polymer entity per chain group; the
-                # entry still belongs to the accession exactly once.
-                if accession in seen:
-                    continue
-                seen.add(accession)
-                chains = identifiers.get("auth_asym_ids") or []
-                # An entry's component list belongs to the whole entry, so in a
-                # complex every subunit would otherwise claim its neighbours'
-                # ligands: in 5UHB, rifampicin sits on chain C (rpoB), and rpoA,
-                # rpoC, rpoZ and sigA have no business reporting it as theirs.
-                # A component with no chains listed is kept rather than dropped.
-                components = [
-                    {**c, "on_chain": not c["chains"] or bool(set(c["chains"]) & set(chains))}
-                    for c in entry_components
-                ]
-                ligands = [c for c in components if c["role"] == "ligand" and c["on_chain"]]
-                elsewhere = [c for c in components if c["role"] == "ligand" and not c["on_chain"]]
-                yield {
-                    "pdb_id": entry["rcsb_id"],
-                    "uniprot_acc": accession,
-                    "title": (entry.get("struct") or {}).get("title"),
-                    "method": methods[0] if methods else None,
-                    "resolution": resolution[0] if resolution else None,
-                    "released": (entry.get("rcsb_accession_info") or {}).get(
-                        "initial_release_date", ""
-                    )[:10],
-                    "chains": chains,
-                    "entity_description": (polymer.get("rcsb_polymer_entity") or {}).get(
-                        "pdbx_description"
-                    ),
-                    "components": components,
-                    "ligand_ids": [c["comp_id"] for c in ligands],
-                    "n_ligands": len(ligands),
-                    # In the entry, but bound to another chain. Shown, not counted.
-                    "ligand_ids_elsewhere": [c["comp_id"] for c in elsewhere],
-                }
+                chains_of.setdefault(accession, []).extend(identifiers.get("auth_asym_ids") or [])
+                entity_of.setdefault(accession, polymer)
+
+        for accession, entity_chains in chains_of.items():
+            polymer = entity_of[accession]
+            chains = sorted(set(entity_chains))
+            # An entry's component list belongs to the whole entry, so in a
+            # complex every subunit would otherwise claim its neighbours'
+            # ligands: in 5UHB, rifampicin sits on chain C (rpoB), and rpoA,
+            # rpoC, rpoZ and sigA have no business reporting it as theirs.
+            # A component with no chains listed is kept rather than dropped.
+            components = [
+                {**c, "on_chain": not c["chains"] or bool(set(c["chains"]) & set(chains))}
+                for c in entry_components
+            ]
+            ligands = [c for c in components if c["role"] == "ligand" and c["on_chain"]]
+            elsewhere = [c for c in components if c["role"] == "ligand" and not c["on_chain"]]
+            yield {
+                "pdb_id": entry["rcsb_id"],
+                "uniprot_acc": accession,
+                "title": (entry.get("struct") or {}).get("title"),
+                "method": methods[0] if methods else None,
+                "resolution": resolution[0] if resolution else None,
+                "released": (entry.get("rcsb_accession_info") or {}).get(
+                    "initial_release_date", ""
+                )[:10],
+                "chains": chains,
+                "entity_description": (polymer.get("rcsb_polymer_entity") or {}).get(
+                    "pdbx_description"
+                ),
+                "components": components,
+                "ligand_ids": [c["comp_id"] for c in ligands],
+                "n_ligands": len(ligands),
+                # In the entry, but bound to another chain. Shown, not counted.
+                "ligand_ids_elsewhere": [c["comp_id"] for c in elsewhere],
+            }
 
 
 # --- ligand identity ---------------------------------------------------------

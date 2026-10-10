@@ -78,6 +78,11 @@ def rows(name: str, *, store: Path | None = None) -> tuple[list[tuple], dict[str
     return relation.fetchall(), {c: i for i, c in enumerate(relation.columns)}
 
 
+def built(name: str, *, store: Path | None = None) -> bool:
+    """Whether a stage has written this table yet. A store can stop part-way."""
+    return ((store or STORE) / f"{name}.parquet").exists()
+
+
 def records(name: str, *, store: Path | None = None) -> list[dict[str, Any]]:
     """A store file as one dict per row, for joins written in Python."""
     relation = read(name, store=store)

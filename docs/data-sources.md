@@ -19,6 +19,7 @@ All sources are public. No consortium data, ever.
 | [WHO catalogue](#who-mutation-catalogue) | 2nd ed. (2023) | ODC-By 1.0 | Resistance mutations |
 | [Bosch 2021 CRISPRi](#vulnerability-bosch-2021) | Cell, Table S3 | CC BY 4.0 | Vulnerability index, in H37Rv and in the HN878 clinical isolate |
 | [Griffin 2011](#conditional-fitness-griffin-2011) | PLoS Pathog, Tables S3/S4 | CC BY 4.0 | Fitness on cholesterol (M7) |
+| [MtbTnDB](#conditional-tnseq-mtbtndb) | Zenodo 10.5281/zenodo.15284946 (2025-04-20) | CC BY 4.0 | Conditional TnSeq, 136 screens |
 | [STRING](#string) | v12.5, taxon 83332 | CC BY 4.0 | Interaction partners |
 | [phmmer vs human proteome](#human-homology) | UniProt UP000005640, reviewed | CC BY 4.0 | Human anti-target check |
 | [ChEMBL drugs](#chembl-tb-drugs-and-mechanisms) | ChEMBL_37 | CC BY-SA 3.0 | TB drugs, phases, mechanisms (M6) |
@@ -700,21 +701,270 @@ openly licensed, from Bosch 2021's `antibacterial` column instead. The phases
 and trials of the clinical pipeline now come from ChEMBL's TB indications and
 ClinicalTrials.gov, above, both with clear terms.
 
-## Noted but not ingested: MtbTnDB
+## Conditional TnSeq: MtbTnDB
 
-`github.com/ajinich/mtb_tn_db` carries 158 conditional TnSeq screens
-reprocessed uniformly, keyed directly on Rv tag
-(`data/standardized_data_dash.tsv`, 59 MB, 583,346 rows over 4,055 genes and
-146 screens), including cholesterol, hypoxia, acid stress and mouse infection.
-The paper is CC BY. **The repository has no LICENSE file** — `LICENSE`,
-`LICENSE.md`, `LICENSE.txt` and `COPYING` all 404 and the GitHub API reports
-`license: null` — while its README links to one. That is unresolved, and worth
-an email to the authors before shipping.
+Jinich A, Zaveri A, DeJesus MA, Spencer A, Almada-Monter R, Flores-Bautista E,
+Smith CM, Sassetti CM, Rock JM, Ehrt S, Schnappinger D, Ioerger TR, Rhee KY.
+*The Mycobacterium tuberculosis Transposon Sequencing Database (MtbTnDB): a
+large-scale guide to genetic conditional essentiality.* Mol Microbiol
+2025;124(1):91–101. doi 10.1111/mmi.15370, PMC12242109, PMID 40527579.
 
-There is also a scientific caveat: TnSeq log2FC is structurally uninformative
-for essential genes, which have few insertions to count. `inhA` reads 0.00 with
-q = 1.0 in all 146 screens. This dataset would complement Bosch 2021 for
-conditional shifts in non-essential genes; it cannot substitute for it.
+Everything below was checked against the live services on **2026-10-10**.
+
+### The licence question, answered — but not where you would look
+
+Three artifacts, and only two of them are licensed:
+
+| Artifact | Where | Licence | Used |
+|---|---|---|---|
+| Paper | [doi.org/10.1111/mmi.15370](https://doi.org/10.1111/mmi.15370) | **CC BY 4.0**, verbatim: *"This is an open access article under the terms of the Creative Commons Attribution License"* | cited by every row |
+| Raw TRANSIT output | Zenodo [10.5281/zenodo.13937393](https://doi.org/10.5281/zenodo.13937393) (concept DOI → latest) | **CC BY 4.0**, `cc-by-4.0` in the record metadata, access `open` | **yes** — the numbers |
+| Screen annotation | `data/col_desc_dash.tsv` in `github.com/ajinich/mtb_tn_db`, pinned to the paper's commit | repo states **none effective**; used on the article's CC BY plus factual compilation — see below | **yes** — the conditions |
+| Processed data tables | same repository | same | **no** — cannot support `measured` |
+
+The repository **still has no LICENSE file**: `LICENSE`, `LICENSE.md`,
+`LICENSE.txt`, `COPYING` and `license` all return 404 on raw.githubusercontent,
+and the GitHub API reports `license: null`. The README nonetheless states *"This
+project is licensed under the MIT License"* and links to that missing file.
+
+That shapes what is taken from where. The **numbers** come from the CC BY Zenodo
+deposit, which is also the only artifact that can support the atlas's honesty
+rule. The **screen annotation** is one small file from the repository, used on
+the article's own CC BY and on its being a compilation of facts about published
+experiments — the reasoning is under "The condition annotation" below. The
+repository's processed data tables are **not** used at all.
+
+Current Zenodo version: `10.5281/zenodo.15284946`, 2025-04-20,
+`transit_outputs_mtbtndb.tar.gz`, 267,217,387 bytes, sha256
+`614d0535e09edba7267a1a8b3c81aee07a54ae980c49e1bb0e1be99e6471ae33`. Creators
+Jinich and DeJesus. Use the **versioned** DOI as `source_version`; the concept
+DOI always resolves to the newest and would make the stamp drift.
+
+Contents: `Results/`, 1,969 `result_resampling_<experimental>_vs_<control>.txt`
+files plus a batch log. **No `.wig` files and no `prot_table`** — position-level
+insertion data is not in the deposit, which matters below.
+
+### Why the processed table cannot be used, and the raw output can
+
+`data/standardized_data_dash.tsv` (59 MB, keyed on Rv tag) has exactly eight
+columns: `Rv_ID, gene_name, Description, Expt, log2FC, q-val, q_val_D,
+annotation_score`. The TRANSIT output it was built from has twelve:
+
+```
+#Orf  Name  Desc  Sites  Mean Ctrl  Mean Exp  log2FC  Sum Ctrl  Sum Exp  Delta Mean  p-value  Adj. p-value
+```
+
+The standardization drops `Sites`, `Mean Ctrl`, `Mean Exp`, `Sum Ctrl`,
+`Sum Exp`, `Delta Mean` and the raw `p-value`. Those are the only columns that
+distinguish **"measured, no effect"** from **"no insertions, nothing to
+measure"**, and without them the two are byte-identical. The first two rows of
+the Griffin reprocessing make it concrete — `dnaA` and `dnaN`, both essential,
+31 TA sites each, `Sum Ctrl = 0.0`, `Sum Exp = 0.0`, and therefore
+`log2FC = 0.00`, `Adj. p-value = 1.00000`. `recF` beside them carries 1250.8 and
+2278.69 reads and a real fold change. In the processed table all three are
+numbers of the same kind.
+
+Measured on the Griffin comparison: **534 of 3,990 genes have zero insertions in
+both conditions, and all 534 read exactly `log2FC 0.00, q 1.00000`.** That is
+13.4% of the genome silently presented as "no effect" by the processed table.
+
+Two further reasons to take the raw output. The repository's own
+`code/data_wrangling/Tn_data_wrangling.py` builds the processed table by
+harvesting **each paper's supplementary table** and renaming columns — so its
+numbers are per-study, not the uniform reprocessing that is MtbTnDB's whole
+point. And its binarized path calls `fillna(0)`, which turns *"this gene was not
+in this screen"* into *"this gene was not called"*. **The binarized matrices
+(`result_bin_matrix_*.csv`, `Tn_library_*_DASH.xlsx`) must not be ingested.**
+
+### What is in it
+
+`data/col_desc_dash.tsv` inventories 158 screens, 146 of which carry a
+standardized column id. By condition: **109 in vivo, 47 in vitro, 2 in cell.**
+
+The in-vitro set includes conditions the atlas cannot currently answer at all:
+hypoxia at 3 and 6 weeks, acid stress, nitrosative stress, iron, tryptophan and
+amino-acid starvation, and **drug exposure — isoniazid, ethambutol, rifampicin,
+vancomycin, meropenem**.
+
+**The in-vivo count needs reading carefully, and this is a counting trap.** Of
+the 109, **61 are Collaborative Cross mouse strains and 21 are BXD** — host
+genotype arms of two host-genetics studies, not 82 independent biological
+conditions. A gene "required in 61 screens" may be required in one experiment
+with 61 arms. Screen counts are not evidence weight, and the 1,969 resampling
+files are mostly pairwise strain comparisons from those same panels.
+
+### The trap that outranks the others: the 5–80% ORF window
+
+Validating the zero-insertion rule against the atlas's existing Griffin ingest
+turned up a genuine disagreement between Griffin's published table and MtbTnDB's
+reprocessing of Griffin's own `.wig` files:
+
+| Gene | Griffin Table S3 | MtbTnDB TRANSIT |
+|---|---|---|
+| `Rv1484` inhA | 7 sites, 0 hit, 0 reads → `n/a` | 9 sites, 0 reads → unmeasurable ✓ agrees |
+| `Rv0440` groEL2 | 10 sites, 0 reads → `n/a` | 13 sites, 0 reads ✓ agrees |
+| `Rv1908c` katG | 26 sites, 0 reads → `n/a` | 39 sites, 0 reads ✓ agrees |
+| `Rv3790` dprE1 | 20 sites, **0 hit, 0 reads** → `n/a` | 27 sites, **937.8 / 1813.56 reads, log2FC +0.37** |
+| `Rv0206c` mmpL3 | 26 sites, **0 hit, 0 reads** → `n/a` | 34 sites, **94.9 / 44.82 reads, log2FC −1.67** |
+| `Rv0003` recF | 30 sites, 14 hit, ratio 1.76 (log2 0.82) | 35 sites, log2FC 0.28 |
+
+The atlas's Griffin ingester was checked against the raw workbook and reads the
+right columns; Griffin really does report zero. The cause is in Griffin's own
+header: **its TA-site columns are labelled "5-80% of ORF"**, excluding the
+termini, where an insertion is least likely to disrupt function. TRANSIT counts
+the whole ORF. Across the 3,917 genes both cover, the ratio of TRANSIT sites to
+Griffin sites has **median 1.333** — exactly 1/0.75, the window.
+
+So the atlas's 802 `measured = false` Griffin genes split in two:
+
+- **532** have zero insertions by either method. Truly dead.
+- **270** have reads that fall *only outside* the disruptive window. MtbTnDB
+  gives each of them a fold change. **dprE1 and mmpL3 are in this 270.**
+
+`Sum Ctrl`/`Sum Exp` catch the first class and **cannot** catch the second,
+because fixing it needs insertion positions and the deposit has no `.wig` files.
+A log2FC of −1.67 for mmpL3 on cholesterol is therefore not evidence of a
+cholesterol phenotype; it is consistent with terminal-insertion noise in a gene
+that tolerates no disruptive insertion at all.
+
+**Decided: carry the value, flag what the data supports, and never show it
+alone.** `measured = (sum_ctrl > 0 OR sum_exp > 0)` per screen × gene, every
+TRANSIT column kept unrecomputed, and the full-ORF window stated in the agent's
+schema so a fold change on an ES/ESD gene is read with the essentiality call
+beside it.
+
+The two alternatives were rejected on the same grounds. Suppressing `log2fc`
+wherever DeJesus calls a gene ES/ESD (490 genes) would have one source's call
+decide whether another's value is shown, and 7H9 essentiality is not the same
+question as insertion tolerance in a given screen's library — `katG` is `NE`
+with `insertion_fraction = 1.0` in DeJesus and takes **zero** insertions in
+Griffin's library, while `mmpL3` is `ESD` and is measured in it. The proxy fails
+in both directions. Carrying values only for non-essential genes withholds
+published numbers for precisely the genes the atlas exists to discuss.
+
+### Scope: 136 screens, not 1,969
+
+The archive holds 1,969 resampling files, **1,833 of which set one mouse strain
+against another** from Smith 2020's Collaborative Cross and BXD panels. That is
+a host-genetics question, not "is this gene required under condition X", and
+those files are skipped. The rule needs no curated strain list: skip a screen
+when *both* its experimental and control reads come from `2020_Smith`. The 61
+Smith screens comparing a strain to the shared in-vitro reference library are
+kept, because those do answer "is this gene required in this mouse".
+
+That leaves **136 screens over 14 studies, 543,008 rows**: `2020_Smith` 61
+(each a mouse strain against the reference library), `2018_Carey_A-H` 19
+(clinical isolates), `FLUTE` 15, `2013_Zhang` 10, `2017B_DeJesus_1A-1C` 10,
+`2017_Xu_1A-1E` 7 (**drug exposure** — isoniazid, rifampicin, ethambutol,
+vancomycin, meropenem), `2019_Bellerose` 3 (HRZE in mice), `2017_Mishra` 3,
+`2018_Ritterhaus_A-B` 2 (hypoxia), `2011_Griffin` 2, and one each from
+`2015_Kieser`, `2015_Nambi`, `2016_Korte`, `2019_Minato`.
+
+Of the 4,055 distinct loci, **4,022 are in the gene universe**. The 33 outside
+it are older annotation tags — `Rv0186Ac`, `Rv0229Ac` and friends, plus
+`Rv0061` and `Rv1784`, which Griffin's table also carries and Mycobrowser does
+not. They are kept as rows and simply do not join.
+
+**Two annotations ship in one archive, and this cost a silent loss.** Most
+screens were resampled against `H37Rv.prot_table` and key genes as `Rv0206c`.
+Eight — the whole Xu drug-exposure series and Nambi 2015 — used
+`H37RvBD.prot_table` and key them as `RVBD_0206c`: the same `RVBD` prefix swap
+Bosch 2021 needs, but with an underscore. Those eight parsed to zero rows and
+vanished without an error until the screen count came back 128 instead of 136.
+`normalize` now **raises** when a screen parses to no genes, because a screen
+that yields nothing is a format change, not a result.
+
+Ingesting all 1,969 was rejected on two counts: 7.86M rows is 275× the largest
+existing table for a question the atlas does not ask, and `store.write_parquet`
+materialises its rows, so it would need the shared writer rewritten for one
+source's benefit. Scanning the whole archive takes 0.7 s, so cost was never the
+constraint — proportion was. The 136 screens write a 12 MB Parquet in about
+20 s once the archive is cached.
+
+### Study attribution comes from the deposit, condition annotation does not
+
+Every one of the 1,969 files carries `#Control Data:` and `#Experimental Data:`
+headers naming the input `.wig` paths — `2011_Griffin/glycerol_H37Rv_rep1.wig`.
+The directory is the authors' own study label, so each row's `study`,
+`control_study` and replicate counts are attribution read out of the CC BY
+deposit rather than anything this atlas inferred. **76 of the 136 screens take
+their control library from a different study than their experimental data**,
+which is recorded as `cross_study`; the paper's own Fig S1 is about batch
+effects between screens, so this is their caveat, not ours.
+
+### The condition annotation, and the basis for using it
+
+What each screen *was* — in vitro vs in vivo, medium, carbon source, stress,
+mouse strain, the knockout background of a genetic-interaction screen, and the
+source publication — is **not** in the Zenodo deposit. It is
+`data/col_desc_dash.tsv` in the authors' repository, which carries no LICENSE
+file.
+
+**Sid's call, 2026-10-10: it is from the same paper, so the atlas uses it.** The
+basis recorded here is the **article's own CC BY 4.0** plus the fact that the
+file is a compilation of facts about published experiments — screen name,
+publication title and URL, medium, stress, mouse strain. Not the README's "MIT",
+which is a software licence pointing at a file that 404s. Attribution is
+satisfied either way, because every row cites the paper and the data DOI. And
+nothing is redistributed: `data/raw/` is gitignored, the same reasoning that
+lets Mycobrowser, which states **no** licence at all, be the gene universe.
+
+The URL is pinned to **the commit the paper's Methods cites**
+(`a2f223042a40d01f3188e1f7465b7b1eccaffb43`), not `master`. The two files
+differ; the pinned one is the revision the CC BY article actually refers to,
+which is the whole basis for using it, and it is reproducible. Both give the
+same 146 annotated screens over 18 columns.
+
+**It joins 64 of the 136 screens, and the other 72 are honestly blank.** The
+authors' `column_ID_std` is the same slug the archive names its files with — for
+the condition screens. For the host panel it is not: their table says
+`<strain>_vs_in_vitro` and `<strain>_vs_in_vitro_H37Rv`, and **no file in the
+archive uses either name** (the archive's equivalent is
+`<strain>_vs_mbio_H37Rv`). They are very probably the same comparison, but
+"very probably" is an inference, so those screens carry `annotated = false` and
+NULL condition fields rather than a guessed match. A NULL `condition_class`
+means *not recorded*, never "in vitro".
+
+One thing the annotation settled on its own: **the authors' 146 standardized
+screens contain no strain-against-strain comparison at all** — their 82
+host-panel entries are all strain-against-in-vitro. That is independent
+confirmation that the 1,833 pairwise files skipped above are extra re-runs
+rather than part of the published resource.
+
+**27 of the screens are genetic-interaction backgrounds, not conditions**, and
+the annotation is the only thing that says so. `marP_KO_vs_marP_WT` is the case
+that proves it: `mmpL3` reads `log2fc -5.37` at `q = 0.0145` there, on 1,906
+control reads against 46 — which looks like a strong conditional phenotype until
+the description says *"mutants exhibiting altered fitness in the absence of gene
+marP"*. Without the annotation the only visible field was
+`carbon_source = glycerol`, and that result reads as "mmpL3 is required on
+glycerol", which it does not say. It is the single significant hit across all
+three validation genes, so the first thing this file bought was stopping one
+wrong conclusion about a reference target.
+
+A related trap: `interaction_gene` (an Rv id) and `interaction_gene_name` are
+**sparse independently** — 11 screens carry only the id, 5 only the name, 11
+both. `marP` has a name and no id, and the atlas does not fill it in. Filtering
+on one field alone leaves interaction screens inside a condition query.
+
+Of the 64 annotated: 43 in vitro, 21 in vivo. The conditions include
+cholesterol, **3 and 6 weeks of hypoxia**, acid stress (two buffers),
+nitrosative stress, high iron, tryptophan and amino-acid starvation, minimal
+versus rich medium, and **drug exposure to isoniazid, rifampicin, ethambutol,
+vancomycin and meropenem**. That is what turns 136 slugs into answerable
+questions, and it is the reason this file was worth the licence call.
+
+### Download route, when it is ingested
+
+`https://zenodo.org/records/15284946/files/transit_outputs_mtbtndb.tar.gz?download=1`
+— 267 MB, returns `HTTP 200` with `content-length: 267217387`, no auth, roughly
+three minutes. Zenodo is not in `fetch.py`'s host list yet and will need a rate
+limit entry. 1,969 files at ~4,000 rows each is ~7.9M rows before filtering to
+the 146 standardized screens, so the ingester should select screens from
+`col_desc_dash.tsv` rather than walking the whole archive.
+
+Citation, both required: the paper above, and the versioned Zenodo DOI for the
+data. Attribution satisfies CC BY 4.0 for both.
 
 ## Residue-level structure mapping (M3)
 

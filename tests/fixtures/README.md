@@ -51,3 +51,32 @@ the four until the clinical-strain sheets were added.
 | `RVBD0467` | Confident in H37Rv, **not** confident in HN878: the flag is per strain |
 | `RVBD2021c` | In the H37Rv sheet, absent from the HN878 sheet entirely — never measured, a third state |
 | `16S` | Not a locus tag: must be skipped rather than coerced |
+
+## `mtbtndb_transit_outputs.tar.gz`
+
+Four real TRANSIT resampling files cut to eight loci, plus the loess dump the
+archive also ships, which must be ignored. The `#Control Data:` /
+`#Experimental Data:` headers are kept intact — they are where each screen's
+source study and replicate count come from, and they include TRANSIT's leaked
+`b'...'` bytes repr.
+
+| Screen | Exercises |
+|---|---|
+| `griffin_cholesterol_vs_griffin_glycerol` | Same-study screen, and the comparison against `conditional_fitness`: `dprE1`/`mmpL3` carry fold changes here and read `n/a` in Griffin's own table |
+| `CC001.Unc_vs_mbio_H37Rv` | A mouse strain against the shared reference library: kept, and `cross_study` because the control is DeJesus's library |
+| `CC002.Unc_vs_C57BL.6J` | Strain against strain, both sides Smith 2020: **must be skipped entirely** |
+| `bellerose_MB_HRZE_wk1_vs_bellerose_MB_d21_untreated` | Drug exposure in mice, within one study |
+
+| Locus | Exercises |
+|---|---|
+| `Rv3545c` (cyp125) | Measured, real depletion, `q_value` 0.0 — the happy path |
+| `Rv0001` (dnaA) | Zero insertions in both conditions, so `log2fc` 0.00 / `q` 1.0 means nothing |
+| `Rv1908c` (katG) | Unmeasured in Griffin's library, `log2fc` −6.78 at `q` 0.0 in Smith's — unmeasurability is per screen, not per gene |
+| `Rv1484` (inhA) | 1.3 reads over 9 sites in `CC001`: measured by the structural line, and visibly weak |
+| `Rv3790`, `Rv0206c` | 27 and 34 TA sites against Griffin's 20 and 26 — the whole-ORF vs 5-80% window |
+
+`mtbtndb_col_desc.tsv` holds the authors' screen annotation for three of those
+four screens, with all 18 real column names. `CC001.Unc_vs_mbio_H37Rv` is
+deliberately **absent** from it, because the authors' table names host-panel
+screens differently — that is what proves `annotated = false` and a NULL
+`condition_class` rather than a guessed match.

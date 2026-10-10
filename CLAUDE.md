@@ -167,6 +167,20 @@ This is the rule that outranks completeness.
   must never be shown as "no effect". A locus the screen never covered is NULL
   — a third state. None of the 96 cholesterol-required genes is also called
   essential; the two screens see disjoint sets of genes.
+- **A fold change can be measured and still mean nothing.** `conditional_tnseq`
+  (MtbTnDB, 136 screens) computes `measured` from TRANSIT's own insertion sums,
+  so the 13% of genes with no insertions cannot masquerade as "no effect". But
+  TRANSIT counts TA sites over the **whole ORF** where Griffin counted 5-80% of
+  it, so dprE1 and mmpL3 carry fold changes built on non-disruptive terminal
+  insertions while reading `n/a` in `conditional_fitness`. The deposit has no
+  `.wig` files, so this cannot be corrected here: a `log2fc` is never shown
+  without `measured` and the gene's essentiality call beside it.
+- **Screens are not independent, and screen counts are not evidence weight.**
+  MtbTnDB's archive is 1,969 comparisons of which 1,833 set one mouse strain
+  against another; those are skipped, and of the 136 kept, 61 are single strains
+  from one host-genetics panel. Aggregate by `study`. 76 take their control
+  library from a different study than their experimental data (`cross_study`),
+  which is the authors' own batch-effect caveat.
 - **Essentiality and vulnerability answer different questions and must not be
   conflated.** TnSeq says whether a gene can be deleted. CRISPRi vulnerability
   says how far expression must fall before fitness suffers -- the question an

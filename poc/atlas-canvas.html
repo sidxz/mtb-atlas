@@ -1,0 +1,681 @@
+<title>Mtb Target Atlas</title>
+<style>
+  /* Layout: instrument panel — provenance strip, stat row, then a three-column
+     working area (controls · circular genome · evidence detail) that stacks on
+     narrow screens with the gene list underneath. */
+  :root {
+    --bg: #f4f5f8;
+    --surface: #ffffff;
+    --surface-2: #eceef3;
+    --line: #d4d8e2;
+    --line-strong: #b4bacb;
+    --fg: #161a26;
+    --fg-dim: #5a6276;
+    --fg-faint: #868ea3;
+    --accent: #c21f68;        /* carbol fuchsin, the acid-fast stain */
+    --accent-soft: #f7e3ed;
+    --counter: #1f4e9c;       /* methylene blue counterstain */
+
+    /* Essentiality ramp, read as the stain itself: blue counterstain through to
+       fuchsin for the genes that cannot be disrupted. */
+    --ess-ES: #c21f68;
+    --ess-ESD: #d4649b;
+    --ess-GD: #c08a2e;
+    --ess-NE: #4a6ea8;
+    --ess-GA: #1f8a7a;
+    --ess-UN: #8b92a4;
+    --none: #b9bfcd;
+
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0b0f1a;
+      --surface: #131926;
+      --surface-2: #1a2130;
+      --line: #273040;
+      --line-strong: #3a4455;
+      --fg: #e8ebf2;
+      --fg-dim: #9aa3b8;
+      --fg-faint: #6c7589;
+      --accent: #f04b92;
+      --accent-soft: #3a142a;
+      --counter: #6f9ae0;
+      --ess-ES: #f04b92;
+      --ess-ESD: #c0638f;
+      --ess-GD: #d9a441;
+      --ess-NE: #5f84c4;
+      --ess-GA: #2fae99;
+      --ess-UN: #767e92;
+      --none: #39414f;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0b0f1a;
+    --surface: #131926;
+    --surface-2: #1a2130;
+    --line: #273040;
+    --line-strong: #3a4455;
+    --fg: #e8ebf2;
+    --fg-dim: #9aa3b8;
+    --fg-faint: #6c7589;
+    --accent: #f04b92;
+    --accent-soft: #3a142a;
+    --counter: #6f9ae0;
+    --ess-ES: #f04b92;
+    --ess-ESD: #c0638f;
+    --ess-GD: #d9a441;
+    --ess-NE: #5f84c4;
+    --ess-GA: #2fae99;
+    --ess-UN: #767e92;
+    --none: #39414f;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1480px; margin: 0 auto; padding-inline: 16px; padding-block: 20px 48px }
+
+  /* ---- header ---- */
+  header { display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: flex-end; justify-content: space-between }
+  h1 {
+    font-size: clamp(1.7rem, 4vw, 2.5rem); font-weight: 700; letter-spacing: -0.025em;
+    margin: 0; text-wrap: balance;
+  }
+  h1 em { font-style: italic; font-weight: 400; color: var(--fg-dim) }
+  .sub { color: var(--fg-dim); margin: 6px 0 0; max-width: 62ch }
+  .themebtn {
+    font: inherit; font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+    background: var(--surface); color: var(--fg-dim); border: 1px solid var(--line);
+    border-radius: 2px; padding: 7px 11px; cursor: pointer;
+  }
+  .themebtn:hover { border-color: var(--line-strong); color: var(--fg) }
+
+  /* ---- provenance strip ---- */
+  .prov {
+    margin-top: 20px; border: 1px solid var(--line); border-left: 3px solid var(--counter);
+    background: var(--surface); padding: 11px 14px;
+    display: flex; flex-wrap: wrap; gap: 4px 22px;
+    font-family: var(--mono); font-size: 11.5px; color: var(--fg-dim);
+  }
+  .prov b { color: var(--fg); font-weight: 600 }
+  .prov span.lic { color: var(--fg-faint) }
+
+  /* ---- stats ---- */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 1px; margin-top: 20px; background: var(--line) }
+  .stat { background: var(--surface); padding: 13px 14px; min-width: 0 }
+  .stat .n { font-family: var(--mono); font-size: 1.5rem; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; display: block; line-height: 1.15 }
+  .stat .k { font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--fg-dim); margin-top: 3px; display: block }
+  .stat.hero .n { color: var(--accent) }
+  .stat button {
+    all: unset; cursor: pointer; display: block; width: 100%;
+  }
+  .stat button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+
+  /* ---- working area ---- */
+  .grid { display: grid; grid-template-columns: 228px minmax(0, 1fr) 320px; gap: 1px; margin-top: 20px; background: var(--line) }
+  @media (max-width: 1080px) { .grid { grid-template-columns: 1fr } }
+  .pane { background: var(--surface); padding: 16px; min-width: 0 }
+
+  .lab { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--fg-dim); margin: 0 0 8px; font-weight: 600 }
+  .lab + .lab, .group + .group { margin-top: 20px }
+
+  .seg { display: flex; flex-direction: column; gap: 1px; background: var(--line) }
+  .seg button {
+    font: inherit; font-size: 12.5px; text-align: left; padding: 7px 10px; cursor: pointer;
+    background: var(--surface); color: var(--fg-dim); border: 0; display: flex; justify-content: space-between; gap: 8px;
+  }
+  .seg button:hover { background: var(--surface-2); color: var(--fg) }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff }
+  .seg button .c { font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; opacity: .75 }
+
+  input[type="search"] {
+    font: inherit; font-family: var(--mono); font-size: 12.5px; width: 100%;
+    background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 2px; padding: 8px 10px;
+  }
+  input[type="search"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent) }
+
+  .legend { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--fg-dim) }
+  .legend div { display: flex; align-items: center; gap: 7px }
+  .sw { width: 11px; height: 11px; flex: none; border-radius: 1px }
+
+  /* ---- canvas ---- */
+  .canvaswrap { position: relative; aspect-ratio: 1; max-width: 640px; margin: 0 auto; width: 100% }
+  canvas { width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none }
+  .ringkey { text-align: center; font-family: var(--mono); font-size: 11px; color: var(--fg-faint); margin-top: 6px }
+  #tip {
+    position: absolute; pointer-events: none; z-index: 5;
+    background: var(--fg); color: var(--bg); font-family: var(--mono); font-size: 11.5px;
+    padding: 5px 8px; border-radius: 2px; white-space: nowrap; transform: translate(-50%, -140%);
+    box-shadow: 0 2px 10px rgb(0 0 0 / .25);
+  }
+
+  /* ---- detail ---- */
+  .empty { color: var(--fg-faint); font-size: 13px; padding: 28px 4px; text-align: center }
+  .dh { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; margin-bottom: 2px }
+  .dh .rv { font-family: var(--mono); font-size: 1.05rem; font-weight: 600 }
+  .dh .gn { font-size: 1.05rem; font-weight: 700; color: var(--accent) }
+  .prod { color: var(--fg-dim); font-size: 12.5px; margin: 0 0 14px; text-wrap: pretty }
+
+  .ev { border-top: 1px solid var(--line); padding: 9px 0 }
+  .ev:last-child { border-bottom: 1px solid var(--line) }
+  .ev .k { font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--fg-dim); display: block; margin-bottom: 3px }
+  .ev .v { font-size: 13px }
+  .ev .v.mono, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums }
+  .ev .src { font-family: var(--mono); font-size: 10.5px; color: var(--fg-faint); margin-top: 3px; display: block }
+  .pill {
+    display: inline-block; font-family: var(--mono); font-size: 10.5px; padding: 1px 6px;
+    border: 1px solid currentColor; border-radius: 2px; vertical-align: 1px;
+  }
+  .pill.warn { color: var(--ess-GD) }
+  .pill.ortho { color: var(--counter) }
+  .absent { color: var(--fg-faint); font-style: italic }
+  .ids { display: flex; flex-wrap: wrap; gap: 3px 5px; font-family: var(--mono); font-size: 11px }
+  .ids span { background: var(--surface-2); padding: 1px 5px; border-radius: 2px }
+  a { color: var(--accent) }
+
+  /* ---- table ---- */
+  .tablewrap { margin-top: 20px; background: var(--surface); border: 1px solid var(--line) }
+  .tablehead { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; padding: 13px 14px; border-bottom: 1px solid var(--line) }
+  .tablehead h2 { font-size: 13px; margin: 0; letter-spacing: -0.01em }
+  .count { font-family: var(--mono); font-size: 11.5px; color: var(--fg-dim); font-variant-numeric: tabular-nums }
+  .scroll { overflow-x: auto }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; min-width: 760px }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap }
+  th { font-size: 10px; letter-spacing: .07em; text-transform: uppercase; color: var(--fg-dim); font-weight: 600; position: sticky; top: 0; background: var(--surface) }
+  td.n { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums }
+  td.id { font-family: var(--mono) }
+  tbody tr { cursor: pointer }
+  tbody tr:hover td { background: var(--surface-2) }
+  tbody tr[aria-selected="true"] td { background: var(--accent-soft) }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: -1px }
+  .prodcell { max-width: 320px; overflow: hidden; text-overflow: ellipsis; color: var(--fg-dim) }
+
+  footer { margin-top: 28px; color: var(--fg-faint); font-size: 12px; max-width: 76ch }
+  footer code { font-family: var(--mono); font-size: 11.5px }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important } }
+</style>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;600&display=swap">
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Mtb Target Atlas <em>H37Rv</em></h1>
+      <p class="sub">All 4,031 annotated genes, carrying the evidence a target team checks first: essentiality, structures, chemical matter, resistance. Public data only — every value names its source.</p>
+    </div>
+    <button class="themebtn" id="theme" type="button">Theme</button>
+  </header>
+
+  <div class="prov" id="prov">Loading sources…</div>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="grid">
+    <div class="pane">
+      <p class="lab">Colour the genome by</p>
+      <div class="seg" id="colorby"></div>
+
+      <div class="group">
+        <p class="lab">Restrict to</p>
+        <div class="seg" id="filters"></div>
+      </div>
+
+      <div class="group">
+        <p class="lab">Search</p>
+        <input type="search" id="q" placeholder="Rv3790, dprE1, epimerase" autocomplete="off" spellcheck="false">
+      </div>
+
+      <div class="group">
+        <p class="lab" id="legendlab">Legend</p>
+        <div class="legend" id="legend"></div>
+      </div>
+    </div>
+
+    <div class="pane">
+      <div class="canvaswrap">
+        <canvas id="ring" width="640" height="640" aria-label="Circular map of the H37Rv chromosome; each tick is one gene"></canvas>
+        <div id="tip" hidden></div>
+      </div>
+      <p class="ringkey" id="ringkey"></p>
+    </div>
+
+    <div class="pane" id="detail">
+      <p class="empty">Click a gene on the ring, or a row below.</p>
+    </div>
+  </div>
+
+  <div class="tablewrap">
+    <div class="tablehead">
+      <h2 id="tabletitle">Genes</h2>
+      <span class="count" id="tablecount"></span>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead><tr>
+          <th>Locus</th><th>Gene</th><th>Essentiality</th><th class="n">PDB</th><th>Predicted</th>
+          <th class="n">Ligands</th><th class="n">Best pChEMBL</th><th class="n">WHO variants</th><th>Product</th>
+        </tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <footer id="foot"></footer>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const GENOME = 4411532;           // NC_000962.3, H37Rv
+  const ESS = {
+    ES:  ["Essential",        "--ess-ES"],
+    ESD: ["Essential domain", "--ess-ESD"],
+    GD:  ["Growth defect",    "--ess-GD"],
+    NE:  ["Non-essential",    "--ess-NE"],
+    GA:  ["Growth advantage", "--ess-GA"],
+    Uncertain: ["Uncertain",  "--ess-UN"],
+  };
+  const CATS = [
+    "cell wall and cell processes", "intermediary metabolism and respiration",
+    "lipid metabolism", "information pathways", "regulatory proteins",
+    "virulence, detoxification, adaptation", "PE/PPE", "insertion seqs and phages",
+    "conserved hypotheticals", "stable RNAs", "unknown",
+  ];
+  const CATCOLORS = ["#c21f68","#1f4e9c","#1f8a7a","#8a5cc2","#c08a2e","#b8452e","#2e7fb8","#6b7280","#9aa3b8","#4a6ea8","#868ea3"];
+
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const isEss = g => g.essentiality === "ES" || g.essentiality === "ESD";
+  const fmt = n => n == null ? "—" : n.toLocaleString("en-US");
+
+  const MODES = [
+    { id: "ess",   label: "Essentiality" },
+    { id: "pdb",   label: "Experimental structure" },
+    { id: "lig",   label: "Chemical matter" },
+    { id: "res",   label: "Resistance mutations" },
+    { id: "cat",   label: "Functional category" },
+  ];
+  const FILTERS = [
+    { id: "gap",   label: "Essential · structure · no ligands", test: g => isEss(g) && g.n_pdb > 0 && !g.targets.length },
+    { id: "ess",   label: "Essential or essential domain",      test: isEss },
+    { id: "pdb",   label: "Has an experimental structure",      test: g => g.n_pdb > 0 },
+    { id: "lig",   label: "Has chemical matter",                test: g => g.targets.length > 0 },
+    { id: "res",   label: "Has WHO-graded variants",            test: g => g.who && g.who.associated > 0 },
+    { id: "conf",  label: "ID conflict between sources",        test: g => g.conflict || g.shared_with.length > 0 },
+  ];
+
+  const el = id => document.getElementById(id);
+  const canvas = el("ring"), ctx = canvas.getContext("2d");
+  let data = null, genes = [], mode = "ess", active = new Set(), query = "", selected = null, shown = [], layout = null;
+
+  // ---- sources strip -------------------------------------------------------
+  function renderProvenance() {
+    const p = data.provenance;
+    el("prov").innerHTML = Object.entries(p).map(([name, v]) =>
+      `<span><b>${name}</b> ${esc(v.version)} <span class="lic">· ${esc(v.licence)}</span></span>`
+    ).join("");
+    el("foot").innerHTML = `Proof of concept for milestones M1–M4, drawn from the M0 crosswalk plus the
+      essentiality, bioactivity and resistance sources M1 will ingest properly. Essentiality is a single
+      <em>in vitro</em> condition (7H9 broth, DeJesus 2017), so "essential" here means essential in that
+      screen. The WHO catalogue covers 65 genes, which is why most of the genome shows no resistance data:
+      that is an absence of evidence, not evidence of absence. Ligand counts are target-level ChEMBL
+      activities with a pChEMBL value; whole-cell MICs are not included here.
+      Generated ${esc(data.generated)}.`;
+  }
+
+  function esc(s) {
+    return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  }
+
+  // ---- stats ---------------------------------------------------------------
+  function renderStats() {
+    const gap = genes.filter(FILTERS[0].test).length;
+    const tiles = [
+      ["Genes", genes.length, null],
+      ["Essential", genes.filter(isEss).length, "ess"],
+      ["With a structure", genes.filter(g => g.n_pdb > 0).length, "pdb"],
+      ["With chemical matter", genes.filter(g => g.targets.length).length, "lig"],
+      ["WHO-graded variants", genes.filter(g => g.who && g.who.associated > 0).length, "res"],
+    ];
+    let html = tiles.map(([k, n, f]) => {
+      const inner = `<span class="n">${fmt(n)}</span><span class="k">${k}</span>`;
+      return `<div class="stat">${f ? `<button type="button" data-f="${f}">${inner}</button>` : inner}</div>`;
+    }).join("");
+    html += `<div class="stat hero"><button type="button" data-f="gap">
+      <span class="n">${fmt(gap)}</span><span class="k">Essential · structure · no ligands</span></button></div>`;
+    el("stats").innerHTML = html;
+    el("stats").querySelectorAll("button[data-f]").forEach(b =>
+      b.onclick = () => toggleFilter(b.dataset.f));
+  }
+
+  // ---- controls ------------------------------------------------------------
+  function renderControls() {
+    el("colorby").innerHTML = MODES.map(m =>
+      `<button type="button" data-m="${m.id}" aria-pressed="${m.id === mode}">${m.label}</button>`).join("");
+    el("colorby").querySelectorAll("button").forEach(b => b.onclick = () => {
+      mode = b.dataset.m; renderControls(); renderLegend(); draw();
+    });
+    el("filters").innerHTML = FILTERS.map(f =>
+      `<button type="button" data-f="${f.id}" aria-pressed="${active.has(f.id)}">
+         <span>${f.label}</span><span class="c">${fmt(genes.filter(f.test).length)}</span></button>`).join("");
+    el("filters").querySelectorAll("button").forEach(b => b.onclick = () => toggleFilter(b.dataset.f));
+  }
+
+  function toggleFilter(id) {
+    active.has(id) ? active.delete(id) : active.add(id);
+    renderControls(); apply();
+  }
+
+  function renderLegend() {
+    const box = el("legend");
+    if (mode === "ess") {
+      el("legendlab").textContent = "Essentiality — DeJesus 2017";
+      box.innerHTML = Object.entries(ESS).map(([k, [label, token]]) =>
+        `<div><i class="sw" style="background:${css(token)}"></i>${label} <span class="mono" style="color:var(--fg-faint)">${
+          genes.filter(g => g.essentiality === k).length}</span></div>`).join("")
+        + `<div><i class="sw" style="background:${css("--none")}"></i>Not called <span class="mono" style="color:var(--fg-faint)">${
+          genes.filter(g => !g.essentiality).length}</span></div>`;
+    } else if (mode === "cat") {
+      el("legendlab").textContent = "Functional category — Mycobrowser";
+      box.innerHTML = CATS.map((c, i) =>
+        `<div><i class="sw" style="background:${CATCOLORS[i]}"></i>${c}</div>`).join("");
+    } else {
+      const key = { pdb: ["No structure", "1–4 entries", "5+ entries"],
+                    lig: ["No chemical matter", "Orthologue evidence", "Direct Mtb target"],
+                    res: ["No WHO-graded variant", "1–4 variants", "5+ variants"] }[mode];
+      el("legendlab").textContent = { pdb: "Experimental structures — RCSB PDB",
+                                      lig: "Chemical matter — ChEMBL",
+                                      res: "Resistance — WHO catalogue" }[mode];
+      const ramp = mode === "lig" ? [css("--none"), css("--counter"), css("--accent")]
+                                  : [css("--none"), css("--ess-NE"), css("--accent")];
+      box.innerHTML = key.map((k, i) => `<div><i class="sw" style="background:${ramp[i]}"></i>${k}</div>`).join("");
+    }
+  }
+
+  // ---- colour --------------------------------------------------------------
+  function colorOf(g) {
+    if (mode === "ess") return g.essentiality ? css(ESS[g.essentiality][1]) : css("--none");
+    if (mode === "pdb") return g.n_pdb === 0 ? css("--none") : g.n_pdb >= 5 ? css("--accent") : css("--ess-NE");
+    if (mode === "lig") {
+      if (!g.targets.length) return css("--none");
+      return g.evidence === "direct" ? css("--accent") : css("--counter");
+    }
+    if (mode === "res") {
+      const n = g.who ? g.who.associated : 0;
+      return n === 0 ? css("--none") : n >= 5 ? css("--accent") : css("--ess-NE");
+    }
+    const i = CATS.indexOf(g.category);
+    return i < 0 ? css("--none") : CATCOLORS[i];
+  }
+
+  // ---- ring ----------------------------------------------------------------
+  function draw() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const box = canvas.parentElement.getBoundingClientRect();
+    const size = Math.max(280, Math.min(box.width, 640));
+    canvas.width = size * dpr; canvas.height = size * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, size, size);
+
+    const cx = size / 2, cy = size / 2;
+    const rGene = size * 0.455, geneH = size * 0.055;
+    const rings = [
+      { r: size * 0.345, h: size * 0.030, get: g => g.n_pdb > 0, color: () => css("--counter") },
+      { r: size * 0.300, h: size * 0.030, get: g => g.targets.length > 0, color: g => g.evidence === "direct" ? css("--accent") : css("--counter") },
+      { r: size * 0.255, h: size * 0.030, get: g => g.who && g.who.associated > 0, color: () => css("--ess-GD") },
+    ];
+    layout = { cx, cy, size, rGene, geneH };
+
+    const matching = shown.length ? new Set(shown.map(g => g.rv_id)) : null;
+    const filtered = active.size > 0 || query.length > 0;
+
+    // Faint backing arcs so empty rings still read as rings.
+    ctx.strokeStyle = css("--line"); ctx.lineWidth = 1;
+    for (const ring of [{ r: rGene - geneH / 2 }, ...rings]) {
+      ctx.beginPath(); ctx.arc(cx, cy, ring.r, 0, Math.PI * 2); ctx.stroke();
+    }
+
+    const minW = (Math.PI * 2 * rGene) / genes.length;
+    for (const g of genes) {
+      const a = angle(g);
+      const dim = filtered && matching && !matching.has(g.rv_id);
+      ctx.globalAlpha = dim ? 0.13 : 1;
+      ctx.lineWidth = Math.max(1, minW * 0.95);
+      ctx.strokeStyle = colorOf(g);
+      radial(cx, cy, a, rGene - geneH / 2, rGene + geneH / 2);
+      for (const ring of rings) {
+        if (!ring.get(g)) continue;
+        ctx.strokeStyle = ring.color(g);
+        ctx.globalAlpha = dim ? 0.1 : 0.9;
+        radial(cx, cy, a, ring.r - ring.h / 2, ring.r + ring.h / 2);
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    // Coordinate ticks every 500 kb.
+    ctx.font = `500 ${Math.round(size * 0.019)}px ${css("--mono")}`;
+    ctx.fillStyle = css("--fg-faint"); ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.strokeStyle = css("--line-strong"); ctx.lineWidth = 1;
+    for (let bp = 0; bp < GENOME; bp += 500000) {
+      const a = (bp / GENOME) * Math.PI * 2 - Math.PI / 2;
+      radial(cx, cy, a, rGene + geneH / 2, rGene + geneH / 2 + size * 0.012);
+      const rl = rGene + geneH / 2 + size * 0.038;
+      ctx.fillText(`${bp / 1e6}Mb`, cx + Math.cos(a) * rl, cy + Math.sin(a) * rl);
+    }
+
+    if (selected) {
+      const a = angle(selected);
+      ctx.strokeStyle = css("--fg"); ctx.lineWidth = 2;
+      radial(cx, cy, a, rings[2].r - size * 0.03, rGene + geneH / 2 + size * 0.016);
+    }
+
+    // Centre readout.
+    ctx.textAlign = "center";
+    const t = selected || null;
+    ctx.fillStyle = css("--fg");
+    ctx.font = `600 ${Math.round(size * 0.055)}px ${css("--mono")}`;
+    ctx.fillText(t ? t.rv_id : fmt(shown.length), cx, cy - size * 0.015);
+    ctx.fillStyle = css("--fg-dim");
+    ctx.font = `400 ${Math.round(size * 0.026)}px ${css("--sans")}`;
+    ctx.fillText(t ? (t.gene_name || "unnamed") : (filtered ? "genes match" : "genes"), cx, cy + size * 0.032);
+  }
+
+  function radial(cx, cy, a, r0, r1) {
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0);
+    ctx.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+    ctx.stroke();
+  }
+  const angle = g => (((g.start + g.stop) / 2) / GENOME) * Math.PI * 2 - Math.PI / 2;
+
+  function hit(ev) {
+    if (!layout) return null;
+    const rect = canvas.getBoundingClientRect();
+    const x = (ev.clientX - rect.left) * (layout.size / rect.width) - layout.cx;
+    const y = (ev.clientY - rect.top) * (layout.size / rect.height) - layout.cy;
+    const r = Math.hypot(x, y);
+    if (r < layout.size * 0.22 || r > layout.rGene + layout.geneH) return null;
+    let a = Math.atan2(y, x) + Math.PI / 2;
+    if (a < 0) a += Math.PI * 2;
+    const bp = (a / (Math.PI * 2)) * GENOME;
+    let best = null, bestD = Infinity;
+    for (const g of genes) {
+      const d = Math.abs((g.start + g.stop) / 2 - bp);
+      if (d < bestD) { bestD = d; best = g; }
+    }
+    return bestD < GENOME / genes.length * 2 ? best : null;
+  }
+
+  canvas.addEventListener("pointermove", ev => {
+    const g = hit(ev), tip = el("tip");
+    if (!g) { tip.hidden = true; canvas.style.cursor = "crosshair"; return; }
+    canvas.style.cursor = "pointer";
+    tip.hidden = false;
+    tip.textContent = `${g.rv_id}${g.gene_name && g.gene_name !== g.rv_id ? " · " + g.gene_name : ""}`;
+    const rect = canvas.getBoundingClientRect();
+    tip.style.left = `${ev.clientX - rect.left}px`;
+    tip.style.top = `${ev.clientY - rect.top}px`;
+  });
+  canvas.addEventListener("pointerleave", () => { el("tip").hidden = true });
+  canvas.addEventListener("click", ev => { const g = hit(ev); if (g) select(g); });
+
+  // ---- detail --------------------------------------------------------------
+  function rows(g) {
+    const out = [];
+    const add = (k, v, src) => out.push(`<div class="ev"><span class="k">${k}</span><span class="v">${v}</span>${
+      src ? `<span class="src">${esc(src)}</span>` : ""}</div>`);
+
+    add("Essentiality",
+      g.essentiality
+        ? `<span class="mono" style="color:${css(ESS[g.essentiality][1])}">${ESS[g.essentiality][0]}</span>
+           <span class="mono" style="color:var(--fg-faint)"> · ${fmt(g.ta_sites)} TA sites</span>`
+        : `<span class="absent">no call in this dataset</span>`,
+      "DeJesus 2017, mBio · Table S3 · CC BY 4.0");
+
+    add("Experimental structure",
+      g.n_pdb
+        ? `<span class="mono">${g.n_pdb}</span> entr${g.n_pdb === 1 ? "y" : "ies"}
+           <div class="ids" style="margin-top:5px">${g.pdb_ids.map(i => `<span>${esc(i)}</span>`).join("")}${
+             g.n_pdb > g.pdb_ids.length ? `<span>+${g.n_pdb - g.pdb_ids.length}</span>` : ""}</div>`
+        : `<span class="absent">none</span>`,
+      "RCSB PDB via UniProt cross-references · CC0 1.0");
+
+    add("Predicted structure",
+      g.alphafold ? `<span class="mono">AF-${esc(g.alphafold)}-F1</span>` : `<span class="absent">none</span>`,
+      "AlphaFold DB v6 · CC BY 4.0");
+
+    if (g.targets.length) {
+      add("Chemical matter", g.targets.map(t => {
+        const ortho = t.evidence === "orthologue";
+        return `<div style="margin-bottom:6px">
+          <span class="mono">${esc(t.target_id)}</span>
+          ${ortho ? `<span class="pill ortho">orthologue</span>` : ``}
+          <div style="color:var(--fg-dim);font-size:12px">${esc(t.pref_name || "—")}</div>
+          ${t.n_activities ? `<div class="mono" style="font-size:11.5px">${fmt(t.n_activities)} activities · best pChEMBL ${
+            t.best_pchembl ?? "—"}${t.best_type ? ` (${esc(t.best_type)})` : ""}</div>` : ""}
+          ${ortho ? `<div class="mono" style="font-size:10.5px;color:var(--fg-faint)">via ${esc(t.via_gene || t.via_accession)} ·
+            ${esc(t.via_organism)} · ${esc(t.uniref_cluster)}, ${Math.round(t.identity_level * 100)}% cluster of ${fmt(t.cluster_size)}</div>` : ""}
+        </div>`;
+      }).join(""), "ChEMBL 37 · CC BY-SA 3.0");
+    } else {
+      add("Chemical matter", `<span class="absent">no ChEMBL target</span>`, "ChEMBL 37 · CC BY-SA 3.0");
+    }
+
+    if (g.who) {
+      add("Resistance mutations",
+        `<span class="mono">${g.who.associated}</span> graded <em>associated with resistance</em>
+         of <span class="mono">${fmt(g.who.total)}</span> catalogued
+         <div style="margin-top:4px">${g.who.drugs.map(d => `<span class="pill">${esc(d)}</span>`).join(" ")}</div>
+         ${g.who.n_mappable ? `<div class="mono" style="font-size:11px;color:var(--fg-faint);margin-top:4px">${
+           g.who.n_mappable} of ${g.who.associated} are residue changes; the rest are promoter or
+           loss-of-function variants, which no structure can show</div>` : ""}`,
+        "WHO catalogue 2nd ed. 2023 · ODC-By 1.0");
+    } else {
+      add("Resistance mutations",
+        `<span class="absent">not in the catalogue</span>
+         <div style="font-size:11.5px;color:var(--fg-faint);margin-top:3px">The WHO catalogue covers 65 genes —
+         those with matched phenotypic testing. This gene is not one of them.</div>`,
+        "WHO catalogue 2nd ed. 2023 · ODC-By 1.0");
+    }
+
+    add("Identifiers",
+      `<div class="ids">
+         <span>${esc(g.rv_id)}</span>
+         ${g.uniprot ? `<span>${esc(g.uniprot)}</span>` : ""}
+         ${g.length ? `<span>${g.length} aa</span>` : ""}
+         <span>${fmt(g.start)}–${fmt(g.stop)} ${esc(g.strand)}</span>
+       </div>
+       ${g.acc_status !== "agree" ? `<div style="margin-top:5px"><span class="pill warn">${esc(g.acc_status.replace(/_/g, " "))}</span></div>` : ""}
+       ${g.shared_with.length ? `<div class="mono" style="font-size:11px;color:var(--fg-faint);margin-top:4px">
+          shares its accession with ${g.shared_with.map(esc).join(", ")} — structures and ligands here may belong to a sibling</div>` : ""}`,
+      `Mycobrowser release 5 · UniProt ${esc(data.provenance.uniprot.version)}`);
+
+    add("Functional category", esc(g.category || "—"), "Mycobrowser release 5 · licence not stated");
+    return out.join("");
+  }
+
+  function select(g) {
+    selected = g;
+    el("detail").innerHTML = `
+      <div class="dh"><span class="rv">${esc(g.rv_id)}</span>${
+        g.gene_name && g.gene_name !== g.rv_id ? `<span class="gn">${esc(g.gene_name)}</span>` : ""}</div>
+      <p class="prod">${esc(g.product || "")}</p>${rows(g)}`;
+    document.querySelectorAll("#tbody tr").forEach(tr =>
+      tr.setAttribute("aria-selected", String(tr.dataset.rv === g.rv_id)));
+    draw();
+  }
+
+  // ---- table ---------------------------------------------------------------
+  const LIMIT = 250;
+  function renderTable() {
+    const list = shown.slice(0, LIMIT);
+    el("tablecount").textContent = shown.length > LIMIT
+      ? `showing ${LIMIT} of ${fmt(shown.length)}`
+      : `${fmt(shown.length)} gene${shown.length === 1 ? "" : "s"}`;
+    el("tabletitle").textContent = active.size || query
+      ? [...active].map(id => FILTERS.find(f => f.id === id).label).concat(query ? [`“${query}”`] : []).join(" + ")
+      : "All genes";
+    el("tbody").innerHTML = list.map(g => `
+      <tr data-rv="${esc(g.rv_id)}" aria-selected="${selected && selected.rv_id === g.rv_id}">
+        <td class="id">${esc(g.rv_id)}</td>
+        <td>${esc(g.gene_name && g.gene_name !== g.rv_id ? g.gene_name : "—")}</td>
+        <td>${g.essentiality
+          ? `<i class="dot" style="background:${css(ESS[g.essentiality][1])}"></i>${ESS[g.essentiality][0]}`
+          : `<span class="absent">—</span>`}</td>
+        <td class="n">${g.n_pdb || "—"}</td>
+        <td>${g.alphafold ? "yes" : "—"}</td>
+        <td class="n">${g.targets.length ? (g.evidence === "direct" ? fmt(g.n_activities) : "orth.") : "—"}</td>
+        <td class="n">${g.best_pchembl ?? "—"}</td>
+        <td class="n">${g.who && g.who.associated ? g.who.associated : "—"}</td>
+        <td class="prodcell">${esc(g.product || "")}</td>
+      </tr>`).join("");
+    el("tbody").querySelectorAll("tr").forEach(tr =>
+      tr.onclick = () => select(genes.find(g => g.rv_id === tr.dataset.rv)));
+  }
+
+  function apply() {
+    const tests = [...active].map(id => FILTERS.find(f => f.id === id).test);
+    const q = query.trim().toLowerCase();
+    shown = genes.filter(g =>
+      tests.every(t => t(g)) &&
+      (!q || g.rv_id.toLowerCase().includes(q) ||
+             (g.gene_name || "").toLowerCase().includes(q) ||
+             (g.product || "").toLowerCase().includes(q) ||
+             (g.uniprot || "").toLowerCase().includes(q)));
+    el("ringkey").textContent =
+      `outer ring: ${MODES.find(m => m.id === mode).label.toLowerCase()} · inner rings: structure, chemical matter, resistance`;
+    renderTable(); draw();
+  }
+
+  el("q").addEventListener("input", e => { query = e.target.value; apply(); });
+  el("theme").onclick = () => {
+    const root = document.documentElement;
+    const dark = root.getAttribute("data-theme") === "dark" ||
+      (!root.hasAttribute("data-theme") && matchMedia("(prefers-color-scheme: dark)").matches);
+    root.setAttribute("data-theme", dark ? "light" : "dark");
+    renderLegend(); draw();
+  };
+  addEventListener("resize", draw);
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { renderLegend(); draw(); });
+
+  fetch("atlas-poc.json").then(r => r.json()).then(payload => {
+    data = payload;
+    genes = payload.genes;
+    shown = genes;
+    renderProvenance(); renderStats(); renderControls(); renderLegend(); apply();
+    select(genes.find(g => g.rv_id === "Rv3790") || genes[0]);
+  }).catch(err => {
+    el("prov").textContent = `Could not load the dataset: ${err.message}`;
+  });
+})();
+</script>

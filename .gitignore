@@ -10,3 +10,6 @@ __pycache__/
 uv.lock
 node_modules/
 dist/
+
+# POC display data: rebuilt by poc/build_poc_data.py, same rule as data/raw/
+poc/data/

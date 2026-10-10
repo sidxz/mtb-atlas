@@ -1,0 +1,453 @@
+<title>Mtb Target Dossier</title>
+<style>
+  /* Layout: a dossier — target tabs, then evidence column beside a structure
+     viewer, with the resistance variant table under the viewer that drives it. */
+  :root {
+    --bg: #f4f5f8;
+    --surface: #ffffff;
+    --surface-2: #eceef3;
+    --line: #d4d8e2;
+    --line-strong: #b4bacb;
+    --fg: #161a26;
+    --fg-dim: #5a6276;
+    --fg-faint: #868ea3;
+    --accent: #c21f68;        /* carbol fuchsin, the acid-fast stain */
+    --accent-soft: #f7e3ed;
+    --counter: #1f4e9c;       /* methylene blue counterstain */
+    --warn: #b3791f;
+    --ok: #1f8a7a;
+    --viewer-bg: #10151f;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0b0f1a; --surface: #131926; --surface-2: #1a2130;
+      --line: #273040; --line-strong: #3a4455;
+      --fg: #e8ebf2; --fg-dim: #9aa3b8; --fg-faint: #6c7589;
+      --accent: #f04b92; --accent-soft: #3a142a; --counter: #6f9ae0;
+      --warn: #d9a441; --ok: #2fae99; --viewer-bg: #080b13;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0b0f1a; --surface: #131926; --surface-2: #1a2130;
+    --line: #273040; --line-strong: #3a4455;
+    --fg: #e8ebf2; --fg-dim: #9aa3b8; --fg-faint: #6c7589;
+    --accent: #f04b92; --accent-soft: #3a142a; --counter: #6f9ae0;
+    --warn: #d9a441; --ok: #2fae99; --viewer-bg: #080b13;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box }
+  body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased }
+  .wrap { max-width: 1420px; margin: 0 auto; padding-inline: 16px; padding-block: 20px 48px }
+
+  header { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: flex-end; justify-content: space-between }
+  h1 { font-size: clamp(1.6rem, 3.6vw, 2.25rem); font-weight: 700; letter-spacing: -0.025em; margin: 0; text-wrap: balance }
+  .sub { color: var(--fg-dim); margin: 6px 0 0; max-width: 64ch }
+  .themebtn { font: inherit; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; background: var(--surface); color: var(--fg-dim); border: 1px solid var(--line); border-radius: 2px; padding: 7px 11px; cursor: pointer }
+  .themebtn:hover { border-color: var(--line-strong); color: var(--fg) }
+
+  /* ---- target tabs ---- */
+  .tabs { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1px; background: var(--line); margin-top: 20px; border: 1px solid var(--line) }
+  .tabs button { font: inherit; text-align: left; background: var(--surface); border: 0; padding: 12px 14px; cursor: pointer; color: var(--fg); display: block; min-width: 0 }
+  .tabs button:hover { background: var(--surface-2) }
+  .tabs button[aria-pressed="true"] { background: var(--accent); color: #fff }
+  .tabs button[aria-pressed="true"] .t2, .tabs button[aria-pressed="true"] .t3 { color: rgb(255 255 255 / .82) }
+  .tabs .t1 { font-family: var(--mono); font-size: 12px; display: block }
+  .tabs .t2 { font-size: 1.05rem; font-weight: 700; display: block; letter-spacing: -0.01em }
+  .tabs .t3 { font-size: 11.5px; color: var(--fg-dim); display: block; margin-top: 2px }
+
+  .cols { display: grid; grid-template-columns: minmax(0, 360px) minmax(0, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-top: 0 }
+  @media (max-width: 920px) { .cols { grid-template-columns: 1fr } }
+  .pane { background: var(--surface); padding: 16px; min-width: 0 }
+
+  .ev { border-top: 1px solid var(--line); padding: 10px 0 }
+  .ev:first-child { border-top: 0; padding-top: 0 }
+  .ev .k { font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--fg-dim); display: block; margin-bottom: 4px; font-weight: 600 }
+  .ev .v { font-size: 13px }
+  .ev .src { font-family: var(--mono); font-size: 10.5px; color: var(--fg-faint); margin-top: 5px; display: block }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums }
+  .big { font-family: var(--mono); font-size: 1.45rem; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums }
+  .absent { color: var(--fg-faint); font-style: italic }
+  .note { font-size: 11.5px; color: var(--fg-faint); margin-top: 4px; text-wrap: pretty }
+  .pill { display: inline-block; font-family: var(--mono); font-size: 10.5px; padding: 1px 6px; border: 1px solid currentColor; border-radius: 2px }
+  .pill.ortho { color: var(--counter) }
+  .pill.g1 { color: var(--accent) }
+  .pill.g2 { color: var(--warn) }
+  .ids { display: flex; flex-wrap: wrap; gap: 3px 5px; font-family: var(--mono); font-size: 11px; margin-top: 4px }
+  .ids span { background: var(--surface-2); padding: 1px 5px; border-radius: 2px }
+
+  /* ---- viewer ---- */
+  .vtop { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: baseline; justify-content: space-between; margin-bottom: 10px }
+  .vtitle { font-family: var(--mono); font-size: 13px }
+  .vtitle b { color: var(--accent); font-weight: 600 }
+  .switch { display: flex; gap: 1px; background: var(--line); border: 1px solid var(--line) }
+  .switch button { font: inherit; font-size: 11.5px; font-family: var(--mono); background: var(--surface); border: 0; color: var(--fg-dim); padding: 5px 9px; cursor: pointer }
+  .switch button[aria-pressed="true"] { background: var(--fg); color: var(--bg) }
+  .stage { position: relative; width: 100%; aspect-ratio: 4 / 3; min-height: 300px; background: var(--viewer-bg); border: 1px solid var(--line) }
+  @media (max-width: 920px) { .stage { aspect-ratio: 1 } }
+  .stage canvas { display: block }
+  /* Above the viewer's own canvas, which 3Dmol positions over the stage. */
+  .loading[hidden] { display: none }
+  .loading { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; text-align: center; padding: 16px; font-family: var(--mono); font-size: 12px; color: #9aa3b8; background: var(--viewer-bg) }
+  .vkey { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 9px; font-size: 12px; color: var(--fg-dim) }
+  .vkey div { display: flex; align-items: center; gap: 6px }
+  .sw { width: 11px; height: 11px; border-radius: 1px; flex: none }
+  .toggles { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 10px; font-size: 12.5px }
+  .toggles label { display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--fg-dim) }
+  .toggles input { accent-color: var(--accent) }
+
+  /* ---- variants ---- */
+  .vartitle { font-size: 12px; margin: 18px 0 8px; letter-spacing: .02em; font-weight: 700 }
+  .scroll { overflow-x: auto; border: 1px solid var(--line) }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; min-width: 540px }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap }
+  th { font-size: 10px; letter-spacing: .07em; text-transform: uppercase; color: var(--fg-dim); font-weight: 600; background: var(--surface) }
+  tbody tr.map { cursor: pointer }
+  tbody tr.map:hover td { background: var(--accent-soft) }
+  td.m { font-family: var(--mono) }
+  .nores { padding: 14px; color: var(--fg-faint); font-size: 12.5px; border: 1px solid var(--line); text-wrap: pretty }
+
+  footer { margin-top: 26px; color: var(--fg-faint); font-size: 12px; max-width: 80ch; text-wrap: pretty }
+  footer code { font-family: var(--mono); font-size: 11.5px }
+  footer p { margin: 0 0 8px }
+  a { color: var(--accent) }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important } }
+</style>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/3Dmol/2.4.2/3Dmol-min.js"></script>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Mtb Target Dossier</h1>
+      <p class="sub">One page per target: the evidence, where each value came from, and the structure with its ligands and WHO-graded resistance residues drawn on it.</p>
+    </div>
+    <button class="themebtn" id="theme" type="button">Theme</button>
+  </header>
+
+  <div class="tabs" id="tabs"></div>
+
+  <div class="cols">
+    <div class="pane" id="evidence"></div>
+    <div class="pane">
+      <div class="vtop">
+        <span class="vtitle" id="vtitle"></span>
+        <div class="switch" id="structpick"></div>
+      </div>
+      <div class="stage" id="stage"><div class="loading" id="loading">Loading structure…</div></div>
+      <div class="vkey" id="vkey"></div>
+      <div class="toggles">
+        <label><input type="checkbox" id="tLig" checked> Ligands and cofactors</label>
+        <label><input type="checkbox" id="tRes" checked> Resistance residues</label>
+        <label><input type="checkbox" id="tSurf"> Surface</label>
+      </div>
+      <p class="vartitle" id="vartitle"></p>
+      <div id="variants"></div>
+    </div>
+  </div>
+
+  <footer id="foot"></footer>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  // Structures are published alongside this page: the artifact sandbox blocks
+  // fetches to rcsb.org, and shipping the file is what the pipeline would do
+  // anyway (cache the raw download, never re-fetch at render time). The host
+  // serves only known extensions, hence the .txt suffix on coordinate files.
+  const STRUCTURES = {
+    Rv3790: [{
+      id: "4KW5", file: "structures/4KW5.pdb.txt", format: "pdb",
+      title: "DprE1 with a covalent benzothiazinone-class inhibitor",
+      method: "X-ray, 2.1 Å", chains: "A, B",
+      ligands: [["1W6", "benzothiazinone inhibitor"], ["FAD", "flavin cofactor"]],
+      skip: ["HOH", "GOL", "IMD"],
+      marks: [{ resi: 387, chain: "A", label: "C387", kind: "lit",
+                note: "the cysteine benzothiazinones bind covalently; BTZ resistance is C387S/G in the literature, not in the WHO catalogue" }],
+    }],
+    Rv1484: [{
+      id: "1ZID", file: "structures/1ZID.pdb.txt", format: "pdb",
+      title: "InhA with the isoniazid–NAD adduct",
+      method: "X-ray, 2.7 Å", chains: "A",
+      ligands: [["ZID", "isoniazid–NAD adduct"]],
+      skip: ["HOH"],
+      marks: [{ resi: 94, chain: "A", label: "S94A", kind: "who",
+                note: "the only WHO-graded InhA variant that is a residue change" }],
+    }],
+    Rv0206c: [
+      { id: "7NVH", file: "structures/7NVH.pdb.txt", format: "pdb",
+        title: "MmpL3 mycolic acid transporter", method: "Cryo-EM, 3.0 Å", chains: "A",
+        ligands: [["AV0", "bound lipid"]], skip: ["HOH"], marks: [] },
+      { id: "AF-P9WJV5-F1", file: "structures/AF-P9WJV5.cif.txt", format: "mmcif",
+        title: "AlphaFold prediction", method: "AlphaFold v6, mean pLDDT 79.3", chains: "A",
+        ligands: [], skip: [], marks: [], predicted: true },
+    ],
+    Rv1908c: [{
+      id: "2CCA", file: "structures/2CCA.pdb.txt", format: "pdb",
+      title: "KatG catalase-peroxidase", method: "X-ray, 2.4 Å", chains: "A, B",
+      ligands: [["HEM", "haem cofactor"]], skip: ["HOH"],
+      marks: [], // filled from the WHO catalogue below
+    }],
+  };
+
+  const COLORS = { protein: 0x5b7fb5, mark: 0xe0218a, lit: 0xd9a441, ligand: 0x2fae99 };
+  const el = id => document.getElementById(id);
+  const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const fmt = n => n == null ? "—" : n.toLocaleString("en-US");
+
+  let data = null, genes = [], current = null, structIndex = 0, viewer = null, loadedKey = null;
+
+  function marksFor(gene, struct) {
+    if (struct.predicted) return [];
+    const who = (gene.who && gene.who.variants || [])
+      .filter(v => v.residue)
+      .map(v => ({
+        resi: v.residue.pos, chain: struct.chains.split(",")[0].trim(),
+        label: v.residue.label, kind: "who", grading: v.grading, drugs: v.drugs,
+        note: `${v.grading} · ${v.drugs.join(", ")}`,
+      }));
+    // De-duplicate positions: several substitutions at one residue draw once.
+    const seen = new Set();
+    const unique = [];
+    for (const m of [...struct.marks, ...who]) {
+      if (seen.has(m.resi)) continue;
+      seen.add(m.resi); unique.push(m);
+    }
+    return unique;
+  }
+
+  // ---- evidence column -----------------------------------------------------
+  function renderEvidence(g) {
+    const t = g.targets[0];
+    const who = g.who;
+    const ESS = { ES: "Essential", ESD: "Essential domain", GD: "Growth defect", NE: "Non-essential", GA: "Growth advantage", Uncertain: "Uncertain" };
+    const row = (k, v, src) => `<div class="ev"><span class="k">${k}</span><div class="v">${v}</div>${src ? `<span class="src">${esc(src)}</span>` : ""}</div>`;
+
+    el("evidence").innerHTML =
+      row("Essentiality",
+        g.essentiality
+          ? `<span class="big" style="color:${g.essentiality.startsWith("ES") ? "var(--accent)" : "var(--fg)"}">${ESS[g.essentiality]}</span>
+             <div class="note">${fmt(g.ta_sites)} TA sites in the ORF. Single condition: 7H9 broth.</div>`
+          : `<span class="absent">no call</span>`,
+        "DeJesus 2017, mBio · Table S3 · CC BY 4.0") +
+
+      row("Experimental structures",
+        `<span class="big">${g.n_pdb}</span>
+         <div class="ids">${g.pdb_ids.slice(0, 10).map(i => `<span>${esc(i)}</span>`).join("")}${
+           g.n_pdb > 10 ? `<span>+${g.n_pdb - 10}</span>` : ""}</div>`,
+        "RCSB PDB via UniProt cross-references · CC0 1.0") +
+
+      row("Predicted structure",
+        g.alphafold
+          ? `<span class="mono">AF-${esc(g.alphafold)}-F1</span>${
+              data.models[g.uniprot] ? `<div class="note">mean pLDDT ${data.models[g.uniprot].plddt},
+                ${Math.round(data.models[g.uniprot].very_high * 100)}% of residues very high,
+                ${Math.round(data.models[g.uniprot].very_low * 100)}% very low · model ${data.models[g.uniprot].created}</div>` : ""}`
+          : `<span class="absent">none</span>`,
+        "AlphaFold DB v6 · CC BY 4.0") +
+
+      row("Chemical matter",
+        t
+          ? `<span class="big">${t.n_activities ? fmt(t.n_activities) : "—"}</span>
+             <span style="color:var(--fg-dim)">activities with a pChEMBL value</span>
+             ${t.best_pchembl ? `<div class="note" style="color:var(--fg)">best pChEMBL <b class="mono">${t.best_pchembl}</b>
+               (${esc(t.best_type)}, <span class="mono">${esc(t.best_compound)}</span>)</div>` : ""}
+             <div class="note"><span class="mono">${esc(t.target_id)}</span> ${esc(t.pref_name || "")}
+               ${t.evidence === "orthologue" ? `<span class="pill ortho">orthologue</span>` : ""}</div>
+             ${t.evidence === "orthologue"
+               ? `<div class="note">No Mtb target exists in ChEMBL. This is the ${esc(t.via_gene || "")} target from
+                  ${esc(t.via_organism)}, reached through ${esc(t.uniref_cluster)} — a
+                  ${Math.round(t.identity_level * 100)}% identity cluster of ${fmt(t.cluster_size)} members, which is a
+                  family-level link, not evidence of a shared binding site.</div>` : ""}`
+          : `<span class="absent">no ChEMBL target</span>
+             <div class="note">Not a drug target in ChEMBL — for KatG, the prodrug activator rather than the thing inhibited.</div>`,
+        "ChEMBL 37 · CC BY-SA 3.0") +
+
+      row("Resistance mutations",
+        who
+          ? `<span class="big">${who.associated}</span>
+             <span style="color:var(--fg-dim)">graded <em>associated with resistance</em>, of ${fmt(who.total)} catalogued</span>
+             <div class="ids" style="margin-top:6px">${who.drugs.map(d => `<span>${esc(d)}</span>`).join("")}</div>
+             <div class="note">${Object.entries(who.effects).map(([k, v]) => `${v} ${k.replace(/_/g, " ")}`).join(" · ")}</div>`
+          : `<span class="absent">not in the catalogue</span>
+             <div class="note">The WHO catalogue covers the 65 genes with matched phenotypic testing. This gene is not
+             one of them, so the atlas reports an absence rather than substituting another source.</div>`,
+        "WHO catalogue 2nd ed. 2023 · ODC-By 1.0") +
+
+      row("Identity",
+        `<div class="ids"><span>${esc(g.rv_id)}</span><span>${esc(g.uniprot)}</span><span>${g.length} aa</span>
+           <span>${fmt(g.start)}–${fmt(g.stop)} ${esc(g.strand)}</span></div>
+         <div class="note">${esc(g.product || "")}</div>`,
+        `Mycobrowser release 5 (licence not stated) · UniProt ${esc(data.provenance.uniprot.version)}`);
+  }
+
+  // ---- viewer --------------------------------------------------------------
+  function applyStyles() {
+    if (!viewer) return;
+    const struct = STRUCTURES[current.rv_id][structIndex];
+    const marks = marksFor(current, struct);
+    viewer.removeAllLabels();
+    viewer.setStyle({}, { cartoon: { color: struct.predicted ? "spectrum" : COLORS.protein, opacity: 1 } });
+
+    if (el("tLig").checked && struct.ligands.length) {
+      viewer.addStyle({ hetflag: true, resn: struct.ligands.map(l => l[0]) },
+        { stick: { radius: 0.2, color: COLORS.ligand }, sphere: { radius: 0.35, color: COLORS.ligand } });
+    }
+    if (el("tRes").checked) {
+      for (const m of marks) {
+        const color = m.kind === "who" ? COLORS.mark : COLORS.lit;
+        viewer.addStyle({ resi: m.resi, chain: m.chain },
+          { stick: { radius: 0.3, color }, cartoon: { color } });
+        // The selection (third argument) positions the label. Passing a
+        // selection as `position` instead puts NaN in the scene and the camera
+        // ends up looking at nothing.
+        viewer.addLabel(m.label, {
+          backgroundColor: color, backgroundOpacity: 0.85,
+          fontColor: "white", fontSize: 11, inFront: true,
+        }, { resi: m.resi, chain: m.chain });
+      }
+    }
+    if (el("tSurf").checked) {
+      viewer.addSurface($3Dmol.SurfaceType.VDW, { opacity: 0.55, color: COLORS.protein }, { hetflag: false });
+    } else {
+      viewer.removeAllSurfaces();
+    }
+    viewer.render();
+  }
+
+  function renderViewer() {
+    const struct = STRUCTURES[current.rv_id][structIndex];
+    const key = `${current.rv_id}:${struct.id}`;
+    el("vtitle").innerHTML = `<b>${esc(struct.id)}</b> · ${esc(struct.title)} · ${esc(struct.method)}`;
+
+    el("structpick").innerHTML = STRUCTURES[current.rv_id].map((s, i) =>
+      `<button type="button" data-i="${i}" aria-pressed="${i === structIndex}">${esc(s.id)}</button>`).join("");
+    el("structpick").querySelectorAll("button").forEach(b =>
+      b.onclick = () => { structIndex = +b.dataset.i; renderViewer(); });
+
+    const marks = marksFor(current, struct);
+    el("vkey").innerHTML =
+      `<div><i class="sw" style="background:#5b7fb5"></i>${struct.predicted ? "Predicted fold (rainbow N→C)" : "Backbone"}</div>` +
+      (struct.ligands.length ? `<div><i class="sw" style="background:#2fae99"></i>${
+        struct.ligands.map(l => `${l[0]} — ${l[1]}`).join("; ")}</div>` : "") +
+      (marks.some(m => m.kind === "who") ? `<div><i class="sw" style="background:#e0218a"></i>WHO-graded resistance residue</div>` : "") +
+      (marks.some(m => m.kind === "lit") ? `<div><i class="sw" style="background:#d9a441"></i>Residue from the literature, not the WHO catalogue</div>` : "");
+
+    if (loadedKey === key) { applyStyles(); return; }
+
+    el("loading").hidden = false;
+    el("loading").textContent = `Loading ${struct.id}…`;
+    if (viewer) { viewer.clear(); } else {
+      viewer = $3Dmol.createViewer(el("stage"), { backgroundColor: getComputedStyle(document.documentElement).getPropertyValue("--viewer-bg").trim() });
+    }
+    fetch(struct.file).then(r => r.text()).then(text => {
+      viewer.addModel(text, struct.format);
+      // Water, cryoprotectants and crystallisation additives are never styled,
+      // so they stay invisible without having to strip them from the model.
+      loadedKey = key;
+      applyStyles();
+      viewer.zoomTo();
+      viewer.render();
+      el("loading").hidden = true;
+    }).catch(err => { el("loading").textContent = `Could not load ${struct.id}: ${err.message}`; });
+  }
+
+  // ---- variants ------------------------------------------------------------
+  function renderVariants() {
+    const g = current, who = g.who;
+    const struct = STRUCTURES[g.rv_id][structIndex];
+    if (!who) {
+      el("vartitle").textContent = "Resistance mutations";
+      el("variants").innerHTML = `<div class="nores">Nothing to map. ${esc(g.gene_name)} is not among the WHO
+        catalogue's 65 genes, so there are no graded variants to place on this structure. For
+        ${esc(g.gene_name)} the resistance literature exists, but it is not in a catalogued, graded form
+        this pipeline can ingest without hand-curation.</div>`;
+      return;
+    }
+    const mappable = who.variants.filter(v => v.residue);
+    el("vartitle").textContent = `WHO-graded variants — ${mappable.length} of ${who.variants.length} are residue changes`;
+    el("variants").innerHTML = `<div class="scroll"><table>
+      <thead><tr><th>Variant</th><th>Grading</th><th>Effect</th><th>Drugs</th><th>On structure</th></tr></thead>
+      <tbody>${who.variants.map(v => `
+        <tr class="${v.residue ? "map" : ""}" data-resi="${v.residue ? v.residue.pos : ""}">
+          <td class="m">${esc(v.mutation)}</td>
+          <td><span class="pill ${v.grading.startsWith("1") ? "g1" : "g2"}">${esc(v.grading.replace(/^\d\) /, ""))}</span></td>
+          <td style="color:var(--fg-dim)">${esc(v.effect.replace(/_/g, " "))}</td>
+          <td class="m">${esc(v.drugs.join(", "))}</td>
+          <td>${v.residue ? `<span class="m">${esc(v.residue.label)}</span>` : `<span class="absent">not a residue</span>`}</td>
+        </tr>`).join("")}</tbody></table></div>
+      ${mappable.length < who.variants.length ? `<p class="note">The rest change the promoter, truncate the protein or
+        delete it outright. No structure can show those, and a viewer that silently dropped them would overstate how
+        much of this gene's resistance is structural.</p>` : ""}`;
+
+    el("variants").querySelectorAll("tr.map").forEach(tr => tr.onclick = () => {
+      if (!viewer) return;
+      const sel = { resi: +tr.dataset.resi, chain: struct.chains.split(",")[0].trim() };
+      viewer.zoomTo(sel, 600);
+      viewer.render();
+    });
+  }
+
+  // ---- shell ---------------------------------------------------------------
+  function select(rv) {
+    current = genes.find(g => g.rv_id === rv);
+    structIndex = 0;
+    el("tabs").querySelectorAll("button").forEach(b =>
+      b.setAttribute("aria-pressed", String(b.dataset.rv === rv)));
+    renderEvidence(current);
+    renderViewer();
+    renderVariants();
+  }
+
+  ["tLig", "tRes", "tSurf"].forEach(id => el(id).addEventListener("change", applyStyles));
+
+  el("theme").onclick = () => {
+    const root = document.documentElement;
+    const dark = root.getAttribute("data-theme") === "dark" ||
+      (!root.hasAttribute("data-theme") && matchMedia("(prefers-color-scheme: dark)").matches);
+    root.setAttribute("data-theme", dark ? "light" : "dark");
+    if (viewer) {
+      viewer.setBackgroundColor(getComputedStyle(root).getPropertyValue("--viewer-bg").trim());
+      viewer.render();
+    }
+  };
+
+  fetch("dossier.json").then(r => r.json()).then(payload => {
+    data = payload;
+    genes = payload.genes;
+    const blurb = {
+      Rv3790: "Essential, well-structured, real chemistry",
+      Rv1484: "The best-studied target in TB",
+      Rv0206c: "Ligands only through an orthologue",
+      Rv1908c: "Resistance-rich, not a target",
+    };
+    el("tabs").innerHTML = genes.map(g => `
+      <button type="button" data-rv="${esc(g.rv_id)}" aria-pressed="false">
+        <span class="t1">${esc(g.rv_id)}</span>
+        <span class="t2">${esc(g.gene_name)}</span>
+        <span class="t3">${esc(blurb[g.rv_id] || "")}</span>
+      </button>`).join("");
+    el("tabs").querySelectorAll("button").forEach(b => b.onclick = () => select(b.dataset.rv));
+
+    el("foot").innerHTML = `
+      <p><b>What this proves and what it does not.</b> The residue numbering lines up: KatG Ser315 and Trp328,
+      InhA Ser94 and DprE1 Cys387 are each the expected amino acid at that position in the deposited coordinates,
+      checked against the files rather than assumed. That is the part M3 depends on.</p>
+      <p>The viewer here is 3Dmol 2.4.2, not Mol*. Mol*'s prebuilt CDN bundle exports only its
+      <code>Viewer</code> wrapper, so per-residue selection is unreachable from a CDN-only page; in the real app,
+      built with Vite from npm, Mol*'s selection API is available and this is the library the project uses.
+      Structure files are published next to this page because the sandbox blocks fetches to rcsb.org.</p>
+      <p>Generated ${esc(data.generated)}. Sources: Mycobrowser release 5 (licence not stated),
+      UniProt ${esc(data.provenance.uniprot.version)} CC BY 4.0, ChEMBL 37 CC BY-SA 3.0, RCSB PDB CC0 1.0,
+      AlphaFold DB v6 CC BY 4.0, DeJesus 2017 CC BY 4.0, WHO catalogue 2nd ed. ODC-By 1.0.</p>`;
+
+    select("Rv1908c");
+  }).catch(err => { el("loading").textContent = `Could not load the dataset: ${err.message}`; });
+})();
+</script>

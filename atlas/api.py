@@ -458,7 +458,9 @@ def target(rv_id: str) -> TargetDetail:
     structures = _query(
         connection,
         "SELECT pdb_id, title, method, resolution, released, chains, entity_description,"
-        " components, ligand_ids, n_ligands, ligand_ids_elsewhere"
+        " components, ligand_ids, n_ligands, ligand_ids_elsewhere,"
+        # How the protein was made, which the entry states and nothing else does.
+        " expression_hosts, plasmids, mutations, construct_length"
         " FROM structures WHERE uniprot_acc = ?"
         " ORDER BY n_ligands DESC, resolution NULLS LAST",
         [accession],

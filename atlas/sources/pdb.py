@@ -49,7 +49,9 @@ query($ids: [String!]!) {
     rcsb_entry_info { resolution_combined deposited_polymer_entity_instance_count }
     rcsb_accession_info { initial_release_date }
     polymer_entities {
-      rcsb_polymer_entity { pdbx_description }
+      rcsb_polymer_entity { pdbx_description pdbx_mutation }
+      entity_poly { rcsb_sample_sequence_length }
+      entity_src_gen { pdbx_host_org_scientific_name pdbx_host_org_strain plasmid_name }
       rcsb_polymer_entity_container_identifiers {
         auth_asym_ids
         reference_sequence_identifiers { database_accession database_name }
@@ -190,6 +192,62 @@ def classify(comp_id: str) -> str:
     return "ligand"
 
 
+# `pdbx_mutation` states the absence of one in words as often as it states one,
+# and in whatever case the depositor typed.
+NO_MUTATION = frozenset({"wild-type", "wild type", "wt", "none", "no", "-", "n/a", "na"})
+
+
+def _host(source: dict[str, Any]) -> str | None:
+    """Expression host as one string, without repeating the strain.
+
+    Depositors put the strain in either field or both: 1ZID gives host
+    `Escherichia coli BL21` and strain `BL21`, which naively joined reads
+    "Escherichia coli BL21 BL21". Casing is left as deposited -- 2CCA's
+    `ESCHERICHIA COLI UM262` is what the entry says, and tidying it would be
+    editing the source.
+    """
+    name = (source.get("pdbx_host_org_scientific_name") or "").strip()
+    strain = (source.get("pdbx_host_org_strain") or "").strip()
+    if strain and strain.lower() not in name.lower():
+        name = f"{name} {strain}".strip()
+    return name or None
+
+
+def _construct(entities: list[dict[str, Any]]) -> dict[str, Any]:
+    """What was expressed, pooled over every entity the accession owns.
+
+    A structure is itself evidence that the protein has been produced; this is
+    the entry saying how. Empty means the deposition does not state it, which
+    is common for older entries and is not "not expressed".
+    """
+    hosts: list[str] = []
+    plasmids: list[str] = []
+    mutations: list[str] = []
+    lengths: list[int] = []
+    for entity in entities:
+        for source in entity.get("entity_src_gen") or []:
+            if (host := _host(source)) and host not in hosts:
+                hosts.append(host)
+            plasmid = (source.get("plasmid_name") or "").strip()
+            if plasmid and plasmid not in plasmids:
+                plasmids.append(plasmid)
+        mutation = ((entity.get("rcsb_polymer_entity") or {}).get("pdbx_mutation") or "").strip()
+        if mutation and mutation.lower() not in NO_MUTATION and mutation not in mutations:
+            mutations.append(mutation)
+        if length := (entity.get("entity_poly") or {}).get("rcsb_sample_sequence_length"):
+            lengths.append(length)
+    return {
+        "expression_hosts": hosts,
+        "plasmids": plasmids,
+        # Engineered changes to the sequence that was crystallised, so a
+        # construct that is not the wild-type protein says so.
+        "mutations": mutations,
+        # The longest chain, not their sum: a precursor cleaved into an alpha
+        # and a beta chain (6OYY, panD) was expressed once.
+        "construct_length": max(lengths) if lengths else None,
+    }
+
+
 def normalize(entries: Iterator[dict[str, Any]], accessions: set[str]) -> Iterator[dict[str, Any]]:
     """One row per (PDB entry, accession) pair the atlas knows about."""
     for entry in entries:
@@ -219,6 +277,7 @@ def normalize(entries: Iterator[dict[str, Any]], accessions: set[str]) -> Iterat
         chains_of: dict[str, list[str]] = {}
         entity_of: dict[str, dict[str, Any]] = {}
         described: dict[str, list[str]] = {}
+        entities_of: dict[str, list[dict[str, Any]]] = {}
         for polymer in entry.get("polymer_entities") or []:
             identifiers = polymer.get("rcsb_polymer_entity_container_identifiers") or {}
             for reference in identifiers.get("reference_sequence_identifiers") or []:
@@ -227,6 +286,7 @@ def normalize(entries: Iterator[dict[str, Any]], accessions: set[str]) -> Iterat
                     continue
                 chains_of.setdefault(accession, []).extend(identifiers.get("auth_asym_ids") or [])
                 entity_of.setdefault(accession, polymer)
+                entities_of.setdefault(accession, []).append(polymer)
                 description = (polymer.get("rcsb_polymer_entity") or {}).get("pdbx_description")
                 if description and description not in described.setdefault(accession, []):
                     described[accession].append(description)
@@ -256,8 +316,11 @@ def normalize(entries: Iterator[dict[str, Any]], accessions: set[str]) -> Iterat
                 )[:10],
                 "chains": chains,
                 # Every entity the accession owns, so a row covering an alpha
-                # and a beta chain is not labelled as just one of them.
-                "entity_description": " / ".join(described.get(accession, [])) or None,
+                # and a beta chain is not labelled as just one of them. Sorted,
+                # because RCSB does not return entities in a stable order and a
+                # rebuild should not produce a diff over that.
+                "entity_description": " / ".join(sorted(described.get(accession, []))) or None,
+                **_construct(entities_of.get(accession, [])),
                 "components": components,
                 "ligand_ids": [c["comp_id"] for c in ligands],
                 "n_ligands": len(ligands),

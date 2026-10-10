@@ -100,8 +100,10 @@ def test_one_accession_split_over_two_entities_keeps_all_its_chains(entries: lis
     assert pand["n_ligands"] == 1
     assert pand["ligand_ids_elsewhere"] == []
     # The row covers both entities, so it must not be labelled as one of them.
+    # Sorted: RCSB does not return entities in a stable order, and a rebuild
+    # should not produce a diff because the two came back the other way round.
     assert pand["entity_description"] == (
-        "Aspartate 1-decarboxylase beta chain / Aspartate 1-decarboxylase alpha chain"
+        "Aspartate 1-decarboxylase alpha chain / Aspartate 1-decarboxylase beta chain"
     )
 
 
@@ -361,3 +363,59 @@ def test_with_no_release_anywhere_it_is_unknown_not_a_guess(
 ) -> None:
     monkeypatch.setattr(chembl, "RAW", tmp_path)
     assert chembl.release_from_api() == "unknown"
+
+
+# --- has this protein been made, and from what? -------------------------------------
+
+
+def test_the_construct_is_recorded(structures: dict) -> None:
+    """A structure is proof the protein was produced; the entry says how.
+
+    DprE1 was expressed in E. coli BL21(DE3) from pET28a as a 461-residue
+    construct, which is most of the 461-residue protein and not a domain.
+    """
+    dpre1 = structures[("4KW5", "P9WJF1")]
+    assert dpre1["expression_hosts"] == ["Escherichia coli BL21(DE3)"]
+    assert dpre1["plasmids"] == ["pET28a"]
+    assert dpre1["construct_length"] == 461
+
+
+def test_wild_type_is_not_a_mutation(structures: dict) -> None:
+    """`pdbx_mutation` says "wild-type" where there is none, which is a claim of absence."""
+    assert structures[("4KW5", "P9WJF1")]["mutations"] == []
+
+
+def test_an_engineered_mutation_is_kept(structures: dict) -> None:
+    """1ZID is InhA carrying T2A: the construct is not the wild-type sequence."""
+    assert structures[("1ZID", "P9WGR1")]["mutations"] == ["T2A"]
+
+
+def test_a_strain_already_in_the_host_name_is_not_repeated(structures: dict) -> None:
+    """1ZID gives host "Escherichia coli BL21" and strain "BL21" separately."""
+    assert structures[("1ZID", "P9WGR1")]["expression_hosts"] == ["Escherichia coli BL21"]
+
+
+def test_an_accessions_entities_are_pooled_not_duplicated(entries: list[dict]) -> None:
+    """6OYY is one panD precursor cleaved into an alpha and a beta chain.
+
+    Both entities carry the same host and plasmid, and the construct length is
+    the longer of the two rather than their sum -- they are one chain, cut.
+    """
+    (pand,) = pdb.normalize(iter(entries), {"P9WIL3"})
+    assert pand["expression_hosts"] == ["Escherichia coli BL21(DE3)"]
+    assert pand["plasmids"] == ["pET21"]
+    assert pand["construct_length"] == 123
+
+
+def test_an_entity_with_no_expression_record_says_nothing(
+    entries: list[dict], structures: dict
+) -> None:
+    """5UHB's DNA entities have no source organism; its protein ones do.
+
+    An empty list is "the entry does not say", which is the common case for
+    older depositions and must not read as "not expressed".
+    """
+    (rpob,) = pdb.normalize(iter(entries), {"P9WGY9"})
+    assert rpob["expression_hosts"] == ["Escherichia coli 'BL21-Gold(DE3)pLysS AG'"]
+    assert rpob["plasmids"] == []
+    assert structures[("2CCA", "P9WIE5")]["plasmids"] == ["PKATII"]

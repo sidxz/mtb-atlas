@@ -265,6 +265,45 @@ Taking the first entity's chains alone reported "no ligand" for the structure
 of pyrazinamide's active metabolite on its own target, across 41 entries. Every
 chain an accession owns is pooled before the comparison.
 
+### Has anyone made this protein, and from what?
+
+A structure is itself proof the protein was produced; the deposition says how,
+and nothing else in the store does. Four columns on `structures`, all from
+fields added to the GraphQL query already being sent — no new source, no new
+request.
+
+| Column | From | Populated |
+|---|---|---|
+| `expression_hosts` | `entity_src_gen.pdbx_host_org_scientific_name` + `_strain` | 4,262 of 4,803 |
+| `plasmids` | `entity_src_gen.plasmid_name` | 1,649 |
+| `construct_length` | `entity_poly.rcsb_sample_sequence_length` | 4,803 |
+| `mutations` | `rcsb_polymer_entity.pdbx_mutation` | 581 |
+
+DprE1 reads: *E. coli* BL21(DE3), pET28a, a 481-residue construct — the whole
+protein, not a domain. 134 entries were expressed in *Mycolicibacterium
+smegmatis* MC² 155 rather than *E. coli*, which for a membrane protein is the
+useful part of the answer.
+
+Three things depositors do that the ingester has to absorb:
+
+- **`pdbx_mutation` states the absence of a mutation in words.** 4KW5 says
+  `wild-type`, and others say `none` or `-`. Those are dropped, so a non-empty
+  `mutations` always means the crystallised sequence differs from the
+  wild-type protein. 1ZID (InhA) keeps `T2A`.
+- **The strain appears in either field, or both.** 1ZID gives host
+  `Escherichia coli BL21` and strain `BL21`; joining them naively reads
+  "Escherichia coli BL21 BL21". The strain is appended only when it is not
+  already in the name.
+- **Casing is the depositor's.** `ESCHERICHIA COLI UM262` is recorded as
+  written rather than tidied, so grouping hosts means normalising at query
+  time. The agent's schema note says so.
+
+An empty list means the entry does not state it — common for older
+depositions — and never that the protein was not expressed. Entities are
+pooled per accession, so panD's alpha and beta chains (6OYY) give one host and
+one plasmid, and `construct_length` is the longer chain rather than their sum:
+one precursor, expressed once and then cut.
+
 ### Chemical components (M7)
 
 - **Query:** `chem_comps(comp_ids: [...])` on the same GraphQL endpoint, 100

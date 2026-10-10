@@ -650,6 +650,37 @@ function BoundLigands({ detail }: { detail: Detail }) {
   );
 }
 
+/** How the protein was made, which only the deposition says.
+ *
+ * A structure is already proof that someone produced the protein; this is the
+ * part that tells you what to order — the host, the vector, how much of the
+ * sequence was expressed, and whether it was the wild-type at all. Empty means
+ * the entry does not state it, which is common for older depositions.
+ */
+function Construct({ structure }: { structure: Record<string, any> }) {
+  const hosts: string[] = structure.expression_hosts ?? [];
+  const plasmids: string[] = structure.plasmids ?? [];
+  const mutations: string[] = structure.mutations ?? [];
+  const length: number | null = structure.construct_length ?? null;
+  const parts = [length ? `${length} aa` : null, plasmids.join(", ") || null].filter(Boolean);
+  if (!parts.length && !mutations.length && !hosts.length) {
+    return <td className="faint">—</td>;
+  }
+  return (
+    <td className="dim" title={hosts.join(" · ") || "Expression host not stated"}>
+      {parts.join(" · ")}
+      {mutations.length > 0 && (
+        <>
+          {parts.length > 0 && " · "}
+          <b title="Engineered: the crystallised sequence is not the wild-type">
+            {mutations.join(", ")}
+          </b>
+        </>
+      )}
+    </td>
+  );
+}
+
 function StructureTable({ detail }: { detail: Detail }) {
   return (
     <div className="scroller" style={{ marginTop: 12 }}>
@@ -662,6 +693,7 @@ function StructureTable({ detail }: { detail: Detail }) {
             <th>Released</th>
             <th>Ligands</th>
             <th>Elsewhere</th>
+            <th title="What was expressed, as the deposition states it">Construct</th>
           </tr>
         </thead>
         <tbody>
@@ -677,6 +709,7 @@ function StructureTable({ detail }: { detail: Detail }) {
               <td className="mono faint" title="Bound to another chain in the same entry">
                 {s.ligand_ids_elsewhere?.length ? s.ligand_ids_elsewhere.join(" ") : "—"}
               </td>
+              <Construct structure={s} />
             </tr>
           ))}
         </tbody>

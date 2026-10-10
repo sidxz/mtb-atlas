@@ -76,7 +76,15 @@ TABLE_NOTES = {
     "nothing, which is not a negative finding: 0 transmembrane segments is 'none "
     "annotated', not 'soluble'.",
     "structures": "One row per (pdb_id, uniprot_acc). Join on uniprot_acc, NOT rv_id. "
-    "`ligand_ids` excludes cofactors and crystallisation additives.",
+    "`ligand_ids` excludes cofactors and crystallisation additives. `expression_hosts`, "
+    "`plasmids`, `construct_length` and `mutations` are how the protein was PRODUCED, as "
+    "the deposition states it -- the only answer in the store to 'has anyone made this "
+    "protein, and from what'. An empty list means the entry does not say (1,649 of 4,803 "
+    "rows name a plasmid), never that it was not expressed. Host strings are depositor "
+    "text and inconsistent in case and strain naming, so group them with care: "
+    "'Escherichia coli BL21(DE3)' and 'ESCHERICHIA COLI BL21(DE3)' are the same host. "
+    "`mutations` is empty for a wild-type construct; a non-empty one means the sequence "
+    "crystallised is not the wild-type protein.",
     "predicted_structures": "AlphaFold, keyed on uniprot_acc.",
     "activities": "ChEMBL bioactivity. `evidence` is direct | orthologue | whole_cell. "
     "Join to a gene through crosswalk.chembl_targets or target_summary. `assay_type` is "

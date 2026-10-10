@@ -18,9 +18,12 @@ from ..store import write_parquet
 
 SOURCE = "uniprot"
 PROTEOME = "UP000001584"
+# Domains come free in the same stream. The alternative is InterPro's
+# protein2ipr.dat.gz, which is 13.3 GB for the same 3,997 answers.
 FIELDS = (
     "accession,id,reviewed,gene_oln,gene_primary,gene_synonym,protein_name,"
-    "length,xref_pdb,xref_chembl,xref_alphafolddb"
+    "length,xref_pdb,xref_chembl,xref_alphafolddb,xref_interpro,xref_pfam,"
+    "go_id,ec"
 )
 URL = (
     f"https://rest.uniprot.org/uniprotkb/stream?query=proteome:{PROTEOME}"
@@ -63,6 +66,10 @@ def normalize(path: Path) -> Iterator[dict[str, Any]]:
                 "pdb_ids": _ids(row["PDB"]),
                 "chembl_target_ids": _ids(row["ChEMBL"]),
                 "alphafold_ids": _ids(row["AlphaFoldDB"]),
+                "interpro_ids": _ids(row["InterPro"]),
+                "pfam_ids": _ids(row["Pfam"]),
+                "go_ids": _ids(row["Gene Ontology IDs"]),
+                "ec_numbers": [e.strip() for e in row["EC number"].split(";") if e.strip()],
             }
 
 

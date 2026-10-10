@@ -8,7 +8,15 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import type { Activity, Compound, TargetDetail as Detail, Meta, Variant } from "./api";
+import {
+  conditionLabel,
+  type Activity,
+  type Compound,
+  type ConditionHit,
+  type TargetDetail as Detail,
+  type Meta,
+  type Variant,
+} from "./api";
 import { ClinicalTab, phaseLabel, type Focus } from "./Clinical";
 import { StructureViewer, alphafoldSource, pdbSource, type ViewerSource } from "./StructureViewer";
 import { ChemblLink, Structure } from "./Structure";
@@ -26,6 +34,7 @@ const SOURCES = {
   clinical: "ChEMBL TB indications and mechanisms · Bosch 2021 · ClinicalTrials.gov",
   uniprot: "UniProt · CC BY 4.0",
   cholesterol: "Griffin et al. 2011, PLoS Pathog · Tables S3/S4 · CC BY 4.0",
+  tnseq: "MtbTnDB · Jinich et al. 2025, Mol Microbiol · Zenodo 10.5281/zenodo.15284946 · CC BY 4.0",
 };
 
 type Tab = "evidence" | "structure" | "chemistry" | "resistance" | "clinical" | "network";
@@ -40,6 +49,116 @@ function Row({ label, source, children }: { label: string; source?: string; chil
       <div>{children}</div>
       {source && <span className="src">{source}</span>}
     </div>
+  );
+}
+
+/**
+ * Conditional TnSeq, with the three things that make it readable honestly.
+ *
+ * The denominator is shown, so two hits can be read against what was testable.
+ * A gene that took no insertions anywhere gets the absence, not a zero. And
+ * knockout backgrounds are kept apart from conditions, because a hit in one is
+ * an interaction with that gene -- mmpL3 looks like it has a glycerol
+ * phenotype until you notice the screen is marP_KO.
+ */
+function ConditionTable({ hits, interaction }: { hits: ConditionHit[]; interaction?: boolean }) {
+  return (
+    <div className="scroller">
+      <table>
+        <thead>
+          <tr>
+            <th>{interaction ? "Background" : "Condition"}</th>
+            <th>Where</th>
+            <th className="n">log2FC</th>
+            <th className="n">q</th>
+          </tr>
+        </thead>
+        <tbody>
+          {hits.map((hit) => (
+            <tr key={hit.screen_id} title={hit.description ?? hit.screen_id}>
+              <td>
+                {interaction ? `Δ${hit.interaction ?? "?"}` : conditionLabel(hit)}
+                {/* Two doses of the same drug, or two timepoints, land on the
+                    same label. The screen id is the only thing that tells them
+                    apart, so it is shown rather than letting the rows read as
+                    duplicates. */}
+                {hits.filter((other) => conditionLabel(other) === conditionLabel(hit)).length > 1 && (
+                  <span className="dim"> · {hit.screen_id.split("_vs_")[0]}</span>
+                )}
+                {hit.cross_study && (
+                  <span className="chip warn" title="The control library is from another study, so a batch effect is possible">
+                    cross-study
+                  </span>
+                )}
+              </td>
+              <td className="dim">{hit.condition_class?.replace("_", " ") ?? "—"}</td>
+              <td className="n" style={{ color: hit.log2fc < 0 ? "var(--accent)" : "var(--fg)" }}>
+                {hit.log2fc > 0 ? "+" : ""}
+                {hit.log2fc.toFixed(2)}
+              </td>
+              <td className="n dim">{hit.q_value === 0 ? "<1e-5" : hit.q_value.toExponential(1)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function Conditions({ detail }: { detail: Detail }) {
+  const { measured, unmeasured } = detail.tnseq_coverage;
+  const total = measured + unmeasured;
+  if (!total) {
+    return <span className="absent">not in any annotated screen</span>;
+  }
+  if (!measured) {
+    return (
+      <>
+        <span className="absent">not measurable in any of the {unmeasured} screens</span>
+        <div className="note">
+          The gene tolerates no transposon insertions, so no screen had anything to compare.
+          Expected for an essential gene, and not the same as no effect.
+        </div>
+      </>
+    );
+  }
+  return (
+    <>
+      <span className="big" style={{ color: detail.conditions.length ? "var(--accent)" : "var(--fg)" }}>
+        {detail.conditions.length}
+      </span>{" "}
+      <span className="dim">
+        of {measured} measurable condition{measured === 1 ? "" : "s"} significant
+        {unmeasured > 0 && ` · ${unmeasured} could not measure it`}
+      </span>
+      {detail.conditions.length > 0 ? (
+        <>
+          <ConditionTable hits={detail.conditions} />
+          <div className="note">
+            Negative is depleted. Significant is q &lt; 0.05, which is this atlas&rsquo;s cut, not
+            the authors&rsquo;. TRANSIT counts TA sites across the whole ORF, so for a gene that is
+            essential in broth a fold change here can rest on insertions at the gene&rsquo;s ends,
+            where they disrupt least — read it with the essentiality call above.
+          </div>
+        </>
+      ) : (
+        <div className="note">
+          Significant is q &lt; 0.05, this atlas&rsquo;s cut rather than the authors&rsquo;.
+          {unmeasured > 0 &&
+            " A screen that could not measure it is not evidence of no effect: the gene took no insertions there."}
+        </div>
+      )}
+      {detail.interactions.length > 0 && (
+        <>
+          <div className="note" style={{ color: "var(--fg)" }}>
+            Also significant in {detail.interactions.length} knockout background
+            {detail.interactions.length === 1 ? "" : "s"}. That is a genetic interaction with the
+            deleted gene, <b>not</b> a condition this gene is required under.
+          </div>
+          <ConditionTable hits={detail.interactions} interaction />
+        </>
+      )}
+    </>
   );
 }
 
@@ -331,6 +450,10 @@ function Evidence({ detail }: { detail: Detail }) {
             Required in a mouse infection — Sassetti &amp; Rubin 2003, carried in Griffin&rsquo;s table.
           </div>
         )}
+      </Row>
+
+      <Row label="Across conditions" source={SOURCES.tnseq}>
+        <Conditions detail={detail} />
       </Row>
 
       <Row label="Vulnerability (CRISPRi)" source={SOURCES.vulnerability}>

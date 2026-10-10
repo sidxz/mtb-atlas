@@ -34,6 +34,8 @@ LICENCES = {
     "interactions": ("STRING v12.5", "CC BY 4.0"),
     "homology": ("phmmer vs reviewed human proteome", "CC BY 4.0"),
     "conditional_fitness": ("Griffin 2011, PLoS Pathog (cholesterol TnSeq)", "CC BY 4.0"),
+    "conditional_tnseq": ("MtbTnDB / Jinich 2025, Mol Microbiol (TRANSIT output)", "CC BY 4.0"),
+    "tnseq_screens": ("MtbTnDB screen annotation, Jinich 2025", "CC BY 4.0"),
     "ligands": ("RCSB PDB chemical components", "CC0 1.0"),
     "drugs": ("ChEMBL drug indications and mechanisms", "CC BY-SA 3.0"),
     # The terms ask for attribution, the processing date (carried in the
@@ -286,6 +288,9 @@ class TargetDetail(TargetSummary):
     bound_ligands: list[dict[str, Any]] = Field(default_factory=list)
     drugs: list[dict[str, Any]] = Field(default_factory=list)
     trials: list[dict[str, Any]] = Field(default_factory=list)
+    conditions: list[dict[str, Any]] = Field(default_factory=list)
+    interactions: list[dict[str, Any]] = Field(default_factory=list)
+    tnseq_coverage: dict[str, int] = Field(default_factory=dict)
     absences: list[str] = Field(default_factory=list)
 
 
@@ -583,6 +588,44 @@ def target(rv_id: str) -> TargetDetail:
         [accession],
     )
 
+    # Conditional TnSeq. Only annotated screens: an unannotated screen's
+    # condition is NOT RECORDED, and a row saying nothing about what was tested
+    # is not evidence. Interaction backgrounds come back separately because a
+    # hit in one is an interaction with that gene, not a conditional
+    # requirement -- mmpL3 in marP_KO is the case that taught us.
+    SCREENS = (
+        " FROM conditional_tnseq t JOIN tnseq_screens s USING (screen_id)"
+        " WHERE t.rv_id = ? AND s.annotated"
+        "   AND (s.interaction_gene IS NOT NULL OR s.interaction_gene_name IS NOT NULL) = ?"
+    )
+    COLUMNS = (
+        "SELECT s.screen_id, s.condition_class, s.description, s.study, s.cross_study,"
+        " s.stress, s.carbon_source, s.medium, s.mouse_strain, s.mtb_strain,"
+        " coalesce(s.interaction_gene_name, s.interaction_gene) AS interaction,"
+        " t.log2fc, t.q_value, t.measured, t.n_ta_sites, t.sum_control, t.sum_experimental"
+    )
+    ORDER = " ORDER BY t.q_value, abs(t.log2fc) DESC"
+    # q < 0.05 is this atlas's cut, not the authors', so the UI prints it.
+    screened = built("conditional_tnseq") and built("tnseq_screens")
+    SIGNIFICANT = COLUMNS + SCREENS + " AND t.measured AND t.q_value < 0.05" + ORDER
+    conditions = _query(connection, SIGNIFICANT, [rv_id, False]) if screened else []
+    interactions = _query(connection, SIGNIFICANT, [rv_id, True]) if screened else []
+    # The denominator, so "two hits" can be read against what was testable.
+    coverage = (
+        _query(
+            connection,
+            "SELECT count(*) FILTER (WHERE t.measured) AS measured,"
+            " count(*) FILTER (WHERE NOT t.measured) AS unmeasured"
+            " FROM conditional_tnseq t JOIN tnseq_screens s USING (screen_id)"
+            " WHERE t.rv_id = ? AND s.annotated"
+            "   AND s.interaction_gene IS NULL AND s.interaction_gene_name IS NULL",
+            [rv_id],
+        )
+        if screened
+        else []
+    )
+    tnseq = dict(coverage[0]) if coverage else {"measured": 0, "unmeasured": 0}
+
     absences = []
     if not structures:
         absences.append("No experimental structure in the PDB for this accession.")
@@ -598,6 +641,19 @@ def target(rv_id: str) -> TargetDetail:
         absences.append(
             "Not in the WHO catalogue, which covers only the 65 genes with matched "
             "phenotypic drug-susceptibility testing."
+        )
+    if not tnseq["measured"] and tnseq["unmeasured"]:
+        absences.append(
+            f"Took no transposon insertions in any of the {tnseq['unmeasured']} conditional "
+            "TnSeq screens that cover it, so none of them could measure it. That is the "
+            "expected result for an essential gene, and it is not 'no effect'."
+        )
+    elif not conditions and tnseq["measured"]:
+        n = tnseq["measured"]
+        absences.append(
+            f"Measurable in {n} conditional TnSeq screen{'s' if n > 1 else ''} and "
+            f"significant in none of them (q < 0.05), so no condition tested here changes "
+            "this gene's fitness."
         )
     if record.get("vulnerability_index") is None:
         absences.append("No CRISPRi vulnerability measurement for this gene.")
@@ -643,6 +699,9 @@ def target(rv_id: str) -> TargetDetail:
         bound_ligands=bound_ligands,
         drugs=drugs,
         trials=trials,
+        conditions=conditions,
+        interactions=interactions,
+        tnseq_coverage=tnseq,
         absences=absences,
     )
 

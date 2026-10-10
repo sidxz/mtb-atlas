@@ -202,3 +202,33 @@ def test_a_wildcard_in_the_term_is_a_character_not_a_pattern(client: TestClient)
         found = client.get("/search", params={"q": term}).json()
         assert all(items == [] for items in found.values()), term
     assert client.get("/targets", params={"q": "%"}).json()["total"] == 0
+
+
+def test_an_unmeasurable_gene_gets_an_absence_not_a_zero(client: TestClient) -> None:
+    """inhA takes no insertions in Griffin's library, so that screen measured nothing.
+
+    The gene page has to say that, because `log2fc 0.00, q 1.0` is exactly what
+    a gene with no effect also reads.
+    """
+    page = client.get("/targets/Rv1484").json()
+    assert page["conditions"] == []
+    assert page["tnseq_coverage"]["unmeasured"] >= 1
+    assert any("no transposon insertions" in a for a in page["absences"])
+
+
+def test_a_knockout_background_is_not_served_as_a_condition(client: TestClient) -> None:
+    """A hit in a knockout screen is an interaction with the deleted gene."""
+    page = client.get("/targets/Rv3790").json()
+    screens = {hit["screen_id"] for hit in page["conditions"]}
+    assert all("_KO_" not in screen for screen in screens)
+
+
+def test_only_annotated_screens_reach_the_gene_page(client: TestClient) -> None:
+    """A screen whose condition the authors do not record describes nothing.
+
+    `CC001.Unc_vs_mbio_H37Rv` is in the store and deliberately unannotated, so
+    it must not appear as though it were a condition.
+    """
+    page = client.get("/targets/Rv3790").json()
+    served = {hit["screen_id"] for hit in page["conditions"] + page["interactions"]}
+    assert "CC001.Unc_vs_mbio_H37Rv" not in served

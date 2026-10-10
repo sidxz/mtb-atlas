@@ -14,6 +14,7 @@ from atlas.sources import (
     clinicaltrials,
     conditional,
     essentiality,
+    mtbtndb,
     mycobrowser,
     pdb,
     resistance,
@@ -125,6 +126,23 @@ def evidence_store(store: Path) -> Path:
         source=conditional.SOURCE,
         source_version=conditional.CITATION,
         retrieved_at="2026-10-09",
+        store=store,
+    )
+    tnseq_archive = FIXTURES / "mtbtndb_transit_outputs.tar.gz"
+    write_parquet(
+        "conditional_tnseq",
+        mtbtndb.normalize(tnseq_archive),
+        source=mtbtndb.SOURCE,
+        source_version=mtbtndb.SOURCE_VERSION,
+        retrieved_at="2026-10-10",
+        store=store,
+    )
+    write_parquet(
+        "tnseq_screens",
+        mtbtndb.screens(tnseq_archive, mtbtndb.annotation(FIXTURES / "mtbtndb_col_desc.tsv")),
+        source=mtbtndb.SOURCE,
+        source_version=mtbtndb.SOURCE_VERSION,
+        retrieved_at="2026-10-10",
         store=store,
     )
     write_parquet(

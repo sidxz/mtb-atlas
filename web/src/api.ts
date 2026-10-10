@@ -246,8 +246,49 @@ export interface TargetDetail extends TargetSummary {
   annotation_score: number | null;
   drugs: GeneDrug[];
   trials: GeneTrial[];
+  /** Significant (q < 0.05) results in an annotated MtbTnDB condition screen. */
+  conditions: ConditionHit[];
+  /** The same, but in a knockout background: an interaction, not a condition. */
+  interactions: ConditionHit[];
+  /** How many annotated condition screens could and could not measure this gene. */
+  tnseq_coverage: { measured: number; unmeasured: number };
   /** What the atlas does NOT know, stated rather than left as a blank cell. */
   absences: string[];
+}
+
+export interface ConditionHit {
+  screen_id: string;
+  /** in_vitro | in_vivo | in_cell, or null where the authors record none. */
+  condition_class: string | null;
+  description: string | null;
+  study: string;
+  /** The control library came from a different study: a batch-effect caveat. */
+  cross_study: boolean;
+  stress: string | null;
+  carbon_source: string | null;
+  medium: string | null;
+  mouse_strain: string | null;
+  mtb_strain: string | null;
+  /** The knockout background, for an interaction screen. */
+  interaction: string | null;
+  log2fc: number;
+  q_value: number;
+  measured: boolean;
+  n_ta_sites: number | null;
+  sum_control: number | null;
+  sum_experimental: number | null;
+}
+
+/** What was varied, in the authors' own words, shortest useful field first. */
+export function conditionLabel(hit: ConditionHit): string {
+  return (
+    hit.stress ??
+    hit.carbon_source ??
+    hit.mouse_strain ??
+    hit.medium ??
+    hit.description ??
+    hit.screen_id
+  );
 }
 
 /**

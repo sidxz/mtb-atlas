@@ -53,7 +53,7 @@ def write_parquet(
         tmp_path = Path(tmp.name)
 
     try:
-        duckdb.sql(
+        duckdb.connect().execute(
             f"COPY (SELECT * FROM read_json_auto('{tmp_path}', format='newline_delimited')) "
             f"TO '{out}' (FORMAT PARQUET)"
         )
@@ -63,14 +63,25 @@ def write_parquet(
 
 
 def read(name: str, *, store: Path | None = None) -> duckdb.DuckDBPyRelation:
-    """Read a store file back. The API layer uses only this, never an ingester."""
-    return duckdb.sql(f"SELECT * FROM '{(store or STORE) / f'{name}.parquet'}'")
+    """Read a store file back. The API layer uses only this, never an ingester.
+
+    Each read gets its own connection. On DuckDB's shared default connection a
+    partly fetched result keeps a transaction open, and one failed read -- a
+    source not built yet -- then aborted every read after it in the process.
+    """
+    return duckdb.connect().sql(f"SELECT * FROM '{(store or STORE) / f'{name}.parquet'}'")
 
 
 def rows(name: str, *, store: Path | None = None) -> tuple[list[tuple], dict[str, int]]:
     """A store file as (rows, column index), for joins that are clearer in Python."""
     relation = read(name, store=store)
     return relation.fetchall(), {c: i for i, c in enumerate(relation.columns)}
+
+
+def records(name: str, *, store: Path | None = None) -> list[dict[str, Any]]:
+    """A store file as one dict per row, for joins written in Python."""
+    relation = read(name, store=store)
+    return [dict(zip(relation.columns, row, strict=True)) for row in relation.fetchall()]
 
 
 def provenance(name: str, *, store: Path | None = None) -> tuple[str, str]:

@@ -17,7 +17,7 @@ All sources are public. No consortium data, ever.
 | [AlphaFold DB](#alphafold-db) | v6 (2025-08-24) | CC BY 4.0 | Predicted structures (M1) |
 | [DeJesus 2017](#essentiality-dejesus-2017) | mBio, Table S3 | CC BY 4.0 | Essentiality (M1) |
 | [WHO catalogue](#who-mutation-catalogue) | 2nd ed. (2023) | ODC-By 1.0 | Resistance mutations |
-| [Bosch 2021 CRISPRi](#vulnerability-bosch-2021) | Cell, Table S3 | CC BY 4.0 | Vulnerability index |
+| [Bosch 2021 CRISPRi](#vulnerability-bosch-2021) | Cell, Table S3 | CC BY 4.0 | Vulnerability index, in H37Rv and in the HN878 clinical isolate |
 | [Griffin 2011](#conditional-fitness-griffin-2011) | PLoS Pathog, Tables S3/S4 | CC BY 4.0 | Fitness on cholesterol (M7) |
 | [STRING](#string) | v12.5, taxon 83332 | CC BY 4.0 | Interaction partners |
 | [phmmer vs human proteome](#human-homology) | UniProt UP000005640, reviewed | CC BY 4.0 | Human anti-target check |
@@ -352,10 +352,17 @@ reveals diverse vulnerabilities of M. tuberculosis.* Cell 2021;184(17):
   — 3,088,676 bytes, verified byte-identical to the copy inside the Europe PMC
   zip. PMC's own supplementary path returns a 1,817-byte HTML interstitial to
   scripted requests, and the Europe PMC zip is 50 MB for the same file.
-- **Sheet to use: `(1) Mtb H37Rv`**, 28 columns, 4,052 rows (4,005 `RVBD*`
-  genes plus 47 RNA features).
 - **Key:** `locus_tag` is **`RVBD3790`, not `Rv3790`**. The `c` suffix survives
   (`RVBD0206c`), so the transform is a prefix swap.
+
+**Four sheets, three of them used.**
+
+| Sheet | Rows | Table | Note |
+|---|---|---|---|
+| `(1) Mtb H37Rv` | 4,052 | `vulnerability` | 28 columns, 4,005 `RVBD*` genes plus 47 RNA features |
+| `(2) Mtb HN878` | 4,049 | `strain_vulnerability` | identical 28 columns, the same series in a clinical isolate |
+| `(3) Msmeg` | — | **not ingested** | `MSMEG*` tags; reaching an Rv id needs an orthologue mapping this atlas does not have, and building one would attribute a surrogate's measurement to an Mtb gene |
+| `(4) Mtb diff vuln` | 512 | `strain_vulnerability` | the authors' own H37Rv-vs-HN878 differential, joined onto sheet 2 |
 
 **Why this matters more than essentiality.** TnSeq answers "can this gene be
 deleted" — yes or no. CRISPRi titration answers "how much of this protein can
@@ -375,6 +382,32 @@ Bonus: the sheet's `antibacterial` column names the drug already targeting each
 gene — SQ109→mmpL3, PBTZ169→dprE1, Q203, bedaquiline, rifamycins and others.
 That is a machine-readable, openly licensed list of validated TB targets, which
 is exactly what the newtbdrugs pipeline page could not supply.
+
+### Does it hold in a clinical strain?
+
+H37Rv has been in culture since 1905. HN878 is a Beijing-lineage clinical
+isolate, and sheet 2 runs the same knockdown series in it: 4,002 genes reach an
+Rv locus, 579 of them `certain`. **This is the only axis in the atlas that
+tests whether a target's vulnerability is a property of the organism or of the
+lab strain.**
+
+- `delta_vi` is the authors' own, from sheet 4, and runs **HN878 minus H37Rv**.
+  The index is negative-is-vulnerable, so a **positive delta means *less*
+  vulnerable in the clinical strain**. accD6: −11.45 in H37Rv, −2.27 in HN878,
+  delta +9.19, `certain` in both. purK and pmmA do the same thing.
+- It runs the other way too. panD (−4.07 → −9.28) and panC (−3.93 → −9.00,
+  40 structures and 123 compounds already) are substantially *more* vulnerable
+  in the clinical strain, along with the rest of the pantothenate pathway.
+- `delta_vi_norm` is **not** a rescaling of `delta_vi`: for inhA the two
+  disagree in sign (+0.382 raw, −0.286 normalised). Neither is derivable from
+  the other, so both are carried.
+- **The differential covers 507 genes, not every gene.** All 507 are `certain`
+  in both strains, but so are 576 genes — the authors selected a subset on
+  grounds the sheet does not state, so the atlas carries their selection rather
+  than reconstructing a threshold. `differential_reported` distinguishes "they
+  reported no difference" from "they reported none for this gene", and a gene
+  absent from sheet 2 altogether (2 in the gene universe) is a third state
+  again: never measured in HN878.
 
 ## Conditional fitness: Griffin 2011
 

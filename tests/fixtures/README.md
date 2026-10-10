@@ -33,3 +33,21 @@ upstream change and the test that names it should be updated deliberately.
 
 `chembl_uniprot_mapping.txt` additionally keeps `A0QP27` (*M. smegmatis* MmpL3,
 `CHEMBL5465372`) — the far side of the orthologue bridge.
+
+## `bosch_vulnerability.xlsx`
+
+A real slice of Bosch 2021 Table S3, keeping the four sheets' headers and nine
+loci. It is the only fixture for the CRISPRi ingester, which read one sheet of
+the four until the clinical-strain sheets were added.
+
+| Locus | Exercises |
+|---|---|
+| `RVBD3790` (dprE1) | Confident in both strains and in the differential sheet: the happy path |
+| `RVBD1484` (inhA) | Raw delta **+0.382**, normalised **−0.286** — the two disagree in sign, so neither can be derived from the other |
+| `RVBD0206c` (mmpL3) | The `c` suffix surviving the `RVBD` → `Rv` prefix swap |
+| `RVBD2247` (accD6) | −11.45 in H37Rv, −2.27 in HN878, confident in both: a target that collapses outside the lab strain |
+| `RVBD3601c` (panD) | The same comparison running the other way, −4.07 → −9.28 |
+| `RVBD0023` | Confident in **both** strains and still absent from the differential sheet — a NULL delta that is not a zero |
+| `RVBD0467` | Confident in H37Rv, **not** confident in HN878: the flag is per strain |
+| `RVBD2021c` | In the H37Rv sheet, absent from the HN878 sheet entirely — never measured, a third state |
+| `16S` | Not a locus tag: must be skipped rather than coerced |

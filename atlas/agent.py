@@ -46,6 +46,7 @@ TABLES = (
     "conditional_fitness",
     "resistance",
     "vulnerability",
+    "strain_vulnerability",
     "interactions",
     "homology",
     "chembl_targets",
@@ -84,8 +85,18 @@ TABLE_NOTES = {
     "that tolerates no transposon insertions, which is every in-vitro-essential gene** -- "
     "dprE1, inhA and mmpL3 are all unmeasured here, which is NOT the same as unaffected. "
     "A gene absent from this table was never screened.",
-    "vulnerability": "CRISPRi. `vulnerability_index` is NEGATIVE: more negative is more "
-    "vulnerable. Only rows with `certain` are confident estimates.",
+    "vulnerability": "CRISPRi in H37Rv, the lab strain. `vulnerability_index` is NEGATIVE: "
+    "more negative is more vulnerable. Only rows with `certain` are confident estimates.",
+    "strain_vulnerability": "The SAME CRISPRi series in HN878, a Beijing-lineage CLINICAL "
+    "isolate, one row per gene. H37Rv is not in here -- it is in `vulnerability`, so a "
+    "strain comparison is a join on rv_id. `delta_vi` is the authors' own and runs HN878 "
+    "MINUS H37Rv, so POSITIVE means LESS vulnerable in the clinical strain (accD6: -11.5 "
+    "in H37Rv, -2.3 in HN878, delta +9.2, confident in both). `delta_vi_norm` is not a "
+    "rescaling and can disagree in sign with `delta_vi`. The delta is reported for only "
+    "507 genes, a subset the authors chose of the 576 confident in both; NULL there means "
+    "no difference was reported, NOT a difference of zero, and "
+    "`differential_reported` says which. A gene absent from this table was never measured "
+    "in HN878. M. smegmatis is in the same supplement and deliberately NOT ingested.",
     "resistance": "WHO catalogue, keyed on GENE SYMBOL not Rv tag, and only 65 genes "
     "are in it. `associated` marks graded 1 or 2. `residue_position` is null "
     "for promoter, frameshift and stop variants. `drug` uses WHO's names, which are NOT "

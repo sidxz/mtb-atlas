@@ -92,6 +92,16 @@ This is the rule that outranks completeness.
   index as measured.
 - **"Essential" means ES or ESD.** Growth-defect is a real but weaker signal and
   lives in `fitness_cost`. Folding it into the word "essential" adds 135 genes.
+- **Vulnerability is measured in a strain, and H37Rv is not the only one.**
+  `strain_vulnerability` holds Bosch's HN878 series; `vulnerability` holds
+  H37Rv, and a comparison is a join. `delta_vi` runs **HN878 minus H37Rv**, so
+  positive is *less* vulnerable in the clinical isolate (accD6 −11.45 → −2.27).
+  It is reported for 507 genes, which is the authors' own subset of the 576
+  confident in both, so a NULL delta is not a difference of zero and
+  `differential_reported` says which it is. `delta_vi_norm` is not a rescaling
+  and can disagree in sign. The *M. smegmatis* sheet is deliberately not
+  ingested: an `MSMEG` tag reaches an Rv locus only through an orthologue
+  bridge this atlas does not have.
 - **Human homology is computed, not looked up, and always shown with its
   number.** UniRef co-membership was tried and returned zero homologs for all
   3,978 accessions, because UniRef50 clusters above the 25-40% range where

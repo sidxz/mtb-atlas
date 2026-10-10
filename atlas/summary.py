@@ -123,6 +123,16 @@ SELECT
     coalesce(v.crispr_essential, false) AS crispr_essential,
     v.antibacterial,
 
+    -- The same knockdown series in HN878, a clinical isolate. NULL where the
+    -- strain sheet never covered the locus. The delta is the authors' own and
+    -- runs HN878 minus H37Rv, so positive means less vulnerable in the clinic;
+    -- it is reported for 507 genes and absent, not zero, for the rest.
+    sv.vulnerability_index                 AS hn878_vulnerability_index,
+    sv.certain                             AS hn878_vi_certain,
+    sv.delta_vi                            AS hn878_delta_vi,
+    sv.delta_vi_norm                       AS hn878_delta_vi_norm,
+    coalesce(sv.differential_reported, false) AS hn878_differential_reported,
+
     coalesce(h.human_homolog, false)       AS human_homolog,
     coalesce(h.close_human_homolog, false) AS close_human_homolog,
     h.human_gene     AS human_homolog_gene,
@@ -192,6 +202,7 @@ LEFT JOIN protein_act pa ON pa.rv_id = w.rv_id
 LEFT JOIN cell_act    ca ON ca.rv_id = w.rv_id
 LEFT JOIN res ON res.gene = coalesce(w.gene_name, w.rv_id)
 LEFT JOIN vuln v ON v.rv_id = w.rv_id
+LEFT JOIN strain_vuln sv ON sv.rv_id = w.rv_id
 LEFT JOIN hom  h ON h.uniprot_acc = w.uniprot_acc
 LEFT JOIN inter i ON i.rv_id = w.rv_id
 LEFT JOIN prot pr ON pr.uniprot_acc = w.uniprot_acc
@@ -233,6 +244,15 @@ EMPTY_CLINICAL: dict[str, str] = {
 }
 CLINICAL_COUNTS = ("with_clinical_drug", "drugs", "trials")
 
+# A store built before the clinical-strain sheets were read has no such table,
+# and `make summary` on it should report absence rather than fail. The columns
+# are nullable either way, so an empty view is the whole stand-in.
+EMPTY_OPTIONAL: dict[str, str] = {
+    "strain_vulnerability": "SELECT NULL::VARCHAR AS rv_id, NULL::DOUBLE AS vulnerability_index,"
+    " NULL::BOOLEAN AS certain, NULL::DOUBLE AS delta_vi, NULL::DOUBLE AS delta_vi_norm,"
+    " NULL::BOOLEAN AS differential_reported WHERE false",
+}
+
 TABLES = {
     "walk": "crosswalk",
     "act": "activities",
@@ -241,6 +261,7 @@ TABLES = {
     "ess": "essentiality",
     "resistance": "resistance",
     "vuln": "vulnerability",
+    "strain_vuln": "strain_vulnerability",
     "hom": "homology",
     "interactions": "interactions",
     "cond": "conditional_fitness",
@@ -254,12 +275,14 @@ TABLES = {
 def build(*, store: Path | None = None) -> Path:
     base = store or STORE
     connection = duckdb.connect()
-    missing = [name for name in EMPTY_CLINICAL if not built(name, store=store)]
+    stand_ins = EMPTY_CLINICAL | EMPTY_OPTIONAL
+    absent = [name for name in stand_ins if not built(name, store=store)]
+    # Only the clinical tables blank the clinical columns; an absent strain
+    # sheet must not be read as "no drug acts on this gene".
+    missing = [name for name in absent if name in EMPTY_CLINICAL]
     for alias, name in TABLES.items():
         source = (
-            EMPTY_CLINICAL[name]
-            if name in missing
-            else f"SELECT * FROM '{base / f'{name}.parquet'}'"
+            stand_ins[name] if name in absent else f"SELECT * FROM '{base / f'{name}.parquet'}'"
         )
         connection.sql(f"CREATE VIEW {alias} AS {source}")
     rows = connection.sql(
@@ -273,7 +296,7 @@ def build(*, store: Path | None = None) -> Path:
 
     versions = {
         name: provenance(name, store=store)[0]
-        for name in sorted(set(TABLES.values()) - set(missing))
+        for name in sorted(set(TABLES.values()) - set(absent))
     }
     return write_parquet(
         "target_summary",

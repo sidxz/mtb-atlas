@@ -18,6 +18,7 @@ from atlas.sources import (
     pdb,
     resistance,
     uniprot,
+    vulnerability,
 )
 from atlas.store import read, write_parquet
 
@@ -131,6 +132,18 @@ def evidence_store(store: Path) -> Path:
         resistance.normalize(FIXTURES / "who_catalogue.txt"),
         source=resistance.SOURCE,
         source_version=resistance.EDITION,
+        retrieved_at="2026-10-09",
+        store=store,
+    )
+    # The clinical-strain sheet is a real slice of the published workbook, so
+    # the roll-up's HN878 columns are tested against the numbers in the paper.
+    # Only three of its loci are in this gene universe; the rest of the
+    # universe is how the roll-up's "never measured in HN878" state is proved.
+    write_parquet(
+        "strain_vulnerability",
+        vulnerability.normalize_strain(FIXTURES / "bosch_vulnerability.xlsx"),
+        source=vulnerability.SOURCE,
+        source_version=vulnerability.STRAIN_CITATION,
         retrieved_at="2026-10-09",
         store=store,
     )

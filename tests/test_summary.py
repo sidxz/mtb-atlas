@@ -236,3 +236,36 @@ def test_a_gene_the_screen_never_saw_is_null_not_false(rows: dict) -> None:
     for row in missing:
         assert row["cholesterol_log2_ratio"] is None
         assert row["required_in_vivo"] is None
+
+
+# --- vulnerability in a clinical strain --------------------------------------------
+
+
+def test_the_clinical_strain_index_rolls_up(rows: dict) -> None:
+    """dprE1 is confidently vulnerable in both strains, a little less so in HN878."""
+    dpre1 = rows["Rv3790"]
+    assert dpre1["vulnerability_index"] == pytest.approx(-9.417)
+    assert dpre1["hn878_vulnerability_index"] == pytest.approx(-7.837)
+    assert dpre1["hn878_vi_certain"] is True
+    assert dpre1["hn878_delta_vi"] == pytest.approx(1.58)
+    assert dpre1["hn878_differential_reported"] is True
+
+
+def test_both_deltas_survive_the_roll_up(rows: dict) -> None:
+    """inhA's raw and normalised deltas disagree in sign, so neither is dropped."""
+    inha = rows["Rv1484"]
+    assert inha["hn878_delta_vi"] == pytest.approx(0.382)
+    assert inha["hn878_delta_vi_norm"] == pytest.approx(-0.28623)
+
+
+def test_a_gene_never_measured_in_the_clinical_strain_is_null(rows: dict) -> None:
+    """rpoB has an H37Rv index and no HN878 row.
+
+    A zero would read as "equally vulnerable in the clinic", which is the one
+    thing the data does not say.
+    """
+    rpob = rows["Rv0667"]
+    assert rpob["vulnerability_index"] == pytest.approx(-9.567)
+    assert rpob["hn878_vulnerability_index"] is None
+    assert rpob["hn878_delta_vi"] is None
+    assert rpob["hn878_differential_reported"] is False

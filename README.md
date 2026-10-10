@@ -10,6 +10,7 @@ The questions it exists to answer:
 
 - Is this gene essential, and under which conditions — broth, or the
   cholesterol it lives on inside a macrophage?
+- Does its vulnerability hold in a clinical isolate, or only in H37Rv?
 - Is there an experimental structure? A predicted one? A druggable pocket?
 - What chemical matter hits it, at what potency?
 - Which resistance mutations are known?
@@ -30,7 +31,7 @@ make build        # whole pipeline -> data/store/*.parquet  (~15 min cold)
 uv run atlas clinical   # the clinical stage alone, then the roll-up
 make api          # FastAPI on :8099
 make web          # the app on :5173
-make test         # 204 tests against committed fixtures, no network
+make test         # 221 tests against committed fixtures, no network
 ```
 
 | Milestone | Scope | |
@@ -90,7 +91,8 @@ downloads are cached on disk and gitignored. Every record carries `source`,
 | `activities.parquet` | 15,518 | `activity_id` | ChEMBL |
 | `compounds.parquet` | 5,178 | `molecule_chembl_id` | ChEMBL |
 | `essentiality.parquet` | 4,019 | `rv_id`, source | DeJesus 2017 |
-| `vulnerability.parquet` | 4,005 | `rv_id` | Bosch 2021 |
+| `vulnerability.parquet` | 4,005 | `rv_id` | Bosch 2021 (H37Rv) |
+| `strain_vulnerability.parquet` | 4,002 | `rv_id` | Bosch 2021 (HN878 clinical isolate) |
 | `conditional_fitness.parquet` | 3,987 | `rv_id` | Griffin 2011 |
 | `resistance.parquet` | 48,152 | gene, mutation, drug | WHO catalogue |
 | `interactions.parquet` | 28,739 | `rv_id`, `partner_rv_id` | STRING |

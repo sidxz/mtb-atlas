@@ -85,6 +85,8 @@ SORTABLE = {
     "n_whole_cell",
     "best_resolution",
     "cholesterol_log2_ratio",
+    "hn878_vulnerability_index",
+    "hn878_delta_vi",
     "best_drug_phase",
     "n_drugs",
     "n_trials",
@@ -194,6 +196,14 @@ class TargetSummary(BaseModel):
     vi_upper: float | None = None
     vulnerability_certain: bool = False
     crispr_essential: bool = False
+    # The same series in HN878, a clinical isolate. `hn878_delta_vi` runs HN878
+    # minus H37Rv, so positive means less vulnerable in the clinical strain, and
+    # it is NULL for the genes the authors reported no difference for.
+    hn878_vulnerability_index: float | None = None
+    hn878_vi_certain: bool | None = None
+    hn878_delta_vi: float | None = None
+    hn878_delta_vi_norm: float | None = None
+    hn878_differential_reported: bool = False
     antibacterial: str | None = None
     human_homolog: bool = False
     close_human_homolog: bool = False
@@ -578,6 +588,17 @@ def target(rv_id: str) -> TargetDetail:
         absences.append(
             "A vulnerability index exists but did not meet the study's own criteria "
             "for a confident estimate, so treat it as indicative only."
+        )
+    if record.get("hn878_vulnerability_index") is None:
+        absences.append(
+            "Not measured in HN878, so this gene's vulnerability is known only in the "
+            "lab strain. Whether it holds in a clinical isolate is untested."
+        )
+    elif not record.get("hn878_differential_reported"):
+        absences.append(
+            "Measured in both strains, but Bosch 2021 reports no differential for this "
+            "gene, so the two indices should be compared by eye rather than treated as "
+            "a tested difference."
         )
     if not clinical:
         absences.append(

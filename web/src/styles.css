@@ -401,3 +401,39 @@ td:has(> .struct) { padding: 4px 8px; }
 .headstruct { display: flex; align-items: center; gap: 14px; margin-top: 10px; flex-wrap: wrap; }
 .headstruct .note { margin: 0; }
 .detailhead .row .chembl { font-size: 11px; }
+
+/* ---- the genome, full size ------------------------------------------------ */
+
+.railring { position: relative; }
+.maximise {
+  position: absolute; top: 2px; right: 2px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 2px;
+  width: 22px; height: 22px; line-height: 1; font-size: 12px;
+  color: var(--fg-dim); cursor: pointer; opacity: 0; transition: opacity 0.12s;
+}
+.railring:hover .maximise, .maximise:focus-visible { opacity: 1; }
+.maximise:hover { border-color: var(--accent); color: var(--accent); }
+
+.zoomscrim {
+  position: fixed; inset: 0; z-index: 50; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: blur(3px); padding: 24px;
+}
+.zoompanel {
+  position: relative; display: flex; align-items: center; gap: 28px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 4px;
+  padding: 20px 24px; max-width: 96vw; max-height: 94vh;
+}
+/* Square, and as large as the shorter axis allows once the legend has its share. */
+.zoomring { width: min(78vh, 58vw); height: min(78vh, 58vw); }
+.zoomring .canvaswrap { flex: none; min-height: 0; width: 100%; height: 100%; padding: 0; }
+.zoomlegend { width: 250px; flex: none; }
+.zoomlegend .ringkey { margin-top: 10px; }
+
+/* The ring list is a legend, so it reads top-to-bottom as inner-to-outer. */
+.seg.rings { counter-reset: ring; }
+.seg.rings button::before {
+  counter-increment: ring; content: counter(ring);
+  font-size: 9px; color: var(--fg-faint); margin-right: 7px; min-width: 7px;
+}
+.seg.rings button[aria-pressed="true"]::before { color: #fff; }

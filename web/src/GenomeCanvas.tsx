@@ -12,13 +12,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { TargetSummary } from "./api";
 
 export type ColourBy =
+  | "category"
   | "essentiality"
   | "vulnerability"
   | "structure"
+  | "assay"
   | "chemistry"
-  | "resistance"
   | "clinical"
-  | "category";
+  | "resistance";
 
 /** NC_000962.3, M. tuberculosis H37Rv. */
 export const GENOME_LENGTH = 4_411_532;
@@ -63,6 +64,11 @@ export function colourOf(gene: TargetSummary, by: ColourBy): string {
       if (gene.n_pdb >= 5) return token("--accent");
       if (gene.n_pdb > 0) return token("--ess-NE");
       return gene.has_predicted ? token("--ess-none") : token("--line");
+    case "assay":
+      // Whether the protein can be measured at all, which is a different
+      // question from whether anyone has hit it.
+      if (!gene.n_protein_assays) return token("--ess-none");
+      return gene.n_protein_assays >= 5 ? token("--accent") : token("--ess-NE");
     case "chemistry":
       if (!gene.has_ligands) return token("--ess-none");
       return gene.chembl_evidence === "direct" ? token("--accent") : token("--counter");
@@ -73,9 +79,9 @@ export function colourOf(gene: TargetSummary, by: ColourBy): string {
     case "clinical":
       // Best phase *for TB* among drugs a source says act on this gene's own
       // protein. Complex membership alone gets the faintest mark, not a colour.
-      if (gene.best_drug_phase !== null && gene.best_drug_phase >= 4) return token("--accent");
-      if (gene.best_drug_phase !== null && gene.best_drug_phase >= 2) return token("--ess-ESD");
-      if (gene.best_drug_phase !== null) return token("--counter");
+      if (gene.best_drug_phase != null && gene.best_drug_phase >= 4) return token("--accent");
+      if (gene.best_drug_phase != null && gene.best_drug_phase >= 2) return token("--ess-ESD");
+      if (gene.best_drug_phase != null) return token("--counter");
       return gene.n_complex_drugs ? token("--line-strong") : token("--ess-none");
     case "category": {
       const index = CATEGORIES.indexOf(gene.category ?? "");
@@ -84,6 +90,52 @@ export function colourOf(gene: TargetSummary, by: ColourBy): string {
   }
 }
 
+/**
+ * The rings are the discovery pipeline, innermost first.
+ *
+ * Reading outward is reading a target's progress: what the gene is, whether
+ * the organism can lose it, how much it has to lose, whether you can see the
+ * protein, whether you can measure it, whether anyone has hit it, whether it
+ * reached the clinic, and whether resistance came back from patients. The
+ * order is fixed so the picture means the same thing every time, and the
+ * control beside it is the legend — picking an axis brings that ring forward
+ * rather than recolouring the whole genome.
+ *
+ * A gene with nothing on a ring draws nothing there, so the funnel is the
+ * absence: 489 essential, 885 with a structure, 103 with an assay, 13 with a
+ * drug. `on` is "does this gene reach this stage at all"; `colourOf` grades it.
+ */
+export const RINGS: { key: ColourBy; label: string; on: (g: TargetSummary) => boolean }[] = [
+  { key: "category", label: "What it is", on: (g) => Boolean(g.category) },
+  { key: "essentiality", label: "Essential", on: (g) => Boolean(g.essentiality) },
+  {
+    key: "vulnerability",
+    label: "Vulnerable",
+    on: (g) => g.vulnerability_index != null && g.vulnerability_certain,
+  },
+  { key: "structure", label: "Structure", on: (g) => g.n_pdb > 0 || g.has_predicted },
+  { key: "assay", label: "Assay", on: (g) => g.n_protein_assays > 0 },
+  { key: "chemistry", label: "Chemical matter", on: (g) => g.has_ligands },
+  {
+    key: "clinical",
+    // Loose `!= null`, which is false for undefined as well as null. An older
+    // API that does not serve this field at all would otherwise light the ring
+    // for all 4,173 genes -- `undefined !== null` is true. Caught exactly that
+    // way: a stale server made every structural-gap gene look clinical.
+    label: "Clinical",
+    on: (g) => g.best_drug_phase != null || (g.n_complex_drugs ?? 0) > 0,
+  },
+  {
+    key: "resistance",
+    label: "Resistance",
+    on: (g) => g.in_who_catalogue || g.n_variants_associated > 0,
+  },
+];
+
+// Above this a highlight is not a highlight. Glowing 3,000 genes costs the
+// frames and says nothing a plain colour would not.
+const GLOW_LIMIT = 1200;
+
 interface Props {
   genes: TargetSummary[];
   matching: Set<string>;
@@ -91,9 +143,19 @@ interface Props {
   selected: string | null;
   onSelect: (rvId: string) => void;
   theme: string;
+  /** The overlay draws the same rings far larger; the rail is capped small. */
+  maxSize?: number;
 }
 
-export function GenomeCanvas({ genes, matching, colourBy, selected, onSelect, theme }: Props) {
+export function GenomeCanvas({
+  genes,
+  matching,
+  colourBy,
+  selected,
+  onSelect,
+  theme,
+  maxSize = 680,
+}: Props) {
   const canvas = useRef<HTMLCanvasElement | null>(null);
   const wrap = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState(520);
@@ -107,11 +169,11 @@ export function GenomeCanvas({ genes, matching, colourBy, selected, onSelect, th
       // The floor is low enough for the rail, where the ring sits beside the
       // colour control it is the legend for. Everything below scales off
       // `size`, so the only thing that breaks small is the Mb axis text.
-      setSize(Math.max(180, Math.min(box.width - 16, box.height - 16, 680)));
+      setSize(Math.max(180, Math.min(box.width - 16, box.height - 16, maxSize)));
     });
     observer.observe(element);
     return () => observer.disconnect();
-  }, []);
+  }, [maxSize]);
 
   const nearest = useCallback(
     (clientX: number, clientY: number): TargetSummary | null => {
@@ -121,7 +183,7 @@ export function GenomeCanvas({ genes, matching, colourBy, selected, onSelect, th
       const x = ((clientX - rect.left) / rect.width) * size - size / 2;
       const y = ((clientY - rect.top) / rect.height) * size - size / 2;
       const radius = Math.hypot(x, y);
-      if (radius < size * 0.2 || radius > size * 0.5) return null;
+      if (radius < size * 0.165 || radius > size * 0.45) return null;
       let angle = Math.atan2(y, x) + Math.PI / 2;
       if (angle < 0) angle += Math.PI * 2;
       const bp = (angle / (Math.PI * 2)) * GENOME_LENGTH;
@@ -155,35 +217,34 @@ export function GenomeCanvas({ genes, matching, colourBy, selected, onSelect, th
 
     const cx = size / 2;
     const cy = size / 2;
-    const geneRadius = size * 0.452;
-    const geneHeight = size * 0.055;
-    const rings = [
-      { r: size * 0.35, h: size * 0.028, on: (g: TargetSummary) => g.n_pdb > 0, colour: () => token("--counter") },
-      {
-        r: size * 0.305,
-        h: size * 0.028,
-        on: (g: TargetSummary) => g.has_ligands,
-        colour: (g: TargetSummary) =>
-          g.chembl_evidence === "direct" ? token("--accent") : token("--counter"),
-      },
-      {
-        r: size * 0.26,
-        h: size * 0.028,
-        on: (g: TargetSummary) => g.n_variants_associated > 0,
-        colour: () => token("--warn"),
-      },
-    ];
+    // The pipeline laid out radially: innermost is what the gene is,
+    // outermost is resistance seen in patients. Evenly pitched so the order
+    // reads as a sequence rather than a hierarchy of importance.
+    // The outer ring has to leave room for the Mb labels, which sit beyond it
+    // and are centred: at 3 and 9 o'clock half the text runs outward, so a
+    // ring at 0.465 put the label past the canvas edge and clipped it.
+    const inner = size * 0.185;
+    const outer = size * 0.42;
+    const pitch = (outer - inner) / (RINGS.length - 1);
+    const geometry = RINGS.map((ring, index) => ({
+      ...ring,
+      r: inner + pitch * index,
+      // The focused ring is thicker as well as brighter, because at rail size
+      // alpha alone is not enough to pick one of eight out.
+      h: pitch * (ring.key === colourBy ? 0.95 : 0.6),
+    }));
 
     context.strokeStyle = token("--line");
     context.lineWidth = 1;
-    for (const r of [geneRadius - geneHeight / 2, ...rings.map((x) => x.r)]) {
+    for (const ring of geometry) {
       context.beginPath();
-      context.arc(cx, cy, r, 0, Math.PI * 2);
+      context.arc(cx, cy, ring.r, 0, Math.PI * 2);
       context.stroke();
     }
 
     const filtered = matching.size !== genes.length;
-    const width = Math.max(1, ((Math.PI * 2 * geneRadius) / genes.length) * 0.95);
+    const glowing = filtered && matching.size <= GLOW_LIMIT;
+    const width = Math.max(1, ((Math.PI * 2 * outer) / genes.length) * 0.95);
     const angleOf = (g: TargetSummary) =>
       (((g.start + g.stop) / 2) / GENOME_LENGTH) * Math.PI * 2 - Math.PI / 2;
     const radial = (angle: number, r0: number, r1: number) => {
@@ -193,20 +254,27 @@ export function GenomeCanvas({ genes, matching, colourBy, selected, onSelect, th
       context.stroke();
     };
 
-    for (const gene of genes) {
+    /** One gene's marks across every ring it reaches. */
+    const draw = (gene: TargetSummary, dim: boolean) => {
       const angle = angleOf(gene);
-      const dim = filtered && !matching.has(gene.rv_id);
-      context.globalAlpha = dim ? 0.12 : 1;
-      context.lineWidth = width;
-      context.strokeStyle = colourOf(gene, colourBy);
-      radial(angle, geneRadius - geneHeight / 2, geneRadius + geneHeight / 2);
-      for (const ring of rings) {
+      for (const ring of geometry) {
         if (!ring.on(gene)) continue;
-        context.globalAlpha = dim ? 0.09 : 0.9;
-        context.strokeStyle = ring.colour(gene);
+        const focused = ring.key === colourBy;
+        context.globalAlpha = dim ? 0.08 : focused ? 1 : 0.45;
+        context.lineWidth = dim ? width : width * (focused ? 1.3 : 1);
+        context.strokeStyle = colourOf(gene, ring.key);
+        if (!dim && glowing) context.shadowColor = context.strokeStyle;
         radial(angle, ring.r - ring.h / 2, ring.r + ring.h / 2);
       }
-    }
+    };
+
+    // Two passes so the matches are painted over the background rather than
+    // under it, and so the blur is configured once instead of per gene.
+    context.shadowBlur = 0;
+    if (filtered) for (const gene of genes) if (!matching.has(gene.rv_id)) draw(gene, true);
+    if (glowing) context.shadowBlur = Math.max(3, size * 0.014);
+    for (const gene of genes) if (!filtered || matching.has(gene.rv_id)) draw(gene, false);
+    context.shadowBlur = 0;
     context.globalAlpha = 1;
 
     // Below this the Mb labels render at under 6px, which is noise rather than
@@ -220,9 +288,9 @@ export function GenomeCanvas({ genes, matching, colourBy, selected, onSelect, th
     context.lineWidth = 1;
     for (let bp = 0; bp < GENOME_LENGTH; bp += 500_000) {
       const angle = (bp / GENOME_LENGTH) * Math.PI * 2 - Math.PI / 2;
-      radial(angle, geneRadius + geneHeight / 2, geneRadius + geneHeight / 2 + size * 0.012);
+      radial(angle, outer + pitch * 0.5, outer + pitch * 0.5 + size * 0.012);
       if (!roomForAxis) continue;
-      const labelRadius = geneRadius + geneHeight / 2 + size * 0.036;
+      const labelRadius = outer + pitch * 0.5 + size * 0.026;
       context.fillText(
         `${bp / 1e6} Mb`,
         cx + Math.cos(angle) * labelRadius,
@@ -234,7 +302,7 @@ export function GenomeCanvas({ genes, matching, colourBy, selected, onSelect, th
     if (chosen) {
       context.strokeStyle = token("--fg");
       context.lineWidth = 2;
-      radial(angleOf(chosen), size * 0.225, geneRadius + geneHeight / 2 + size * 0.015);
+      radial(angleOf(chosen), inner - pitch * 0.5, outer + pitch * 0.5 + size * 0.015);
     }
 
     context.textAlign = "center";

@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type Meta, type TargetDetail, type TargetSummary } from "./api";
-import { CATEGORIES, GenomeCanvas, colourOf, type ColourBy } from "./GenomeCanvas";
+import { CATEGORIES, GenomeCanvas, RINGS, colourOf, type ColourBy } from "./GenomeCanvas";
 import { TargetDetailPanel } from "./TargetDetail";
 import { Ask } from "./Ask";
 import { DrugsAndTrials, phaseLabel, type Focus } from "./Clinical";
@@ -21,14 +21,21 @@ const ESSENTIALITY: [string, string][] = [
   ["Uncertain", "Uncertain"],
 ];
 
+/** The ring order, inner to outer, so the control reads as the legend it is.
+ *
+ * This is the discovery pipeline: what the gene is, then can the organism
+ * lose it, how much, can you see the protein, can you measure it, has anyone
+ * hit it, did it reach the clinic, did resistance come back. Keep this in step
+ * with `RINGS` in GenomeCanvas — the list is the picture. */
 const COLOUR_MODES: [ColourBy, string][] = [
-  ["essentiality", "Essentiality"],
-  ["vulnerability", "Vulnerability"],
-  ["structure", "Structure coverage"],
+  ["category", "What it is"],
+  ["essentiality", "Essential"],
+  ["vulnerability", "Vulnerable"],
+  ["structure", "Structure"],
+  ["assay", "Protein assay"],
   ["chemistry", "Chemical matter"],
-  ["resistance", "Resistance"],
   ["clinical", "Clinical stage"],
-  ["category", "Functional category"],
+  ["resistance", "Resistance"],
 ];
 
 type Flag =
@@ -214,6 +221,7 @@ export function App() {
   // flag rather than a measured identity.
   const [hideHumanHomologs, setHideHumanHomologs] = useState(false);
   const [colourBy, setColourBy] = useState<ColourBy>("essentiality");
+  const [zoomed, setZoomed] = useState(false);
   const [sort, setSort] = useState<{ key: string; order: "asc" | "desc" }>({
     key: "start",
     order: "asc",
@@ -241,10 +249,14 @@ export function App() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      // Both views hide their detail panel when nothing is picked, so Esc
-      // widens whichever table is in front of you.
-      setSelected(null);
-      setFocus(null);
+      // Esc closes the thing most recently in front of you: the full-size
+      // genome if it is open, otherwise the detail panel.
+      setZoomed((open) => {
+        if (open) return false;
+        setSelected(null);
+        setFocus(null);
+        return false;
+      });
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -414,6 +426,15 @@ export function App() {
                 onSelect={setSelected}
                 theme={theme}
               />
+              <button
+                className="maximise"
+                type="button"
+                title="Open the genome full size"
+                aria-label="Open the genome full size"
+                onClick={() => setZoomed(true)}
+              >
+                ⤢
+              </button>
             </div>
 
             <div className="group">
@@ -428,12 +449,12 @@ export function App() {
             </div>
 
             <div className="group">
-              <p className="lab">Colour the genome by</p>
+              <p className="lab">Rings, inner to outer</p>
               <p className="ringkey">
-                outer ring: {COLOUR_MODES.find(([k]) => k === colourBy)?.[1].toLowerCase()} · inner
-                rings: structure, chemical matter, resistance
+                the discovery pipeline: what a gene is, then whether it can be lost, seen,
+                measured, hit, and taken to the clinic. Pick one to bring it forward.
               </p>
-              <div className="seg">
+              <div className="seg rings">
                 {COLOUR_MODES.map(([key, label]) => (
                   <button
                     key={key}
@@ -610,6 +631,94 @@ export function App() {
           </aside>
         </div>
       )}
+
+      {zoomed && (
+        <GenomeOverlay
+          genes={all}
+          matching={matching}
+          colourBy={colourBy}
+          setColourBy={setColourBy}
+          selected={selected}
+          theme={theme}
+          onSelect={(rv) => {
+            setSelected(rv);
+            setZoomed(false);
+          }}
+          onClose={() => setZoomed(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+/** The same rings, as large as the window allows.
+ *
+ * In the rail the ring is a locator; here it is the thing you are reading, so
+ * the legend comes with it and each entry says how many genes reach that
+ * stage. Clicking a gene selects it and closes, because the point of finding
+ * one on the ring is to read its page.
+ */
+function GenomeOverlay({
+  genes,
+  matching,
+  colourBy,
+  setColourBy,
+  selected,
+  theme,
+  onSelect,
+  onClose,
+}: {
+  genes: TargetSummary[];
+  matching: Set<string>;
+  colourBy: ColourBy;
+  setColourBy: (by: ColourBy) => void;
+  selected: string | null;
+  theme: string;
+  onSelect: (rv: string) => void;
+  onClose: () => void;
+}) {
+  const reaching = (key: ColourBy) => {
+    const ring = RINGS.find((r) => r.key === key);
+    return ring ? genes.filter((g) => ring.on(g) && matching.has(g.rv_id)).length : 0;
+  };
+  return (
+    <div className="zoomscrim" role="dialog" aria-modal="true" aria-label="Genome" onClick={onClose}>
+      <div className="zoompanel" onClick={(event) => event.stopPropagation()}>
+        <div className="zoomring">
+          <GenomeCanvas
+            genes={genes}
+            matching={matching}
+            colourBy={colourBy}
+            selected={selected}
+            onSelect={onSelect}
+            theme={theme}
+            maxSize={1100}
+          />
+        </div>
+        <div className="zoomlegend">
+          <p className="lab">Rings, inner to outer</p>
+          <div className="seg rings">
+            {COLOUR_MODES.map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                aria-pressed={colourBy === key}
+                onClick={() => setColourBy(key)}
+              >
+                <span className="name">{label}</span>
+                <span className="c">{reaching(key).toLocaleString()}</span>
+              </button>
+            ))}
+          </div>
+          <p className="ringkey">
+            Counts are genes matching the current filters that reach that stage. A gene draws
+            nothing on a ring it does not reach, so the narrowing outward is the funnel.
+          </p>
+        </div>
+        <button className="closedetail" type="button" aria-label="Close" onClick={onClose}>
+          ×
+        </button>
+      </div>
     </div>
   );
 }

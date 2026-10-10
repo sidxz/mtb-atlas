@@ -48,6 +48,7 @@ TABLES = (
     "interactions",
     "homology",
     "chembl_targets",
+    "ligands",
     "drugs",
     "drug_mechanisms",
     "drug_genes",
@@ -80,13 +81,16 @@ TABLE_NOTES = {
     "vulnerable. Only rows with `certain` are confident estimates.",
     "resistance": "WHO catalogue, keyed on GENE SYMBOL not Rv tag, and only 65 genes "
     "are in it. `associated` marks graded 1 or 2. `residue_position` is null "
-    "for promoter, frameshift and stop variants.",
+    "for promoter, frameshift and stop variants. `drug` uses WHO's names, which are NOT "
+    "ChEMBL's (Rifampicin vs RIFAMPIN, Levofloxacin vs LEVOFLOXACIN ANHYDROUS), so join a "
+    "drug to a gene through drug_genes WHERE link = 'who_resistance', never on the name.",
     "interactions": "STRING, combined_score >= 700, one row per unordered pair. "
     "A gene appears as rv_id OR partner_rv_id -- check both.",
     "homology": "Human anti-target check: phmmer of each Mtb protein against the reviewed "
     "human proteome, keyed on uniprot_acc. `identity` is a FRACTION (0.48 = 48%); "
     "`close_human_homolog` means identity >= 0.30, a convention of this atlas.",
     "drugs": "One row per ChEMBL parent molecule with a TUBERCULOSIS indication. "
+    "`pref_name` is UPPER CASE ('ISONIAZID'), so match case-insensitively. "
     "`max_phase_tb` is the highest phase for TB; `max_phase` is for ANY indication, so an "
     "approved antibiotic can be phase 2 for TB. The set is ChEMBL's, unedited: it includes "
     "host-directed adjuncts, HIV co-medications, vaccines and placebo excipients -- filter "
@@ -94,13 +98,19 @@ TABLE_NOTES = {
     "drug_mechanisms": "ChEMBL mechanism of action per drug. `target_organism` is often NOT "
     "Mtb (rifampicin's target is a generic bacterial RNA polymerase built from E. coli "
     "proteins). Gene links are in drug_genes.",
+    "ligands": "One row per PDB chemical component id (the three-character codes in "
+    "structures.ligand_ids), with the InChIKey and RCSB's ChEMBL cross-reference that "
+    "identify the same molecule in `compounds` or `drugs`. `role` is ligand | cofactor | "
+    "incidental, the same rule the structures table uses.",
     "drug_genes": "Drug to Rv tag. `link`: mechanism = ChEMBL names this gene's protein as "
     "the single-protein target; mechanism_complex = ChEMBL names a complex the protein "
     "belongs to (bedaquiline -> all 8 ATP synthase subunits), not evidence it binds this "
     "subunit; bosch_2021 = Bosch 2021's own drug annotation, exact name match; "
     "who_resistance = WHO-graded resistance variants in this gene for this drug, which is "
-    "NOT target engagement (katG activates isoniazid). Drugs acting on a gene: "
-    "link IN ('mechanism', 'bosch_2021').",
+    "NOT target engagement (katG activates isoniazid); structure = the drug is modelled on "
+    "this protein's own chain in a PDB entry (`source_text` lists them), which is physical "
+    "evidence that the two meet but still not a mechanism claim -- EthR binds many ligands "
+    "in soaking studies. Drugs acting on a gene: link IN ('mechanism', 'bosch_2021').",
     "trials": "ClinicalTrials.gov interventional studies for condition 'tuberculosis', "
     "including vaccine, diagnostic and behavioural studies. `phase_max` is numeric "
     "(0.5 = early phase 1 ... 4); NULL means phase not applicable. Dates may be partial "
@@ -136,13 +146,16 @@ knockdown and answers a different question -- how far expression must fall befor
 fitness suffers -- on a negative scale, and only `certain` rows are confident.
 - Human homology is a phmmer search against the reviewed human proteome, reported as \
 an E-value and a percent identity; the 30% "close" line is this atlas's convention.
+- A ligand counts for a protein only when it is modelled on that protein's own chains; \
+one bound to a neighbouring subunit is in `ligand_ids_elsewhere`, shown and not counted.
 - The WHO catalogue covers 65 genes. For every other gene the correct statement is \
 "not in the catalogue", never "no resistance known".
 - Drugs: `max_phase_tb` is the phase for tuberculosis, not for any indication. A drug \
 reaches a gene through ChEMBL's mechanism (a single protein, or a complex the protein \
-belongs to -- membership is not binding), Bosch 2021's annotation, or WHO-graded \
-resistance. Resistance is not engagement: katG activates isoniazid and Rv0678 is a \
-regulator. Say which link an answer rests on.
+belongs to -- membership is not binding), Bosch 2021's annotation, a co-crystal structure, \
+or WHO-graded resistance. Resistance is not engagement: katG activates isoniazid and \
+Rv0678 is a regulator. A co-crystal is physical evidence the two meet, not a mechanism. \
+Say which link an answer rests on.
 - Trials link to drugs through ChEMBL's own trial references or an exact \
 intervention-name match. An unlinked trial may still have tested a drug.
 

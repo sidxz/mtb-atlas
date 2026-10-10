@@ -22,7 +22,7 @@ Two things this ingester refuses to do, both learned from the live API:
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from typing import Any
 
 from ..fetch import post_json
@@ -253,6 +253,66 @@ def normalize(entries: Iterator[dict[str, Any]], accessions: set[str]) -> Iterat
                     # In the entry, but bound to another chain. Shown, not counted.
                     "ligand_ids_elsewhere": [c["comp_id"] for c in elsewhere],
                 }
+
+
+# --- ligand identity ---------------------------------------------------------
+
+# A PDB component is a three-character code; the keys that find the same
+# molecule in ChEMBL, in the atlas's own compound table and in a drug label are
+# the InChIKey and RCSB's own ChEMBL cross-reference.
+CHEM_COMP_QUERY = """
+query($ids: [String!]!) {
+  chem_comps(comp_ids: $ids) {
+    chem_comp { id name formula_weight }
+    rcsb_chem_comp_descriptor { InChIKey SMILES }
+    rcsb_chem_comp_related { resource_name resource_accession_code }
+  }
+}
+"""
+COMP_BATCH = 100
+
+
+def normalize_chem_comps(comps: Iterable[dict[str, Any]]) -> Iterator[dict[str, Any]]:
+    """One row per component id, with the identifiers that leave the PDB."""
+    for comp in comps:
+        if not comp or not (chem := comp.get("chem_comp")):
+            continue
+        descriptor = comp.get("rcsb_chem_comp_descriptor") or {}
+        related = {
+            r["resource_name"]: r["resource_accession_code"]
+            for r in comp.get("rcsb_chem_comp_related") or []
+        }
+        yield {
+            "comp_id": chem["id"],
+            "name": chem.get("name"),
+            "formula_weight": chem.get("formula_weight"),
+            "role": classify(chem["id"]),
+            "inchikey": descriptor.get("InChIKey"),
+            "smiles": descriptor.get("SMILES"),
+            # RCSB's own cross-reference, where it has one: 546 of 1,486 do.
+            "chembl_id": related.get("ChEMBL"),
+            "pubchem_cid": related.get("PubChem"),
+        }
+
+
+def build_ligands(comp_ids: Sequence[str], *, retrieved_at: str) -> Any:
+    """`comp_ids` are the components the structures table actually saw."""
+    comps: list[dict[str, Any]] = []
+    for start in range(0, len(comp_ids), COMP_BATCH):
+        batch = list(comp_ids[start : start + COMP_BATCH])
+        result = post_json(
+            GRAPHQL, {"query": CHEM_COMP_QUERY, "variables": {"ids": batch}}, min_interval=0.3
+        )
+        if result.get("errors"):
+            raise RuntimeError(f"RCSB GraphQL: {result['errors'][0].get('message')}")
+        comps.extend(c for c in (result.get("data") or {}).get("chem_comps") or [] if c)
+    return write_parquet(
+        "ligands",
+        normalize_chem_comps(comps),
+        source=SOURCE,
+        source_version=f"RCSB Data API, {len(comps)} chemical components",
+        retrieved_at=retrieved_at,
+    )
 
 
 def build(accessions: Sequence[str], *, retrieved_at: str, force: bool = False) -> Any:

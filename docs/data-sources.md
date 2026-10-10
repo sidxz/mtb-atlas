@@ -447,9 +447,14 @@ rest of ChEMBL (CC BY-SA 3.0, IDs preserved, release displayed).
 | `mechanism_complex` | ChEMBL names a complex this protein belongs to — not evidence it binds this subunit | 179 links, 4 drugs, 65 genes |
 | `bosch_2021` | Bosch 2021's `antibacterial` column, matched exactly to a ChEMBL synonym | 12 links, 8 drugs, 12 genes |
 | `who_resistance` | WHO-graded resistance variants in this gene for this drug — **not** target engagement | 33 links, 15 drugs, 24 genes |
+| `structure` | The drug is modelled on this protein's own chain in a PDB entry — physical evidence they meet, still not a mechanism claim | 17 links, 13 drugs, 15 genes |
 
 Only `mechanism` and `bosch_2021` count as a drug acting on the gene: **11
-drugs land on 13 genes**. A mechanism target from another organism links no
+drugs land on 13 genes**. A co-crystal is shown beside them and never counted:
+EthR is a repressor that binds many ligands in soaking studies, so 5NZ0 holding
+linezolid says nothing about linezolid's target. It does, though, place
+rifampicin on rpoB (5 entries) and quabodepistat on dprE1 (43FX) where no
+curated mechanism can. A mechanism target from another organism links no
 Mtb gene; bridging rifampicin to rpoB by homology would state something ChEMBL
 does not. rpoB still meets rifampicin through the WHO catalogue, as resistance.
 
@@ -500,10 +505,13 @@ to a ChEMBL synonym (`via_intervention_name`). Cleaning splits combinations,
 takes parentheticals as alternatives, and strips doses and dosage forms. An
 intervention's other names are consulted only when its own name matches
 nothing, because sponsors list classes there: NCT02651259 gives rifapentine the
-other name "Rifamycin". A name two molecules share links neither. Live: 483
-trials link to at least one drug; 219 trial–drug pairs come by both methods,
-57 by reference only and 247 by name only. ChEMBL references 3 trials outside
-this search, and those links are dropped rather than left dangling.
+other name "Rifamycin". A name two molecules share links neither, and `matched_names` records the
+string that actually matched -- for a fallback, the other name rather than the
+intervention's own, so a link never cites a string that does not name the drug.
+Live: **483 of 1,137 trials** link to at least one drug, over 1,183 trial-drug
+pairs: 547 found both ways, 76 by reference only, 560 by name only. ChEMBL
+references 3 trials outside this search, and those links are dropped rather
+than left dangling.
 
 ## Rejected: the TB clinical pipeline
 

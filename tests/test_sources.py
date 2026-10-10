@@ -271,3 +271,30 @@ def test_absent_comments_are_none_not_empty_strings(proteins: dict) -> None:
     for row in proteins.values():
         for key in ("function", "disruption_phenotype", "subcellular_location"):
             assert row[key] is None or row[key].strip()
+
+
+# --- ligand identity ---------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def ligands() -> dict[str, dict]:
+    comps = json.loads((FIXTURES / "rcsb_chem_comps.json").read_text())
+    return {r["comp_id"]: r for r in pdb.normalize_chem_comps(comps)}
+
+
+def test_a_ligand_carries_the_keys_that_find_it_elsewhere(ligands: dict) -> None:
+    tca1 = ligands["1W6"]
+    assert tca1["inchikey"] == "ISNBJLXHBBZKSL-UHFFFAOYSA-N"
+    assert tca1["chembl_id"] == "CHEMBL3262462"
+    assert tca1["smiles"]
+
+
+def test_a_ligand_rcsb_cannot_place_says_so(ligands: dict) -> None:
+    """Most PDB components have no ChEMBL cross-reference, and that is not a failure."""
+    assert ligands["ZID"]["chembl_id"] is None
+    assert ligands["ZID"]["inchikey"]  # it still has a structure key
+
+
+def test_roles_come_from_the_same_rule_as_the_structures(ligands: dict) -> None:
+    assert ligands["1W6"]["role"] == "ligand"
+    assert ligands["FAD"]["role"] == "cofactor"

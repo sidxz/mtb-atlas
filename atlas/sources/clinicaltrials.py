@@ -10,9 +10,10 @@ the data are free to all requesters; anyone publishing or distributing them
 should attribute ClinicalTrials.gov, keep them current, clearly display the
 date the data were processed by ClinicalTrials.gov, and state any
 modifications. That is why `source_version` carries the API's own
-`dataTimestamp`, and why the modifications this module makes are listed in
-docs/data-sources.md: a subset of fields, phases mapped to a number for
-sorting, and nothing else rewritten.
+`dataTimestamp`, and why the modifications this module makes are stated
+wherever the data is shown: a subset of fields, phases mapped to a number for
+sorting, studies solely of nontuberculous mycobacteria left out, and nothing
+else rewritten.
 
 **Scope:** `query.cond=tuberculosis`, interventional only -- 1,152 studies on
 2026-10-10, less the 15 that are about nontuberculous mycobacteria. That

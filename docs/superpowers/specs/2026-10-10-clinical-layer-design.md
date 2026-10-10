@@ -1,5 +1,8 @@
 # M6: from target to clinic — design
 
+> Written before implementation. The counts below are what was measured at
+> design time; `docs/data-sources.md` carries the current ones.
+
 Written 2026-10-10 for an autonomous overnight run. The request was:
 
 > enhance the atlas so that it has all information of TB for early drug

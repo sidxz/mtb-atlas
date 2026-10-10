@@ -121,3 +121,9 @@ def test_describe_warns_that_unannotated_is_not_negative() -> None:
     text = agent.describe()
     assert "n_transmembrane" in text
     assert "not a negative finding" in text
+
+
+def test_describe_names_the_structural_links() -> None:
+    text = agent.describe()
+    assert "## ligands" in text
+    assert "soaking studies" in text  # a co-crystal is not a mechanism claim

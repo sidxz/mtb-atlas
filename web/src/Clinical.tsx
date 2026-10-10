@@ -24,16 +24,22 @@ export type Focus = { kind: "drug" | "trial"; id: string } | null;
 const LINK_LABEL: Record<DrugLink, string> = {
   mechanism: "ChEMBL mechanism",
   bosch_2021: "Bosch 2021",
+  structure: "co-crystal",
   mechanism_complex: "complex member",
   who_resistance: "WHO resistance",
 };
 
 const TARGET_LINKS: DrugLink[] = ["mechanism", "bosch_2021"];
 
+/** The table is plain DOM rows; beyond this many the browser, not the data, is the limit. */
+const TRIAL_ROWS = 400;
+
 const SOURCE = {
   chembl: "ChEMBL drug indications and mechanisms · CC BY-SA 3.0",
+  // ChEMBL asks that the release be shown; `meta` carries it.
   bosch: "Bosch et al. 2021, Cell · Table S3 · CC BY 4.0",
   who: "WHO catalogue 2nd ed. 2023 · ODC-By 1.0",
+  pdb: "RCSB PDB · CC0 1.0",
 };
 
 /** The phase ChEMBL records for a TB indication. 4 means approved for TB. */
@@ -55,10 +61,16 @@ const status = (value: string | null) => (value ?? "unknown").toLowerCase().repl
 
 const trialUrl = (nctId: string) => `https://clinicaltrials.gov/study/${nctId}`;
 
+/** ChEMBL asks that the release be displayed wherever its data is shown. */
+function chemblSource(meta: Meta | null): string {
+  const version = meta?.sources.find((s) => s.name.startsWith("ChEMBL"))?.version;
+  return version ? `${SOURCE.chembl.replace("ChEMBL ", `ChEMBL ${version} `)}` : SOURCE.chembl;
+}
+
 function trialSource(meta: Meta | null): string {
   const version = meta?.sources.find((s) => s.name === "ClinicalTrials.gov")?.version;
   // The terms ask for the processing date and a statement of modifications.
-  return `ClinicalTrials.gov${version ? ` · ${version}` : ""} · fields selected and phases numbered by the atlas, nothing else rewritten`;
+  return `ClinicalTrials.gov${version ? ` · ${version}` : ""} · the atlas selects fields, numbers the phases and leaves out studies solely of nontuberculous mycobacteria; nothing else is rewritten`;
 }
 
 function GeneChip({ rv, name, onSelect }: { rv: string; name: string | null; onSelect: (rv: string) => void }) {
@@ -103,13 +115,14 @@ export function ClinicalTab({
     (d) => d.link === "mechanism_complex" && !acting.some((a) => a.molecule_chembl_id === d.molecule_chembl_id),
   );
   const resistance = detail.drugs.filter((d) => d.link === "who_resistance");
+  const crystals = detail.drugs.filter((d) => d.link === "structure");
 
   const byDrug = new Map<string, typeof acting>();
   for (const link of acting) byDrug.set(link.molecule_chembl_id, [...(byDrug.get(link.molecule_chembl_id) ?? []), link]);
 
   return (
     <>
-      <Section label="Drugs acting on this gene" source={`${SOURCE.chembl} · ${SOURCE.bosch}`}>
+      <Section label="Drugs acting on this gene" source={`${chemblSource(meta)} · ${SOURCE.bosch}`}>
         {byDrug.size === 0 ? (
           <span className="absent">
             no drug with a TB indication in ChEMBL acts on this gene, by ChEMBL&rsquo;s mechanism or
@@ -145,18 +158,42 @@ export function ClinicalTab({
       </Section>
 
       {complex.length > 0 && (
-        <Section label="Acts on a complex this protein belongs to" source={SOURCE.chembl}>
+        <Section label="Acts on a complex this protein belongs to" source={chemblSource(meta)}>
           {complex.map((d) => (
             <div className="note" key={d.molecule_chembl_id} style={{ color: "var(--fg)" }}>
               <button type="button" className="chip ortho" onClick={() => onOpen({ kind: "drug", id: d.molecule_chembl_id })}>
                 {d.pref_name}
               </button>{" "}
-              {phaseLabel(d.max_phase_tb)} · {d.target_name}, {d.n_target_components} components
+              {phaseLabel(d.max_phase_tb)} · {d.target_name}
+              {d.target_type ? ` (${d.target_type.toLowerCase()})` : ""}, {d.n_target_accessions}{" "}
+              Mtb proteins
             </div>
           ))}
           <p className="caveat">
             ChEMBL files these against the whole assembly. That this protein is one of its components
             is not evidence the drug binds it.
+          </p>
+        </Section>
+      )}
+
+      {crystals.length > 0 && (
+        <Section label="Co-crystallised with this protein" source={SOURCE.pdb}>
+          {crystals.map((d) => (
+            <div className="note" key={d.molecule_chembl_id} style={{ color: "var(--fg)" }}>
+              <button
+                type="button"
+                className="chip accent"
+                onClick={() => onOpen({ kind: "drug", id: d.molecule_chembl_id })}
+              >
+                {d.pref_name}
+              </button>{" "}
+              {phaseLabel(d.max_phase_tb)} · <span className="mono">{d.source_text}</span>
+            </div>
+          ))}
+          <p className="caveat">
+            Modelled on this protein&rsquo;s own chain, which is physical evidence that the two
+            meet. It is not a claim about the mechanism: a repressor like EthR binds many
+            ligands in soaking studies.
           </p>
         </Section>
       )}
@@ -391,6 +428,7 @@ export function DrugsAndTrials({
           <span className="count">
             {(tab === "drugs" ? shownDrugs : shownTrials).length.toLocaleString()} of{" "}
             {(tab === "drugs" ? drugs : trials).length.toLocaleString()}
+            {tab === "trials" && shownTrials.length > TRIAL_ROWS ? ` · showing first ${TRIAL_ROWS}` : ""}
           </span>
         </div>
         <div className="scroller" style={{ flex: 1 }}>
@@ -444,7 +482,7 @@ export function DrugsAndTrials({
                 </tr>
               </thead>
               <tbody>
-                {shownTrials.slice(0, 400).map((t) => (
+                {shownTrials.slice(0, TRIAL_ROWS).map((t) => (
                   <tr
                     key={t.nct_id}
                     aria-selected={focus?.kind === "trial" && focus.id === t.nct_id}
@@ -528,7 +566,7 @@ function DrugPanel({
         </p>
       </div>
       <div className="panel">
-        <Section label="Mechanism of action" source={SOURCE.chembl}>
+        <Section label="Mechanism of action" source={chemblSource(meta)}>
           {drug.mechanisms.length === 0 ? (
             <span className="absent">ChEMBL records no mechanism for this molecule</span>
           ) : (
@@ -573,7 +611,7 @@ function DrugPanel({
           )}
         </Section>
 
-        <Section label="Genes" source={`${SOURCE.chembl} · ${SOURCE.bosch} · ${SOURCE.who}`}>
+        <Section label="Genes" source={`${chemblSource(meta)} · ${SOURCE.bosch} · ${SOURCE.who}`}>
           {drug.genes.length === 0 && <span className="absent">reaches no Mtb gene in any source the atlas holds</span>}
           {(["mechanism", "bosch_2021"] as DrugLink[]).map((link) =>
             group(link).length ? (
@@ -716,7 +754,7 @@ function TrialPanel({
         </p>
       </div>
       <div className="panel">
-        <Section label="Drugs linked" source={SOURCE.chembl}>
+        <Section label="Drugs linked" source={chemblSource(meta)}>
           {trial.drugs.length === 0 ? (
             <span className="absent">
               no intervention matches a ChEMBL TB drug, and ChEMBL cites none for this trial
@@ -738,7 +776,7 @@ function TrialPanel({
               <div className="note">Genes those drugs act on</div>
               <div className="chips">
                 {trial.genes.map((g) => (
-                  <GeneChip key={`${g.rv_id}-${g.drug}`} rv={g.rv_id} name={g.gene_name} onSelect={onSelectGene} />
+                  <GeneChip key={g.rv_id} rv={g.rv_id} name={g.gene_name} onSelect={onSelectGene} />
                 ))}
               </div>
             </div>

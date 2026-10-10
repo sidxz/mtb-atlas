@@ -48,6 +48,10 @@ TARGET_LINKS = ("mechanism", "bosch_2021")
 _PAREN = re.compile(r"\(([^)]*)\)")
 _SPLIT = re.compile(r"\s*(?:\+|/|,|;|&|\band\b|\bplus\b|\bwith\b)\s*", re.IGNORECASE)
 _DOSE = re.compile(r"\b\d+(?:\.\d+)?\s*(?:mg|g|mcg|µg|ug|iu|ml)\b.*$", re.IGNORECASE)
+_FORM = re.compile(
+    r"\b(?:oral|tablets?|capsules?|injections?|injectable|suspension|solution|infusion)\b",
+    re.IGNORECASE,
+)
 
 
 def key(name: str) -> str:
@@ -59,13 +63,14 @@ def name_candidates(text: str) -> list[str]:
     """The drug names one intervention string could stand for.
 
     "Isoniazid (INH)" -> Isoniazid, INH; "Bedaquiline, Pretomanid and
-    Linezolid" -> all three; "PBTZ169 - 40 mg" -> PBTZ169.
+    Linezolid" -> all three; "PBTZ169 - 40 mg" -> PBTZ169; "Bedaquiline Oral
+    Tablet" -> Bedaquiline. Doses and dosage forms go; nothing else is guessed.
     """
     text = text or ""
     names = []
     for chunk in (_PAREN.sub(" ", text), *_PAREN.findall(text)):
         for part in _SPLIT.split(chunk):
-            part = _DOSE.sub("", part).strip(" -–:;.,")
+            part = _FORM.sub("", _DOSE.sub("", part)).strip(" -–:;.,")
             if part:
                 names.append(part)
     return names

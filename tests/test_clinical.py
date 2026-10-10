@@ -149,6 +149,7 @@ def test_key_ignores_case_and_punctuation() -> None:
         ("PBTZ169 - 40 mg", {"PBTZ169"}),
         ("Clofazimine 100mg", {"Clofazimine"}),
         ("Rifapentine/Isoniazid", {"Rifapentine", "Isoniazid"}),
+        ("Bedaquiline Oral Tablet", {"Bedaquiline"}),
     ],
 )
 def test_name_candidates(text: str, names: set[str]) -> None:

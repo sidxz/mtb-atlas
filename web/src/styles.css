@@ -675,3 +675,13 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   .table-controls:has(.table-gene-search) .table-sort-note { display: none; }
   .table-gene-search input { font-size: 16px; }
 }
+
+/* Conditional TnSeq. The condition label can be a long screen id, and without
+   a ceiling it pushes log2FC and q out of the panel -- the one thing the
+   detail panel is not allowed to do to a numeric column. The full text stays
+   in the row's title. */
+.cond-table { table-layout: fixed; width: 100%; }
+.cond-table td:first-child, .cond-table th:first-child { width: 48%; }
+.cond-table td:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cond-table td:nth-child(2), .cond-table th:nth-child(2) { width: 18%; }
+.cond-table td:nth-child(n+3), .cond-table th:nth-child(n+3) { width: 17%; }

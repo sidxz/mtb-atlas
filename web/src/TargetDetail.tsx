@@ -64,7 +64,7 @@ function Row({ label, source, children }: { label: string; source?: string; chil
 function ConditionTable({ hits, interaction }: { hits: ConditionHit[]; interaction?: boolean }) {
   return (
     <div className="scroller">
-      <table>
+      <table className="cond-table">
         <thead>
           <tr>
             <th>{interaction ? "Background" : "Condition"}</th>

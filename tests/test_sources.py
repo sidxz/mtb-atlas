@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-from atlas.sources import alphafold, essentiality, pdb, resistance
+from atlas.sources import alphafold, essentiality, pdb, resistance, uniprot
 
 from .conftest import FIXTURES
 
@@ -198,3 +198,47 @@ def test_rna_gene_variants_survive(variants: list[dict]) -> None:
     rrs = [v for v in variants if v["gene"] == "rrs" and v["associated"]]
     assert rrs
     assert all(v["residue_position"] is None for v in rrs)
+
+
+# --- UniProt protein context -----------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def proteins() -> dict[str, dict]:
+    rows = uniprot.normalize(FIXTURES / "uniprot_proteome.tsv")
+    return {r["uniprot_acc"]: r for r in rows}
+
+
+def test_curated_text_loses_its_evidence_codes(proteins: dict) -> None:
+    """UniProt prefixes each comment and tags it with {ECO:...} codes; a page wants prose."""
+    function = proteins["P9WJF1"]["function"]
+    assert function.startswith("Component of the DprE1-DprE2 complex")
+    assert "{ECO" not in function
+    assert "FUNCTION:" not in function
+
+
+def test_membrane_topology_is_counted(proteins: dict) -> None:
+    assert proteins["P9WJV5"]["n_transmembrane"] == 12  # MmpL3, a 12-helix RND transporter
+    assert proteins["P9WJF1"]["n_transmembrane"] == 0
+    assert "Cell inner membrane" in proteins["P9WJV5"]["locations"]
+    assert proteins["P9WJF1"]["locations"] == ["Periplasm"]
+
+
+def test_pathway_and_catalysis(proteins: dict) -> None:
+    inha = proteins["P9WGR1"]
+    assert inha["pathways"] == ["Lipid metabolism; mycolic acid biosynthesis"]
+    assert "RHEA:10240" in inha["rhea_ids"]
+    assert any("NADH" in reaction for reaction in inha["reactions"])
+    assert "mycolic acid biosynthetic process" in inha["go_process"]
+
+
+def test_disruption_phenotype_and_references(proteins: dict) -> None:
+    assert "essential" in proteins["P9WJF1"]["disruption_phenotype"]
+    assert proteins["P9WGR1"]["n_references"] == len(proteins["P9WGR1"]["pubmed_ids"]) > 20
+
+
+def test_absent_comments_are_none_not_empty_strings(proteins: dict) -> None:
+    """An entry UniProt says nothing about must read as an absence, not as blank text."""
+    for row in proteins.values():
+        for key in ("function", "disruption_phenotype", "subcellular_location"):
+            assert row[key] is None or row[key].strip()

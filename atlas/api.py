@@ -42,6 +42,29 @@ LICENCES = {
 # source already listed above.
 DERIVED = ("crosswalk", "target_summary", "drug_mechanisms", "drug_genes", "trial_drugs")
 TARGET_LINK_SQL = ", ".join(f"'{link}'" for link in TARGET_LINKS)
+# Read off the gene's UniProt entry for the target page.
+PROTEIN_FIELDS = (
+    "reviewed",
+    "interpro_ids",
+    "pfam_ids",
+    "go_ids",
+    "ec_numbers",
+    "function",
+    "subcellular_location",
+    "locations",
+    "signal_peptide",
+    "pathways",
+    "reactions",
+    "rhea_ids",
+    "cofactors",
+    "go_process",
+    "go_function",
+    "go_component",
+    "disruption_phenotype",
+    "pubmed_ids",
+    "protein_existence",
+    "annotation_score",
+)
 
 SORTABLE = {
     "rv_id",
@@ -63,6 +86,8 @@ SORTABLE = {
     "best_drug_phase",
     "n_drugs",
     "n_trials",
+    "n_transmembrane",
+    "n_references",
 }
 
 app = FastAPI(
@@ -158,6 +183,9 @@ class TargetSummary(BaseModel):
     n_complex_drugs: int = 0
     n_trials: int = 0
     has_clinical_drug: bool = False
+    # From the UniProt entry; None where there is no protein (RNA genes).
+    n_transmembrane: int | None = None
+    n_references: int | None = None
 
 
 class TargetPage(BaseModel):
@@ -186,6 +214,24 @@ class TargetDetail(TargetSummary):
     pfam_ids: list[str] = Field(default_factory=list)
     go_ids: list[str] = Field(default_factory=list)
     ec_numbers: list[str] = Field(default_factory=list)
+    # UniProt's biology: curated in a reviewed (Swiss-Prot) entry, automatic in an
+    # unreviewed one. None or empty means UniProt says nothing.
+    reviewed: bool | None = None
+    function: str | None = None
+    subcellular_location: str | None = None
+    locations: list[str] = Field(default_factory=list)
+    signal_peptide: bool = False
+    pathways: list[str] = Field(default_factory=list)
+    reactions: list[str] = Field(default_factory=list)
+    rhea_ids: list[str] = Field(default_factory=list)
+    cofactors: list[str] = Field(default_factory=list)
+    go_process: list[str] = Field(default_factory=list)
+    go_function: list[str] = Field(default_factory=list)
+    go_component: list[str] = Field(default_factory=list)
+    disruption_phenotype: str | None = None
+    pubmed_ids: list[str] = Field(default_factory=list)
+    protein_existence: str | None = None
+    annotation_score: float | None = None
     drugs: list[dict[str, Any]] = Field(default_factory=list)
     trials: list[dict[str, Any]] = Field(default_factory=list)
     absences: list[str] = Field(default_factory=list)
@@ -412,7 +458,7 @@ def target(rv_id: str) -> TargetDetail:
     )
     annotations = _query(
         connection,
-        "SELECT interpro_ids, pfam_ids, go_ids, ec_numbers FROM proteins WHERE uniprot_acc = ?",
+        f"SELECT {', '.join(PROTEIN_FIELDS)} FROM proteins WHERE uniprot_acc = ?",
         [accession],
     )
     annotation = annotations[0] if annotations else {}
@@ -473,10 +519,11 @@ def target(rv_id: str) -> TargetDetail:
         compounds=compounds,
         variants=variants,
         partners=partners,
-        interpro_ids=list(annotation.get("interpro_ids") or []),
-        pfam_ids=list(annotation.get("pfam_ids") or []),
-        go_ids=list(annotation.get("go_ids") or []),
-        ec_numbers=list(annotation.get("ec_numbers") or []),
+        **{
+            name: value
+            for name, value in annotation.items()
+            if value is not None and name not in ("n_transmembrane", "n_references")
+        },
         drugs=drugs,
         trials=trials,
         absences=absences,

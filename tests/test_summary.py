@@ -186,3 +186,18 @@ def test_genes_with_no_drug_say_so(rows: dict) -> None:
         if not row["n_drugs"]:
             assert row["drug_names"] == []
             assert row["has_clinical_drug"] is False
+
+
+# --- protein context ---------------------------------------------------------------
+
+
+def test_membrane_topology_and_literature_roll_up(rows: dict) -> None:
+    assert rows["Rv0206c"]["n_transmembrane"] == 12  # MmpL3
+    assert rows["Rv3790"]["n_transmembrane"] == 0
+    assert rows["Rv1484"]["n_references"] > 20
+
+
+def test_a_gene_with_no_protein_has_no_protein_counts(rows: dict) -> None:
+    """rrs has no UniProt entry; zero transmembrane helices would be a claim about a protein."""
+    rrna = [r for r in rows.values() if r["feature"] == "rRNA"]
+    assert rrna and all(r["n_transmembrane"] is None and r["n_references"] is None for r in rrna)

@@ -61,6 +61,13 @@ TABLE_NOTES = {
     "Scalar columns for filtering and sorting.",
     "crosswalk": "Identity only: Rv tag to accession, with source disagreements and "
     "the loci that share an accession.",
+    "proteins": "One UniProt entry per accession, keyed on uniprot_acc: cross-references "
+    "plus curated biology -- `function`, `locations`, `n_transmembrane`, `pathways`, "
+    "`reactions` and `rhea_ids`, `cofactors`, GO term names (`go_process`, `go_function`, "
+    "`go_component`), `disruption_phenotype`, and `pubmed_ids` / `n_references` (papers "
+    "UniProt cites, a curated subset of the literature). NULL or empty means UniProt says "
+    "nothing, which is not a negative finding: 0 transmembrane segments is 'none "
+    "annotated', not 'soluble'.",
     "structures": "One row per (pdb_id, uniprot_acc). Join on uniprot_acc, NOT rv_id. "
     "`ligand_ids` excludes cofactors and crystallisation additives.",
     "predicted_structures": "AlphaFold, keyed on uniprot_acc.",

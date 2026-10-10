@@ -82,3 +82,17 @@ def test_meta_lists_the_clinical_sources(client: TestClient) -> None:
     meta = client.get("/meta").json()
     assert "ClinicalTrials.gov" in {s["name"] for s in meta["sources"]}
     assert meta["counts"]["trials"] > 0
+
+
+def test_target_page_leads_with_the_protein(client: TestClient) -> None:
+    page = client.get("/targets/Rv3790").json()
+    assert page["function"].startswith("Component of the DprE1-DprE2 complex")
+    assert page["reviewed"] is True
+    assert page["locations"] == ["Periplasm"]
+    assert "essential" in page["disruption_phenotype"]
+    assert page["n_references"] == len(page["pubmed_ids"])
+
+
+def test_targets_carry_membrane_topology(client: TestClient) -> None:
+    hits = client.get("/targets", params={"q": "mmpL3"}).json()["items"]
+    assert hits[0]["n_transmembrane"] == 12

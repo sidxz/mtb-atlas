@@ -132,6 +132,10 @@ SELECT
     coalesce(i.n_partners, 0) AS n_partners,
     i.top_partner_score,
 
+    -- NULL, not zero, for a gene with no protein: an RNA gene has no helices to count.
+    pr.n_transmembrane,
+    pr.n_references,
+
     e.call            AS essentiality,
     e.call_label      AS essentiality_label,
     coalesce(e.essential, false)    AS essentiality_essential,
@@ -185,6 +189,7 @@ LEFT JOIN res ON res.gene = coalesce(w.gene_name, w.rv_id)
 LEFT JOIN vuln v ON v.rv_id = w.rv_id
 LEFT JOIN hom  h ON h.uniprot_acc = w.uniprot_acc
 LEFT JOIN inter i ON i.rv_id = w.rv_id
+LEFT JOIN prot pr ON pr.uniprot_acc = w.uniprot_acc
 LEFT JOIN drug_link    dl ON dl.rv_id = w.rv_id
 LEFT JOIN complex_only co ON co.rv_id = w.rv_id
 LEFT JOIN gene_trials  gt ON gt.rv_id = w.rv_id
@@ -201,6 +206,7 @@ TABLES = {
     "vuln": "vulnerability",
     "hom": "homology",
     "interactions": "interactions",
+    "prot": "proteins",
     "drugs": "drugs",
     "drug_genes": "drug_genes",
     "trial_drugs": "trial_drugs",

@@ -1,8 +1,10 @@
-"""UniProt reference proteome UP000001584: accessions and cross-references.
+"""UniProt reference proteome UP000001584: accessions, cross-references, biology.
 
 This is the source of truth for Rv tag -> UniProt accession, and for the PDB,
-ChEMBL and AlphaFold cross-references hanging off each accession. Licence:
-CC BY 4.0.
+ChEMBL and AlphaFold cross-references hanging off each accession. The same
+stream carries the curated biology a target page leads with -- function,
+location, membrane topology, pathway, catalysis, cofactors, GO terms, the
+disruption phenotype and the papers UniProt cites. Licence: CC BY 4.0.
 """
 
 from __future__ import annotations
@@ -19,11 +21,15 @@ from ..store import write_parquet
 SOURCE = "uniprot"
 PROTEOME = "UP000001584"
 # Domains come free in the same stream. The alternative is InterPro's
-# protein2ipr.dat.gz, which is 13.3 GB for the same 3,997 answers.
+# protein2ipr.dat.gz, which is 13.3 GB for the same 3,997 answers. So does the
+# curated biology a target page needs: function, location, membrane topology,
+# pathway, catalysis, cofactors, GO term names and the papers UniProt cites.
 FIELDS = (
     "accession,id,reviewed,gene_oln,gene_primary,gene_synonym,protein_name,"
     "length,xref_pdb,xref_chembl,xref_alphafolddb,xref_interpro,xref_pfam,"
-    "go_id,ec"
+    "go_id,ec,cc_function,cc_subcellular_location,ft_transmem,ft_signal,cc_pathway,"
+    "cc_catalytic_activity,cc_cofactor,go_p,go_f,go_c,cc_disruption_phenotype,"
+    "lit_pubmed_id,protein_existence,annotation_score"
 )
 URL = (
     f"https://rest.uniprot.org/uniprotkb/stream?query=proteome:{PROTEOME}"
@@ -45,6 +51,32 @@ def rv_tags(gene_oln: str) -> list[str]:
 
 def _ids(field: str) -> list[str]:
     return [x.strip() for x in field.split(";") if x.strip()]
+
+
+# UniProt prefixes every comment ("FUNCTION: ") and tags claims with evidence
+# codes ("{ECO:0000269|PubMed:25906160}"). A page wants the prose; the citations
+# written into it ("(PubMed:16291675)") stay.
+_ECO = re.compile(r"\s*\{ECO:[^}]*\}")
+_GO_ID = re.compile(r"\s*\[GO:\d+\]")
+
+
+def _comments(field: str, prefix: str) -> list[str]:
+    """`PATHWAY: a. {ECO:..}. PATHWAY: b.` -> ["a", "b"]. Empty field, empty list."""
+    text = _ECO.sub("", field or "")
+    return [part.strip().rstrip(".").strip() for part in text.split(f"{prefix}:") if part.strip()]
+
+
+def _comment(field: str, prefix: str) -> str | None:
+    # None, not "", so an entry UniProt says nothing about reads as an absence.
+    parts = _comments(field, prefix)
+    return ". ".join(parts) + "." if parts else None
+
+
+def _locations(field: str) -> list[str]:
+    """`Cell inner membrane; Multi-pass membrane protein. Cell tip. Note=...` -> terms."""
+    text = (_comment(field, "SUBCELLULAR LOCATION") or "").split("Note=")[0]
+    terms = (t.strip() for t in re.split(r"[.;]", text))
+    return list(dict.fromkeys(t for t in terms if t))
 
 
 def fetch_raw(*, force: bool = False) -> Fetched:
@@ -70,6 +102,37 @@ def normalize(path: Path) -> Iterator[dict[str, Any]]:
                 "pfam_ids": _ids(row["Pfam"]),
                 "go_ids": _ids(row["Gene Ontology IDs"]),
                 "ec_numbers": [e.strip() for e in row["EC number"].split(";") if e.strip()],
+                "function": _comment(row["Function [CC]"], "FUNCTION"),
+                "subcellular_location": _comment(
+                    row["Subcellular location [CC]"], "SUBCELLULAR LOCATION"
+                ),
+                "locations": _locations(row["Subcellular location [CC]"]),
+                "n_transmembrane": row["Transmembrane"].count("TRANSMEM "),
+                "signal_peptide": "SIGNAL " in row["Signal peptide"],
+                "pathways": _comments(row["Pathway"], "PATHWAY"),
+                "reactions": [
+                    r.strip() for r in re.findall(r"Reaction=([^;]+);", row["Catalytic activity"])
+                ],
+                "rhea_ids": sorted(set(re.findall(r"Rhea:(RHEA:\d+)", row["Catalytic activity"]))),
+                "cofactors": sorted(
+                    {c.strip() for c in re.findall(r"Name=([^;]+);", row["Cofactor"])}
+                ),
+                "go_process": [
+                    _GO_ID.sub("", g) for g in _ids(row["Gene Ontology (biological process)"])
+                ],
+                "go_function": [
+                    _GO_ID.sub("", g) for g in _ids(row["Gene Ontology (molecular function)"])
+                ],
+                "go_component": [
+                    _GO_ID.sub("", g) for g in _ids(row["Gene Ontology (cellular component)"])
+                ],
+                "disruption_phenotype": _comment(
+                    row["Disruption phenotype"], "DISRUPTION PHENOTYPE"
+                ),
+                "pubmed_ids": _ids(row["PubMed ID"]),
+                "n_references": len(_ids(row["PubMed ID"])),
+                "protein_existence": row["Protein existence"] or None,
+                "annotation_score": float(row["Annotation"]) if row["Annotation"] else None,
             }
 
 

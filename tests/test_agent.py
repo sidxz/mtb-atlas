@@ -115,3 +115,9 @@ def test_system_prompt_states_the_clinical_rules() -> None:
         assert phrase in agent.SYSTEM, phrase
     # The homology column is a phmmer search now, not UniRef co-membership.
     assert "UniRef cluster membership" not in agent.SYSTEM
+
+
+def test_describe_warns_that_unannotated_is_not_negative() -> None:
+    text = agent.describe()
+    assert "n_transmembrane" in text
+    assert "not a negative finding" in text

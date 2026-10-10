@@ -99,6 +99,30 @@ cross-references.
   (`uniref_cluster_50` and friends are rejected as invalid). UniRef must be
   queried from the `uniref` endpoint — see the orthologue bridge below.
 
+### Protein context (M7)
+
+The same stream carries the curated biology a target page leads with:
+`cc_function`, `cc_subcellular_location`, `ft_transmem`, `ft_signal`,
+`cc_pathway`, `cc_catalytic_activity`, `cc_cofactor`, `go_p` / `go_f` / `go_c`
+(GO term names), `cc_disruption_phenotype`, `lit_pubmed_id`,
+`protein_existence` and `annotation_score`. Verified 2026-10-10 against
+release 2026_03.
+
+- **Coverage:** of 3,997 entries, 1,702 state a function, 722 carry
+  transmembrane segments, 543 a pathway, 936 a reaction with a Rhea id and 452
+  a disruption phenotype. The median entry cites 2 papers and `esxA` the most
+  (45).
+- **Free text is prefixed and tagged:** every comment starts `FUNCTION: `,
+  `PATHWAY: `, and so on, and claims carry evidence codes such as
+  `{ECO:0000269|PubMed:25906160}`. The ingester strips both and keeps the
+  citations written into the prose ("(PubMed:16291675)").
+- **Absence is not a negative:** no transmembrane segment means none
+  annotated, not soluble, and 1,656 entries are unreviewed (TrEMBL), where
+  annotation is automatic. The UI says which kind of entry each value comes
+  from.
+- **`n_references` counts the papers UniProt cites:** a curated subset of the
+  literature, useful as a rough how-studied signal and nothing more.
+
 ### Agreement with Mycobrowser
 
 Of 4,031 CDS loci: **4,006 agree** on the accession, **13 disagree**, 5 name an

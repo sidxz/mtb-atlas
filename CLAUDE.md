@@ -20,7 +20,42 @@ make lint             # ruff check + ruff format --check
 make fmt              # ruff format
 make api / make web   # FastAPI on :8099, the app on :5173
 uv run atlas clinical # rebuild just the clinical stage (drugs, trials, links) and the roll-up
+
+make check                    # has anything released upstream? six requests, seconds
+make refresh SOURCE=chembl    # re-download one source, rebuild only what it feeds
+make diff                     # what that did to the numbers
 ```
+
+## Keeping it current
+
+`build` on a warm cache is a no-op and `build-force` re-downloads everything,
+including four sources that cannot have changed. The three commands above are
+the middle ground, and they are the whole update policy:
+
+- **`atlas check`** asks each source by the cheapest route it offers and
+  compares to the `source_version` already on its table. **A probe that fails
+  reports `unknown`, never `current`** — a dead endpoint says nothing about
+  the data behind it. Sources that cannot move are `frozen`, not `unknown`, so
+  the report does not train you to ignore it. `--expensive` adds the RCSB
+  probe, which has to replay the structure search to count entries (~6 s).
+  - The probe must read the **same statement** the table was stamped from.
+    ChEMBL says `chembl_37 (01/05/2026)` in the mapping file and
+    `ChEMBL_37 (2026-05-01)` through the API; both are faithful and neither is
+    reformatted into the other, so the probe compares against `activities`.
+  - Mycobrowser's URL is pinned to a release number, so hashing the download
+    compares release 5 to release 5 forever. The probe asks for the *next*
+    release instead: 204 and an empty body means it does not exist.
+- **`atlas refresh <source>`** drops that source's raw cache and runs the
+  stages from its own to the end — `chembl` starts at identity because
+  `chembl_targets` is built there, `clinicaltrials-gov` touches only clinical
+  and the roll-up. It snapshots the store to `data/store.prev` first.
+- **`atlas diff`** compares the two **on each table's key, not its row count**.
+  A table that gains ten rows and loses ten has a delta of zero; that is how
+  an upstream removal hides, and the outage guard in `fetch.py` cannot see it
+  because the download succeeded.
+
+Cadence: trials monthly, ChEMBL/UniProt/PDB when `check` says so, Mycobrowser
+only when it moves (it re-keys every gene), papers never.
 
 No Docker Compose, and **no RDKit in the pipeline**. Add infrastructure when a
 milestone needs it; adding it earlier is scaffolding for later, and later can

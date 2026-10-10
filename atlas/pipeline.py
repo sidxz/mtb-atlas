@@ -14,6 +14,7 @@ the store. The per-gene summary rolls up everything, so it runs once at the end.
 
 from __future__ import annotations
 
+import shutil
 import sys
 from pathlib import Path
 
@@ -149,3 +150,63 @@ def build_all(*, force: bool = False) -> list[Path]:
         *build_clinical(force=force),
         build_summary(),
     ]
+
+
+STAGE_RUNNERS = {
+    "identity": build_identity,
+    "evidence": build_evidence,
+    "clinical": build_clinical,
+}
+
+
+def snapshot() -> Path | None:
+    """Copy the store aside so `atlas diff` has something to compare against.
+
+    A rebuild overwrites in place, so without this the previous numbers are
+    gone the moment the new ones land and nobody can say what moved.
+    """
+    from .store import STORE
+
+    if not STORE.exists():
+        return None
+    previous = STORE.parent / "store.prev"
+    shutil.rmtree(previous, ignore_errors=True)
+    shutil.copytree(STORE, previous)
+    _say(f"[refresh] previous store copied to {previous.name} for `atlas diff`")
+    return previous
+
+
+def refresh(source: str, *, force: bool = True) -> list[Path]:
+    """Re-download one source and rebuild only what depends on it.
+
+    `force` here drops that source's raw cache rather than setting the global
+    re-download flag, because the flag is per run and this is per source:
+    everything else stays warm, so refreshing ClinicalTrials.gov does not
+    re-fetch ChEMBL's thousands of molecules.
+
+    The stages run from the source's own stage to the end. A source cannot
+    change an earlier stage's input, and the roll-up always runs last.
+    """
+    from .fetch import RAW
+    from .freshness import BY_NAME, stages_from
+
+    if source not in BY_NAME:
+        raise KeyError(f"{source} is not a source; try one of {', '.join(sorted(BY_NAME))}")
+    snapshot()
+    cache = RAW / source
+    if force and cache.exists():
+        _say(f"[refresh] dropping the raw cache for {source}")
+        shutil.rmtree(cache)
+
+    stages = stages_from(source)
+    _say(f"[refresh] {source} -> {' -> '.join(stages)}")
+    paths: list[Path] = []
+    for stage in stages:
+        if stage == "summary":
+            paths.append(build_summary())
+        else:
+            paths += STAGE_RUNNERS[stage](force=False)
+        # An evidence rebuild moves the genes the clinical links point at.
+        if stage == "evidence" and "clinical" not in stages:
+            paths += relink_clinical()
+    return paths

@@ -32,7 +32,10 @@ make build        # whole pipeline -> data/store/*.parquet  (~15 min cold)
 uv run atlas clinical   # the clinical stage alone, then the roll-up
 make api          # FastAPI on :8099
 make web          # the app on :5173
-make test         # 230 tests against committed fixtures, no network
+make check        # has anything released upstream? six requests, seconds
+make refresh SOURCE=chembl   # re-download one source, rebuild only what it feeds
+make diff         # what that did to the numbers
+make test         # 246 tests against committed fixtures, no network
 ```
 
 | Milestone | Scope | |

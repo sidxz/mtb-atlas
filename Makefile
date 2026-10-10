@@ -1,4 +1,4 @@
-.PHONY: install build build-force summary api web test lint fmt typecheck
+.PHONY: install build build-force check refresh diff summary api web test lint fmt typecheck
 
 install:
 	uv venv --python 3.12
@@ -9,6 +9,18 @@ build:
 
 build-force:
 	uv run atlas build --force
+
+# Has anything released since the store was built? Six small requests.
+check:
+	uv run atlas check
+
+# Re-download one source and rebuild only what it feeds: make refresh SOURCE=chembl
+refresh:
+	uv run atlas refresh $(SOURCE)
+
+# What the last refresh did to the numbers.
+diff:
+	uv run atlas diff
 
 summary:
 	uv run atlas summary

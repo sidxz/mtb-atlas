@@ -1,6 +1,7 @@
 # Raw downloads: rebuilt by the pipeline, never committed (see docs/data-sources.md)
 data/raw/
 data/store/
+data/store.prev/
 
 .venv/
 __pycache__/

@@ -12,6 +12,12 @@ Two things this ingester refuses to do, both learned from the live API:
 * It does not trust `rcsb_entry_info.nonpolymer_bound_components`, which is null
   on entries that plainly have ligands (4KW5). Ligands come from the
   nonpolymer entities themselves.
+* It does not attribute an entry's ligands to every protein in the entry. The
+  component list belongs to the whole entry, so in a complex each subunit would
+  claim its neighbours' chemical matter: in 5UHB rifampicin is modelled on chain
+  C, which is rpoB, while rpoA, rpoC, rpoZ and sigA are other chains entirely.
+  A ligand counts for an accession only when their chains meet; the rest are
+  kept visible in `ligand_ids_elsewhere`.
 """
 
 from __future__ import annotations
@@ -189,7 +195,7 @@ def normalize(entries: Iterator[dict[str, Any]], accessions: set[str]) -> Iterat
     for entry in entries:
         resolution = (entry.get("rcsb_entry_info") or {}).get("resolution_combined") or []
         methods = [m["method"] for m in entry.get("exptl") or [] if m.get("method")]
-        components = [
+        entry_components = [
             {
                 "comp_id": c["id"],
                 "name": c.get("name"),
@@ -203,7 +209,6 @@ def normalize(entries: Iterator[dict[str, Any]], accessions: set[str]) -> Iterat
             for n in entry.get("nonpolymer_entities") or []
             if (c := (n.get("nonpolymer_comp") or {}).get("chem_comp"))
         ]
-        ligands = [c for c in components if c["role"] == "ligand"]
 
         seen: set[str] = set()
         for polymer in entry.get("polymer_entities") or []:
@@ -217,6 +222,18 @@ def normalize(entries: Iterator[dict[str, Any]], accessions: set[str]) -> Iterat
                 if accession in seen:
                     continue
                 seen.add(accession)
+                chains = identifiers.get("auth_asym_ids") or []
+                # An entry's component list belongs to the whole entry, so in a
+                # complex every subunit would otherwise claim its neighbours'
+                # ligands: in 5UHB, rifampicin sits on chain C (rpoB), and rpoA,
+                # rpoC, rpoZ and sigA have no business reporting it as theirs.
+                # A component with no chains listed is kept rather than dropped.
+                components = [
+                    {**c, "on_chain": not c["chains"] or bool(set(c["chains"]) & set(chains))}
+                    for c in entry_components
+                ]
+                ligands = [c for c in components if c["role"] == "ligand" and c["on_chain"]]
+                elsewhere = [c for c in components if c["role"] == "ligand" and not c["on_chain"]]
                 yield {
                     "pdb_id": entry["rcsb_id"],
                     "uniprot_acc": accession,
@@ -226,13 +243,15 @@ def normalize(entries: Iterator[dict[str, Any]], accessions: set[str]) -> Iterat
                     "released": (entry.get("rcsb_accession_info") or {}).get(
                         "initial_release_date", ""
                     )[:10],
-                    "chains": identifiers.get("auth_asym_ids") or [],
+                    "chains": chains,
                     "entity_description": (polymer.get("rcsb_polymer_entity") or {}).get(
                         "pdbx_description"
                     ),
                     "components": components,
                     "ligand_ids": [c["comp_id"] for c in ligands],
                     "n_ligands": len(ligands),
+                    # In the entry, but bound to another chain. Shown, not counted.
+                    "ligand_ids_elsewhere": [c["comp_id"] for c in elsewhere],
                 }
 
 

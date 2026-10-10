@@ -69,6 +69,35 @@ def test_ligands_exclude_additives(structures: dict) -> None:
     assert roles == {"IMD": "incidental", "GOL": "incidental", "1W6": "ligand", "FAD": "cofactor"}
 
 
+def test_a_ligand_on_another_subunits_chain_is_not_this_proteins(entries: list[dict]) -> None:
+    """5UHB is the RNA polymerase holoenzyme: rifampicin is modelled on chain C, rpoB.
+
+    Every subunit of a complex shares the entry's component list, so without
+    checking chains rpoC would report rifampicin as a ligand of its own.
+    """
+    rows = {r["uniprot_acc"]: r for r in pdb.normalize(iter(entries), {"P9WGY9", "P9WGY7"})}
+    rpob, rpoc = rows["P9WGY9"], rows["P9WGY7"]
+    assert rpob["ligand_ids"] == ["RFP"]
+    assert rpob["n_ligands"] == 1
+    assert rpoc["ligand_ids"] == []
+    assert rpoc["n_ligands"] == 0
+    # Shown, not counted: the entry does hold it, bound to a neighbour.
+    assert rpoc["ligand_ids_elsewhere"] == ["RFP"]
+
+
+def test_components_say_which_chain_they_sit_on(entries: list[dict]) -> None:
+    rows = {r["uniprot_acc"]: r for r in pdb.normalize(iter(entries), {"P9WGY9", "P9WGY7"})}
+    roles = {c["comp_id"]: c["on_chain"] for c in rows["P9WGY7"]["components"]}
+    assert roles == {"RFP": False, "ZN": True, "MG": True}  # the metals are on chain D, rpoC
+
+
+def test_a_ligand_on_this_proteins_chain_still_counts(structures: dict) -> None:
+    """4KW5: TCA1 is modelled on chains A and B, which are DprE1's own."""
+    dpre1 = structures[("4KW5", "P9WJF1")]
+    assert dpre1["ligand_ids"] == ["1W6"]
+    assert dpre1["ligand_ids_elsewhere"] == []
+
+
 def test_one_row_per_entry_and_accession(entries: list[dict], structures: dict) -> None:
     """A homodimer lists a polymer entity per chain group; the entry belongs once.
 

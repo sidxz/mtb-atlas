@@ -201,3 +201,11 @@ def test_a_gene_with_no_protein_has_no_protein_counts(rows: dict) -> None:
     """rrs has no UniProt entry; zero transmembrane helices would be a claim about a protein."""
     rrna = [r for r in rows.values() if r["feature"] == "rRNA"]
     assert rrna and all(r["n_transmembrane"] is None and r["n_references"] is None for r in rrna)
+
+
+def test_ligand_rollup_excludes_a_neighbours_ligand(rows: dict) -> None:
+    """rpoC is in the rifampicin structure, but the drug is on rpoB's chain."""
+    assert rows["Rv0667"]["ligand_ids"] == ["RFP"]
+    assert rows["Rv0667"]["n_pdb_with_ligand"] == 1
+    assert rows["Rv0668"]["ligand_ids"] == []
+    assert rows["Rv0668"]["n_pdb_with_ligand"] == 0

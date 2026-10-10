@@ -1,0 +1,229 @@
+[
+ {
+  "chem_comp": {
+   "id": "1W6",
+   "name": "ethyl ({2-[(1,3-benzothiazol-2-ylcarbonyl)amino]thiophen-3-yl}carbonyl)carbamate",
+   "formula_weight": 375.422
+  },
+  "rcsb_chem_comp_descriptor": {
+   "InChIKey": "ISNBJLXHBBZKSL-UHFFFAOYSA-N",
+   "SMILES": "CCOC(=O)NC(=O)c1ccsc1NC(=O)c2nc3ccccc3s2"
+  },
+  "rcsb_chem_comp_related": [
+   {
+    "resource_name": "PubChem",
+    "resource_accession_code": "4557640"
+   },
+   {
+    "resource_name": "ChEMBL",
+    "resource_accession_code": "CHEMBL3262462"
+   }
+  ]
+ },
+ {
+  "chem_comp": {
+   "id": "ZID",
+   "name": "ISONICOTINIC-ACETYL-NICOTINAMIDE-ADENINE DINUCLEOTIDE",
+   "formula_weight": 768.519
+  },
+  "rcsb_chem_comp_descriptor": {
+   "InChIKey": "SURAWYIAXPVHGO-XDBKRARRSA-N",
+   "SMILES": "c1cnccc1C(=O)c2cc[n+](cc2C(=O)N)C3C(C(C(O3)COP(=O)([O-])OP(=O)(O)OCC4C(C(C(O4)n5cnc6c5ncnc6N)O)O)O)O"
+  },
+  "rcsb_chem_comp_related": [
+   {
+    "resource_name": "PubChem",
+    "resource_accession_code": "5289618"
+   }
+  ]
+ },
+ {
+  "chem_comp": {
+   "id": "RFP",
+   "name": "RIFAMPICIN",
+   "formula_weight": 822.94
+  },
+  "rcsb_chem_comp_descriptor": {
+   "InChIKey": "JQXXHWHPUNPDRT-WLSIYKJHSA-N",
+   "SMILES": "Cc1c(c2c3c4c1OC(C4=O)(OC=CC(C(C(C(C(C(C(C(C=CC=C(C(=O)Nc(c2O)c(c3O)C=NN5CCN(CC5)C)C)C)O)C)O)C)OC(=O)C)C)OC)C)O"
+  },
+  "rcsb_chem_comp_related": [
+   {
+    "resource_name": "DrugBank",
+    "resource_accession_code": "DB01045"
+   },
+   {
+    "resource_name": "PubChem",
+    "resource_accession_code": "136262914"
+   },
+   {
+    "resource_name": "PubChem",
+    "resource_accession_code": "135398735"
+   },
+   {
+    "resource_name": "CAS",
+    "resource_accession_code": "13292-46-1"
+   },
+   {
+    "resource_name": "ChEBI",
+    "resource_accession_code": "CHEBI:71365"
+   },
+   {
+    "resource_name": "ChEBI",
+    "resource_accession_code": "CHEBI:28077"
+   },
+   {
+    "resource_name": "ChEMBL",
+    "resource_accession_code": "CHEMBL374478"
+   },
+   {
+    "resource_name": "Pharos",
+    "resource_accession_code": "CHEMBL374478"
+   }
+  ]
+ },
+ {
+  "chem_comp": {
+   "id": "AV0",
+   "name": "Lauryl Maltose Neopentyl Glycol",
+   "formula_weight": 1005.188
+  },
+  "rcsb_chem_comp_descriptor": {
+   "InChIKey": "MADJBYLAYPCCOO-VWHTXWAPSA-N",
+   "SMILES": "CCCCCCCCCCC(CCCCCCCCCC)(COC1C(C(C(C(O1)CO)OC2C(C(C(C(O2)CO)O)O)O)O)O)COC3C(C(C(C(O3)CO)OC4C(C(C(C(O4)CO)O)O)O)O)O"
+  },
+  "rcsb_chem_comp_related": [
+   {
+    "resource_name": "PubChem",
+    "resource_accession_code": "49839603"
+   }
+  ]
+ },
+ {
+  "chem_comp": {
+   "id": "FAD",
+   "name": "FLAVIN-ADENINE DINUCLEOTIDE",
+   "formula_weight": 785.55
+  },
+  "rcsb_chem_comp_descriptor": {
+   "InChIKey": "VWWQXMAJTJZDQX-UYBVJOGSSA-N",
+   "SMILES": "Cc1cc2c(cc1C)N(C3=NC(=O)NC(=O)C3=N2)CC(C(C(COP(=O)(O)OP(=O)(O)OCC4C(C(C(O4)n5cnc6c5ncnc6N)O)O)O)O)O"
+  },
+  "rcsb_chem_comp_related": [
+   {
+    "resource_name": "DrugBank",
+    "resource_accession_code": "DB03147"
+   },
+   {
+    "resource_name": "RESID",
+    "resource_accession_code": "AA0143"
+   },
+   {
+    "resource_name": "RESID",
+    "resource_accession_code": "AA0144"
+   },
+   {
+    "resource_name": "RESID",
+    "resource_accession_code": "AA0145"
+   },
+   {
+    "resource_name": "RESID",
+    "resource_accession_code": "AA0221"
+   },
+   {
+    "resource_name": "RESID",
+    "resource_accession_code": "AA0436"
+   },
+   {
+    "resource_name": "RESID",
+    "resource_accession_code": "AA0522"
+   },
+   {
+    "resource_name": "PubChem",
+    "resource_accession_code": "643975"
+   },
+   {
+    "resource_name": "CAS",
+    "resource_accession_code": "146-14-5"
+   },
+   {
+    "resource_name": "ChEBI",
+    "resource_accession_code": "CHEBI:16238"
+   },
+   {
+    "resource_name": "ChEMBL",
+    "resource_accession_code": "CHEMBL1232653"
+   }
+  ]
+ },
+ {
+  "chem_comp": {
+   "id": "HEM",
+   "name": "PROTOPORPHYRIN IX CONTAINING FE",
+   "formula_weight": 616.487
+  },
+  "rcsb_chem_comp_descriptor": {
+   "InChIKey": "KABFMIBPWCXCRK-RGGAHWMASA-L",
+   "SMILES": "Cc1c2n3c(c1CCC(=O)O)C=C4C(=C(C5=[N]4[Fe]36[N]7=C(C=C8N6C(=C5)C(=C8C)C=C)C(=C(C7=C2)C)C=C)C)CCC(=O)O"
+  },
+  "rcsb_chem_comp_related": [
+   {
+    "resource_name": "DrugBank",
+    "resource_accession_code": "DB18267"
+   },
+   {
+    "resource_name": "RESID",
+    "resource_accession_code": "AA0280"
+   },
+   {
+    "resource_name": "RESID",
+    "resource_accession_code": "AA0329"
+   }
+  ]
+ },
+ {
+  "chem_comp": {
+   "id": "BQ1",
+   "name": "Bedaquiline",
+   "formula_weight": 555.505
+  },
+  "rcsb_chem_comp_descriptor": {
+   "InChIKey": "QUIJNHUBAXPXFS-XLJNKUFUSA-N",
+   "SMILES": "CN(C)CCC(c1cccc2c1cccc2)(C(c3ccccc3)c4cc5cc(ccc5nc4OC)Br)O"
+  },
+  "rcsb_chem_comp_related": [
+   {
+    "resource_name": "DrugBank",
+    "resource_accession_code": "DB08903"
+   },
+   {
+    "resource_name": "CCDC/CSD",
+    "resource_accession_code": "KIDWAW"
+   },
+   {
+    "resource_name": "CCDC/CSD",
+    "resource_accession_code": "KIDWAW01"
+   },
+   {
+    "resource_name": "COD",
+    "resource_accession_code": "2022265"
+   },
+   {
+    "resource_name": "PubChem",
+    "resource_accession_code": "5388906"
+   },
+   {
+    "resource_name": "ChEBI",
+    "resource_accession_code": "CHEBI:72292"
+   },
+   {
+    "resource_name": "ChEMBL",
+    "resource_accession_code": "CHEMBL376488"
+   },
+   {
+    "resource_name": "Pharos",
+    "resource_accession_code": "CHEMBL376488"
+   }
+  ]
+ }
+]

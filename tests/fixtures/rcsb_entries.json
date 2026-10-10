@@ -262,5 +262,174 @@
     }
    }
   ]
+ },
+ {
+  "rcsb_id": "5UHB",
+  "struct": {
+   "title": "Crystal structure of Mycobacterium tuberculosis transcription initiation complex in complex with Rifampin"
+  },
+  "exptl": [
+   {
+    "method": "X-RAY DIFFRACTION"
+   }
+  ],
+  "rcsb_entry_info": {
+   "resolution_combined": [
+    4.29
+   ],
+   "deposited_polymer_entity_instance_count": 8
+  },
+  "rcsb_accession_info": {
+   "initial_release_date": "2017-04-12T00:00:00Z"
+  },
+  "polymer_entities": [
+   {
+    "rcsb_polymer_entity": {
+     "pdbx_description": "DNA (5'-D(*CP*AP*TP*CP*CP*GP*TP*GP*AP*GP*TP*CP*GP*AP*GP*G)-3')"
+    },
+    "rcsb_polymer_entity_container_identifiers": {
+     "auth_asym_ids": [
+      "G"
+     ],
+     "reference_sequence_identifiers": null
+    }
+   },
+   {
+    "rcsb_polymer_entity": {
+     "pdbx_description": "DNA (5'-D(*TP*AP*TP*AP*AP*TP*GP*GP*GP*AP*GP*CP*TP*GP*TP*CP*AP*CP*GP*GP*AP*TP*G)-3')"
+    },
+    "rcsb_polymer_entity_container_identifiers": {
+     "auth_asym_ids": [
+      "H"
+     ],
+     "reference_sequence_identifiers": null
+    }
+   },
+   {
+    "rcsb_polymer_entity": {
+     "pdbx_description": "RNA polymerase sigma factor SigA"
+    },
+    "rcsb_polymer_entity_container_identifiers": {
+     "auth_asym_ids": [
+      "F"
+     ],
+     "reference_sequence_identifiers": [
+      {
+       "database_accession": "P9WGI1",
+       "database_name": "UniProt"
+      }
+     ]
+    }
+   },
+   {
+    "rcsb_polymer_entity": {
+     "pdbx_description": "DNA-directed RNA polymerase subunit omega"
+    },
+    "rcsb_polymer_entity_container_identifiers": {
+     "auth_asym_ids": [
+      "E"
+     ],
+     "reference_sequence_identifiers": [
+      {
+       "database_accession": "P9WGY5",
+       "database_name": "UniProt"
+      }
+     ]
+    }
+   },
+   {
+    "rcsb_polymer_entity": {
+     "pdbx_description": "DNA-directed RNA polymerase subunit beta'"
+    },
+    "rcsb_polymer_entity_container_identifiers": {
+     "auth_asym_ids": [
+      "D"
+     ],
+     "reference_sequence_identifiers": [
+      {
+       "database_accession": "P9WGY7",
+       "database_name": "UniProt"
+      }
+     ]
+    }
+   },
+   {
+    "rcsb_polymer_entity": {
+     "pdbx_description": "DNA-directed RNA polymerase subunit beta"
+    },
+    "rcsb_polymer_entity_container_identifiers": {
+     "auth_asym_ids": [
+      "C"
+     ],
+     "reference_sequence_identifiers": [
+      {
+       "database_accession": "P9WGY9",
+       "database_name": "UniProt"
+      }
+     ]
+    }
+   },
+   {
+    "rcsb_polymer_entity": {
+     "pdbx_description": "DNA-directed RNA polymerase subunit alpha"
+    },
+    "rcsb_polymer_entity_container_identifiers": {
+     "auth_asym_ids": [
+      "A",
+      "B"
+     ],
+     "reference_sequence_identifiers": [
+      {
+       "database_accession": "P9WGZ1",
+       "database_name": "UniProt"
+      }
+     ]
+    }
+   }
+  ],
+  "nonpolymer_entities": [
+   {
+    "nonpolymer_comp": {
+     "chem_comp": {
+      "id": "RFP",
+      "name": "RIFAMPICIN",
+      "formula_weight": 822.94
+     }
+    },
+    "rcsb_nonpolymer_entity_container_identifiers": {
+     "auth_asym_ids": [
+      "C"
+     ]
+    }
+   },
+   {
+    "nonpolymer_comp": {
+     "chem_comp": {
+      "id": "ZN",
+      "name": "ZINC ION",
+      "formula_weight": 65.409
+     }
+    },
+    "rcsb_nonpolymer_entity_container_identifiers": {
+     "auth_asym_ids": [
+      "D"
+     ]
+    }
+   },
+   {
+    "nonpolymer_comp": {
+     "chem_comp": {
+      "id": "MG",
+      "name": "MAGNESIUM ION",
+      "formula_weight": 24.305
+     }
+    },
+    "rcsb_nonpolymer_entity_container_identifiers": {
+     "auth_asym_ids": [
+      "D"
+     ]
+    }
+   }
+  ]
  }
 ]

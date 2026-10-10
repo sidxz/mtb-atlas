@@ -96,3 +96,13 @@ def test_target_page_leads_with_the_protein(client: TestClient) -> None:
 def test_targets_carry_membrane_topology(client: TestClient) -> None:
     hits = client.get("/targets", params={"q": "mmpL3"}).json()["items"]
     assert hits[0]["n_transmembrane"] == 12
+
+
+def test_structures_separate_a_neighbours_ligand(client: TestClient) -> None:
+    """rpoB's rifampicin structure must not read as a ligand of rpoC."""
+    rpoc = client.get("/targets/Rv0668").json()
+    entry = next(s for s in rpoc["structures"] if s["pdb_id"] == "5UHB")
+    assert entry["ligand_ids"] == []
+    assert entry["ligand_ids_elsewhere"] == ["RFP"]
+    rpob = client.get("/targets/Rv0667").json()
+    assert next(s for s in rpob["structures"] if s["pdb_id"] == "5UHB")["ligand_ids"] == ["RFP"]

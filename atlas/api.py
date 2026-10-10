@@ -397,7 +397,8 @@ def target(rv_id: str) -> TargetDetail:
     structures = _query(
         connection,
         "SELECT pdb_id, title, method, resolution, released, chains, entity_description,"
-        " components, ligand_ids, n_ligands FROM structures WHERE uniprot_acc = ?"
+        " components, ligand_ids, n_ligands, ligand_ids_elsewhere"
+        " FROM structures WHERE uniprot_acc = ?"
         " ORDER BY n_ligands DESC, resolution NULLS LAST",
         [accession],
     )

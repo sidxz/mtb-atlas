@@ -78,6 +78,8 @@ export interface StructureComponent {
   formula_weight: number | null;
   role: "ligand" | "cofactor" | "incidental";
   chains: string[];
+  /** False when this component sits on another protein's chain in the same entry. */
+  on_chain: boolean;
 }
 
 export interface Structure {
@@ -89,8 +91,11 @@ export interface Structure {
   chains: string[];
   entity_description: string | null;
   components: StructureComponent[];
+  /** Ligands on this protein's own chains. */
   ligand_ids: string[];
   n_ligands: number;
+  /** In the entry, but bound to another chain: shown, never counted. */
+  ligand_ids_elsewhere: string[];
 }
 
 export interface ChemblTarget {

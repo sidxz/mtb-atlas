@@ -528,6 +528,7 @@ function StructureTable({ detail }: { detail: Detail }) {
             <th className="n">Å</th>
             <th>Released</th>
             <th>Ligands</th>
+            <th>Elsewhere</th>
           </tr>
         </thead>
         <tbody>
@@ -539,6 +540,9 @@ function StructureTable({ detail }: { detail: Detail }) {
               <td className="mono dim">{s.released}</td>
               <td className="mono">
                 {s.ligand_ids.length ? s.ligand_ids.join(" ") : <span className="absent">—</span>}
+              </td>
+              <td className="mono faint" title="Bound to another chain in the same entry">
+                {s.ligand_ids_elsewhere.length ? s.ligand_ids_elsewhere.join(" ") : "—"}
               </td>
             </tr>
           ))}

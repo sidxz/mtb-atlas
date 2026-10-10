@@ -155,7 +155,25 @@ This is the rule that outranks completeness.
   distinct ChEMBL assays on the gene's own protein (`evidence = 'direct'`), and
   431 essential genes have none. Never read `assay_type = 'F'` as a protein
   assay: ChEMBL files whole-cell MICs that way against the organism, so the
-  genome holds 3,083 of them over two "targets".
+  genome holds 3,083 of them over two "targets". And **an assay count is not a
+  screen**: `max_assay_compounds` is the biggest single campaign, which is why
+  only `recA` and `dnaB` have a public Mtb assay reaching 1,000 compounds while
+  inhA tops out at 52.
+- **Whole-cell potency is `pmic`, not `pchembl_value`.** ChEMBL computes
+  `pchembl_value` for affinity endpoints only, so it is NULL on all 3,870 MIC
+  rows; reading it gave a whole-cell number for 12 genes out of the 71 that
+  have one, from IC50s rather than MICs. `pmic` is `-log10(MIC in mol/L)`,
+  converted in the ingester with `pmic_basis` naming the conversion. **A
+  censored MIC (`>` the top concentration) gets no `pmic`** — it is a measured
+  non-result, counted in `n_mic_censored`, and converting it would invent the
+  number the experiment failed to establish.
+- **Chemistry has conditions too.** `assay_condition` labels each whole-cell
+  row from the depositor's prose, the same question conditional TnSeq answers
+  for genetics. **`unspecified` is not `standard_media`** — it is the commonest
+  value, because most MICs state no medium, and the silence must not become a
+  measurement. **No row matches `caseum`**, and that zero is kept visible
+  rather than filled from something else. `resistant_panel` is a separate flag:
+  strain and medium are different claims and neither may hide the other.
 - Source disagreements are recorded, not resolved silently: `acc_status`,
   `conflict`, and both sources' values side by side.
 - Two of the three reference targets have **no** WHO resistance data, because the

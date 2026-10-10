@@ -31,6 +31,16 @@ upstream change and the test that names it should be updated deliberately.
 | `Rv0667` (rpoB) | Ditto, the canonical rifampicin resistance gene |
 | `Rv0148` | Present **only** as a `promoter` row, to prove non-CDS rows are dropped |
 
+`chembl_bioactivity.json` carries three whole-cell rows added for the potency
+layer, all on `CHEMBL1976041`: a censored `MIC > 128 uM` (must produce no
+`pmic`), a hypoxic LORA MIC (must classify as `non_replicating`, not
+`standard_media`, despite naming no stress elsewhere), and an MDR
+clinical-isolate MIC in 7H9 (must set `resistant_panel` *and* classify as
+`standard_media`, proving the two fields are independent). The existing rows
+already cover the `uM`, `nM` and `ug ml-1` conversion paths, and the same
+compound's `MIC 3100 nM` and `MIC99 3.1 uM` both convert to 5.509, which is a
+free consistency check on the unit handling.
+
 `chembl_uniprot_mapping.txt` additionally keeps `A0QP27` (*M. smegmatis* MmpL3,
 `CHEMBL5465372`) — the far side of the orthologue bridge.
 

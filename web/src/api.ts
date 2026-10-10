@@ -42,7 +42,25 @@ export interface TargetSummary {
   n_compounds: number;
   best_pchembl: number | null;
   n_whole_cell: number;
+  /**
+   * ChEMBL's own pchembl_value, which it computes for affinity endpoints only.
+   * It is null on every MIC row, so this covers far fewer genes than
+   * `best_pmic` and is NOT the MIC. Kept because a whole-cell IC50 is real.
+   */
   best_whole_cell_pchembl: number | null;
+  /**
+   * -log10(MIC in mol/L). The whole-cell number a chemist means. Censored
+   * MICs (`> top concentration`) are excluded and counted in `n_mic_censored`,
+   * because "did not inhibit at 128 uM" is not a potency of 128 uM.
+   */
+  best_pmic: number | null;
+  median_pmic: number | null;
+  n_mic: number;
+  n_mic_censored: number;
+  n_resistant_panel: number;
+  whole_cell_conditions: WholeCellCondition[];
+  /** Largest single published assay by distinct compounds. */
+  max_assay_compounds: number;
   chembl_evidence: "direct" | "orthologue" | null;
   in_who_catalogue: boolean;
   n_variants_associated: number;
@@ -143,6 +161,24 @@ export interface ChemblTarget {
   cluster_size: number | null;
 }
 
+/** The growth condition an MIC was measured under, read from the assay prose. */
+export type AssayCondition =
+  | "caseum"
+  | "intracellular"
+  | "non_replicating"
+  | "alt_carbon"
+  | "nutrient_stress"
+  | "standard_media"
+  /** The deposit named no medium. NOT the same as standard media. */
+  | "unspecified";
+
+export interface WholeCellCondition {
+  condition: AssayCondition;
+  n: number;
+  n_with_pmic: number;
+  best_pmic: number | null;
+}
+
 export interface Activity {
   activity_id: number | null;
   molecule_chembl_id: string | null;
@@ -154,6 +190,14 @@ export interface Activity {
   standard_value: number | null;
   standard_units: string | null;
   pchembl_value: number | null;
+  /** -log10(MIC in mol/L); null for a censored or non-MIC row. */
+  pmic: number | null;
+  /** Which unit conversion produced `pmic`, including the MW if one was used. */
+  pmic_basis: string | null;
+  /** Null on protein assays: a biochemical assay has no growth medium. */
+  assay_condition: AssayCondition | null;
+  /** Strain, not medium: an MDR or clinical-isolate panel. */
+  resistant_panel: boolean;
   assay_chembl_id: string | null;
   assay_description: string | null;
   document_chembl_id: string | null;

@@ -96,7 +96,67 @@ def test_whole_cell_only_reaches_genes_through_their_own_compounds(rows: dict) -
         if row["n_activities"] == 0:
             assert row["n_whole_cell"] == 0, row["rv_id"]
             assert row["best_whole_cell_pchembl"] is None, row["rv_id"]
+            assert row["best_pmic"] is None, row["rv_id"]
+            assert row["n_mic"] == 0, row["rv_id"]
     assert any(r["n_whole_cell"] > 0 for r in rows.values()), "fixture should exercise the join"
+
+
+def test_the_mic_rollup_sees_what_pchembl_cannot(rows: dict) -> None:
+    """ChEMBL gives MIC rows no pchembl_value, so the old column cannot see them.
+
+    This is the gap the pmic columns close: the fixture's whole-cell rows are
+    MICs, so `best_whole_cell_pchembl` has nothing to report while `best_pmic`
+    does. If this ever inverts, the conversion stopped running.
+    """
+    with_mic = [r for r in rows.values() if r["n_mic"] > 0]
+    assert with_mic, "fixture should exercise the MIC conversion"
+    for row in with_mic:
+        assert row["best_pmic"] is not None, row["rv_id"]
+        assert row["median_pmic"] is not None, row["rv_id"]
+
+
+def test_a_censored_mic_is_counted_but_not_converted(rows: dict) -> None:
+    """`MIC > 128` is a measured non-result, not a missing measurement.
+
+    It must never become a potency, and it must not vanish either -- a gene
+    whose chemistry is all non-inhibition has to read differently from one
+    nobody tested.
+    """
+    censored = [r for r in rows.values() if r["n_mic_censored"] > 0]
+    assert censored, "fixture should carry a censored MIC"
+    for row in censored:
+        # The censored row is excluded from n_mic, which counts convertible ones.
+        assert row["n_whole_cell"] > row["n_mic"], row["rv_id"]
+
+
+def test_conditions_roll_up_without_claiming_standard_media(rows: dict) -> None:
+    """`unspecified` must stay distinct from `standard_media` in the roll-up."""
+    conditions = {
+        c["condition"]: c for row in rows.values() for c in (row["whole_cell_conditions"] or [])
+    }
+    assert "non_replicating" in conditions, "fixture should carry a hypoxia MIC"
+    assert "unspecified" in conditions, "most ChEMBL MICs name no medium"
+    # The hypoxic row was deposited in no named medium beyond the condition, so
+    # it must not have been swept into standard_media.
+    assert conditions["non_replicating"]["n"] >= 1
+
+
+def test_the_resistant_panel_flag_does_not_eat_the_condition(rows: dict) -> None:
+    """Strain and medium are separate claims; the MDR row names 7H9 as well."""
+    panels = [r for r in rows.values() if r["n_resistant_panel"] > 0]
+    assert panels, "fixture should carry an MDR clinical-isolate MIC"
+    for row in panels:
+        named = {c["condition"] for c in (row["whole_cell_conditions"] or [])}
+        assert "standard_media" in named, row["rv_id"]
+
+
+def test_screening_scale_separates_a_campaign_from_a_follow_up(rows: dict) -> None:
+    """`max_assay_compounds` is the biggest single assay, not the assay count."""
+    for row in rows.values():
+        if row["n_protein_assays"] == 0:
+            assert row["max_assay_compounds"] == 0, row["rv_id"]
+        else:
+            assert row["max_assay_compounds"] >= 1, row["rv_id"]
 
 
 # --- resistance ---------------------------------------------------------------

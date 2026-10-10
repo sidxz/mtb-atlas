@@ -9,6 +9,7 @@ is why `source_version` is parsed from the file rather than hardcoded.
 from __future__ import annotations
 
 import json
+import math
 import re
 import sys
 from collections.abc import Iterable, Iterator, Sequence
@@ -246,6 +247,172 @@ def release_from_api() -> str:
     return "unknown"
 
 
+# --- whole-cell potency: the MICs ChEMBL does not give a pChEMBL -------------
+
+# ChEMBL computes `pchembl_value` for affinity endpoints only. It is NULL on
+# every MIC row in the store -- 3,870 of them -- because an MIC is a growth
+# endpoint, not a binding constant. So a roll-up that reads `pchembl_value`
+# reports whole-cell potency from the 78 IC50/EC50 rows that happen to have one
+# and silently ignores every MIC, which is the number a TB chemist means by
+# "whole-cell". `pmic` is that number, computed here.
+#
+# MIC family only. `MBC` is bactericidal rather than inhibitory and is a
+# different endpoint, so it gets no `pmic`; `pMIC` and `-logMIC` are already
+# logs and would be double-logged. The pattern admits MIC, MIC90, `MIC>90`
+# (a 90%-inhibition threshold, not a censored value) and the like.
+_MIC_TYPE = re.compile(r"^MIC[0-9.>=<]*$")
+
+# Molar units, to mol/L.
+_MOLAR = {"M": 1.0, "mM": 1e-3, "uM": 1e-6, "nM": 1e-9, "pM": 1e-12}
+# Mass-per-volume units, to mol/L once divided by the molecular weight.
+# 1 ug/mL = 1 mg/L = 1e-3 g/L, so M = value * 1e-3 / mw.
+# Keys are lower-cased: ChEMBL spells the same unit `ug.mL-1`, `ug ml-1` and
+# `microg/ml` across deposits, so the lookup folds case.
+_MASS = {
+    "ug.ml-1": 1e-3,
+    "ug ml-1": 1e-3,
+    "ug/ml": 1e-3,
+    "microg/ml": 1e-3,
+    "mg.l-1": 1e-3,
+    "mg/l": 1e-3,
+    "mg/ml": 1.0,
+    "g/l": 1.0,
+}
+
+
+def pmic(
+    standard_type: str | None,
+    relation: str | None,
+    value: float | None,
+    units: str | None,
+    mw: float | None,
+) -> tuple[float | None, str | None]:
+    """-log10(MIC in mol/L), with the conversion that produced it.
+
+    Returns `(None, None)` unless this is an exact MIC in a unit that can be
+    made molar. **A `>` relation gets no `pmic`**: "MIC > 64 ug/mL" means the
+    compound did not inhibit at the highest concentration tested, which is a
+    censored observation, not a potency of 64. Turning it into a number would
+    invent the one thing the experiment failed to measure, and because those
+    rows are a fifth of the MICs it would drag every aggregate toward a
+    potency nobody observed.
+    """
+    if not standard_type or not _MIC_TYPE.match(standard_type):
+        return None, None
+    if relation != "=" or value is None or value <= 0 or not units:
+        return None, None
+    if (factor := _MOLAR.get(units)) is not None:
+        return round(-math.log10(value * factor), 3), units
+    if (factor := _MASS.get(units.lower())) is not None:
+        if not mw or mw <= 0:
+            return None, None
+        return round(-math.log10(value * factor / mw), 3), f"{units} / MW {mw:.1f}"
+    return None, None
+
+
+# The growth condition an MIC was measured under, from the assay description.
+# ChEMBL has no condition field, so this reads the depositor's own prose. The
+# order is precedence: the most demanding condition named wins, because
+# "activity against Mtb in 7H9 under hypoxia" is a hypoxia result.
+#
+# `caseum` matches nothing in the current release and is kept deliberately --
+# it is the highest-value condition in TB target assessment and a visible zero
+# is the honest way to say the public chemistry does not cover it.
+_CONDITIONS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("caseum", re.compile(r"caseum|caseous")),
+    (
+        "intracellular",
+        re.compile(r"macrophage|thp-?1|raw 264|j774|bone marrow[- ]derived|infected monocyte"),
+    ),
+    (
+        "non_replicating",
+        re.compile(
+            r"\blora\b|hypoxi|anaerob|non-?replicat|dormant|stationary phase"
+            r"|low[- ]oxygen|starvation|starved"
+        ),
+    ),
+    ("alt_carbon", re.compile(r"cholesterol|butyrate|propionate|gluconeogen|fatty acid as")),
+    (
+        "nutrient_stress",
+        re.compile(
+            r"fe-rich|fe-deficient|iron-depleted|iron-rich|low iron|\bph [456]"
+            r"|acidic ph|nitric oxide|nitrosative|oxidative stress|hydrogen peroxide"
+        ),
+    ),
+    ("standard_media", re.compile(r"7h9|7h11|7h10|middlebrook|lowenstein|dubos|sauton")),
+)
+
+# Orthogonal to the condition: which strain, not which medium. Kept as its own
+# flag rather than folded into the enum, because "tested on MDR clinical
+# isolates" and "tested under hypoxia" are different claims and a single column
+# would make each one hide the other.
+_RESISTANT_PANEL = re.compile(
+    r"\bmdr\b|multi-?drug[- ]resistant|multidrug-resistant|clinical isolate|clinical strain"
+    r"|[a-z]+-resistant mycobacterium|resistant clinical|\bxdr\b"
+)
+
+
+def classify_condition(description: str | None) -> str:
+    """The growth condition named in an assay description, or `unspecified`.
+
+    **`unspecified` is not `standard_media`.** Most ChEMBL MICs never state a
+    medium, and asserting the default would turn silence into a measurement --
+    the same flattening the atlas refuses everywhere else. A gene whose every
+    MIC is `unspecified` has a real answer: nobody has published its chemistry
+    outside ordinary aerobic growth.
+    """
+    if not description:
+        return "unspecified"
+    text = description.lower()
+    for label, pattern in _CONDITIONS:
+        if pattern.search(text):
+            return label
+    return "unspecified"
+
+
+def annotate_activities(
+    rows: Iterable[dict[str, Any]], compounds: Iterable[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Stamp `pmic`, `pmic_basis`, `assay_condition` and `resistant_panel` on each row.
+
+    Needs the compounds for their molecular weights, so it runs after both
+    pulls rather than inside `_activity_row`.
+    """
+    weights = {
+        c["molecule_chembl_id"]: c.get("mw")
+        for c in compounds
+        if c.get("molecule_chembl_id") is not None
+    }
+    out = []
+    for row in rows:
+        value, basis = pmic(
+            row.get("standard_type"),
+            row.get("standard_relation"),
+            row.get("standard_value"),
+            row.get("standard_units"),
+            weights.get(row.get("molecule_chembl_id")),
+        )
+        description = row.get("assay_description")
+        out.append(
+            row
+            | {
+                "pmic": value,
+                "pmic_basis": basis,
+                # Only whole-cell rows have a growth condition; a biochemical
+                # assay on purified protein has no medium to speak of.
+                "assay_condition": (
+                    classify_condition(description) if row.get("evidence") == "whole_cell" else None
+                ),
+                "resistant_panel": bool(
+                    row.get("evidence") == "whole_cell"
+                    and description
+                    and _RESISTANT_PANEL.search(description.lower())
+                ),
+            }
+        )
+    return out
+
+
 def build_bioactivity(targets: Iterable[tuple[str, str]], *, retrieved_at: str) -> list[Path]:
     """Activities and compounds for the targets the crosswalk resolved."""
     targets = sorted(set(targets))
@@ -255,6 +422,7 @@ def build_bioactivity(targets: Iterable[tuple[str, str]], *, retrieved_at: str) 
     molecule_ids = sorted({r["molecule_chembl_id"] for r in rows if r["molecule_chembl_id"]})
     rows += whole_cell_activities(molecule_ids)
     compounds = molecules(molecule_ids)
+    rows = annotate_activities(rows, compounds)
 
     return [
         write_parquet(

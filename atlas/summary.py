@@ -65,11 +65,65 @@ gene_compound AS (
     JOIN act a ON a.target_chembl_id = gt.target_id AND a.evidence <> 'whole_cell'
 ),
 cell_act AS (
+    -- `best_whole_cell_pchembl` is kept as it was, but it is NOT the MIC: ChEMBL
+    -- computes pchembl_value for affinity endpoints only, so that column comes
+    -- from the handful of whole-cell IC50/EC50 rows and is NULL for every MIC.
+    -- `best_pmic` is the MIC-derived number, converted in the ingester.
+    -- Censored MICs ('>' at the top concentration) carry no pmic by design and
+    -- are counted separately, so a gene whose chemistry is all non-inhibition
+    -- reads as that rather than as untested.
     SELECT gc.rv_id,
            count(*)             AS n_whole_cell,
-           max(a.pchembl_value) AS best_whole_cell_pchembl
+           max(a.pchembl_value) AS best_whole_cell_pchembl,
+           max(a.pmic)          AS best_pmic,
+           median(a.pmic)       AS median_pmic,
+           count(a.pmic)        AS n_mic,
+           count(*) FILTER (
+               WHERE a.pmic IS NULL AND a.standard_relation IN ('>', '>=')
+           )                    AS n_mic_censored,
+           count(*) FILTER (WHERE a.resistant_panel) AS n_resistant_panel
     FROM gene_compound gc
     JOIN act a ON a.molecule_chembl_id = gc.molecule_chembl_id AND a.evidence = 'whole_cell'
+    GROUP BY 1
+),
+cell_conditions AS (
+    -- The growth conditions this gene's chemistry has actually been measured
+    -- under, as a list rather than a column each: one row per condition with
+    -- its own best potency. `unspecified` is the commonest and means the
+    -- deposit never stated a medium -- not that it was standard.
+    SELECT rv_id,
+           list({
+               'condition': condition,
+               'n': n,
+               'n_with_pmic': n_with_pmic,
+               'best_pmic': best_pmic
+           } ORDER BY n DESC) AS whole_cell_conditions
+    FROM (
+        SELECT gc.rv_id,
+               a.assay_condition AS condition,
+               count(*)          AS n,
+               count(a.pmic)     AS n_with_pmic,
+               max(a.pmic)       AS best_pmic
+        FROM gene_compound gc
+        JOIN act a ON a.molecule_chembl_id = gc.molecule_chembl_id
+                  AND a.evidence = 'whole_cell'
+        GROUP BY 1, 2
+    )
+    GROUP BY 1
+),
+screening AS (
+    -- Has this target been SCREENED, or merely studied? `n_protein_assays`
+    -- counts assays; it cannot tell one 1,880-compound campaign from fourteen
+    -- five-compound follow-ups, and those are opposite answers to "is there a
+    -- tractable screen here". Genome-wide only three public assays reach 1,000
+    -- compounds, so the scarcity is the finding.
+    SELECT rv_id, max(n_cpd) AS max_assay_compounds
+    FROM (
+        SELECT gt.rv_id, a.assay_chembl_id, count(DISTINCT a.molecule_chembl_id) AS n_cpd
+        FROM gene_target gt
+        JOIN act a ON a.target_chembl_id = gt.target_id AND a.evidence = 'direct'
+        GROUP BY 1, 2
+    )
     GROUP BY 1
 ),
 struct AS (
@@ -202,7 +256,14 @@ SELECT
     pa.best_pchembl,
     coalesce(ca.n_whole_cell, 0) AS n_whole_cell,
     ca.best_whole_cell_pchembl,
+    ca.best_pmic,
+    ca.median_pmic,
+    coalesce(ca.n_mic, 0)              AS n_mic,
+    coalesce(ca.n_mic_censored, 0)     AS n_mic_censored,
+    coalesce(ca.n_resistant_panel, 0)  AS n_resistant_panel,
+    coalesce(cc.whole_cell_conditions, []) AS whole_cell_conditions,
     coalesce(pa.n_protein_assays, 0) AS n_protein_assays,
+    coalesce(sc.max_assay_compounds, 0)   AS max_assay_compounds,
     pa.latest_protein_assay_year,
     ax.protein_assay_example,
 
@@ -228,6 +289,8 @@ LEFT JOIN struct st ON st.uniprot_acc = w.uniprot_acc
 LEFT JOIN pred  p   ON p.uniprot_acc = w.uniprot_acc
 LEFT JOIN protein_act pa ON pa.rv_id = w.rv_id
 LEFT JOIN cell_act    ca ON ca.rv_id = w.rv_id
+LEFT JOIN cell_conditions cc ON cc.rv_id = w.rv_id
+LEFT JOIN screening   sc ON sc.rv_id = w.rv_id
 LEFT JOIN assay_example ax ON ax.rv_id = w.rv_id
 LEFT JOIN res ON res.gene = coalesce(w.gene_name, w.rv_id)
 LEFT JOIN vuln v ON v.rv_id = w.rv_id

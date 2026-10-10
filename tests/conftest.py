@@ -98,7 +98,7 @@ def evidence_store(store: Path) -> Path:
     bioactivity = json.loads((FIXTURES / "chembl_bioactivity.json").read_text())
     write_parquet(
         "activities",
-        bioactivity["activities"],
+        chembl.annotate_activities(bioactivity["activities"], bioactivity["compounds"]),
         source=chembl.SOURCE,
         source_version="chembl_37",
         retrieved_at="2026-10-09",

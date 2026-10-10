@@ -85,7 +85,11 @@ SORTABLE = {
     "length",
     "n_compounds",
     "n_whole_cell",
+    "best_pmic",
+    "median_pmic",
+    "n_mic",
     "n_protein_assays",
+    "max_assay_compounds",
     "best_resolution",
     "cholesterol_log2_ratio",
     "hn878_vulnerability_index",
@@ -186,11 +190,25 @@ class TargetSummary(BaseModel):
     n_compounds: int = 0
     best_pchembl: float | None = None
     n_whole_cell: int = 0
+    # ChEMBL's own pchembl_value, which it computes for affinity endpoints only
+    # and so is NULL on every MIC. Kept because a whole-cell IC50 is a real
+    # measurement, but it is not the MIC and covers 12 genes to best_pmic's 71.
     best_whole_cell_pchembl: float | None = None
+    # -log10(MIC in mol/L), converted in the ingester from the value and units
+    # ChEMBL reports. Censored ('>') MICs are excluded and counted separately.
+    best_pmic: float | None = None
+    median_pmic: float | None = None
+    n_mic: int = 0
+    n_mic_censored: int = 0
+    n_resistant_panel: int = 0
+    whole_cell_conditions: list[dict[str, Any]] = Field(default_factory=list)
     # Whether a way to measure this protein has been published, which is not
     # the same question as whether anyone has hit it. Distinct ChEMBL assays on
     # the Mtb protein itself; orthologue and whole-cell assays are excluded.
     n_protein_assays: int = 0
+    # The largest single published assay by distinct compounds: one campaign
+    # versus a dozen follow-ups are opposite answers to "can this be screened".
+    max_assay_compounds: int = 0
     latest_protein_assay_year: int | None = None
     protein_assay_example: str | None = None
     chembl_evidence: str | None = None

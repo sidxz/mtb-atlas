@@ -563,10 +563,30 @@ function Evidence({ detail }: { detail: Detail }) {
             <span className="dim">activities, {detail.n_compounds} compounds</span>
             <div className="note" style={{ color: "var(--fg)" }}>
               best pChEMBL <b className="mono">{number(detail.best_pchembl)}</b>
+              {detail.best_pmic !== null && (
+                <>
+                  {" "}
+                  · best pMIC <b className="mono">{number(detail.best_pmic)}</b>
+                  <span className="dim">
+                    {" "}
+                    (median {number(detail.median_pmic)} over {detail.n_mic} MIC
+                    {detail.n_mic === 1 ? "" : "s"})
+                  </span>
+                </>
+              )}
               {detail.best_whole_cell_pchembl !== null && (
-                <> · best whole-cell pChEMBL <b className="mono">{number(detail.best_whole_cell_pchembl)}</b></>
+                <> · whole-cell pChEMBL <b className="mono">{number(detail.best_whole_cell_pchembl)}</b></>
               )}
             </div>
+            {detail.n_mic_censored > 0 && (
+              <p className="note dim" style={{ marginTop: 2 }}>
+                {detail.n_mic_censored} further MIC
+                {detail.n_mic_censored === 1 ? " is" : "s are"} censored — the compound did not
+                inhibit at the highest concentration tested, which is a measured result and not a
+                potency, so it carries no pMIC.
+              </p>
+            )}
+            <WholeCellConditions detail={detail} />
             {detail.chembl_targets.map((t) => (
               <div className="note" key={t.target_id}>
                 <span className="mono">{t.target_id}</span> {t.pref_name}{" "}
@@ -844,6 +864,66 @@ function StructureTable({ detail }: { detail: Detail }) {
   );
 }
 
+/** Under which conditions has this gene's chemistry actually been measured?
+ *
+ * The genetics side of the atlas answers this already (conditional TnSeq), and
+ * the chemistry side could not: every MIC was pooled into one number. ChEMBL
+ * has no condition field, so these labels are read from the depositor's prose,
+ * which is why `unspecified` is both the commonest answer and shown as its own
+ * row rather than assumed to be standard media.
+ */
+const CONDITION_LABELS: Record<string, string> = {
+  caseum: "caseum",
+  intracellular: "intracellular (macrophage)",
+  non_replicating: "non-replicating / hypoxic",
+  alt_carbon: "alternative carbon source",
+  nutrient_stress: "nutrient or oxidative stress",
+  standard_media: "standard media (named)",
+  unspecified: "medium not stated",
+};
+
+function WholeCellConditions({ detail }: { detail: Detail }) {
+  const rows = (detail.whole_cell_conditions ?? []).filter((c) => c.n > 0);
+  if (rows.length === 0) return null;
+  const named = rows.filter((c) => c.condition !== "unspecified");
+  return (
+    <div style={{ marginTop: 6 }}>
+      <table className="cond-table">
+        <thead>
+          <tr>
+            <th>Whole-cell condition</th>
+            <th className="n">Measurements</th>
+            <th className="n">Best pMIC</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((c) => (
+            <tr key={c.condition}>
+              <td>{CONDITION_LABELS[c.condition] ?? c.condition}</td>
+              <td className="n">{c.n.toLocaleString()}</td>
+              <td className="n">
+                {c.best_pmic !== null ? (
+                  number(c.best_pmic)
+                ) : (
+                  <span className="absent" title={`${c.n} measurement(s), none convertible to a pMIC`}>
+                    —
+                  </span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {named.length === 0 && (
+        <p className="caveat" style={{ marginTop: 4 }}>
+          No published MIC for this gene's compounds states a growth condition, so nothing is
+          known here about activity outside ordinary aerobic culture.
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** Can this target be screened at all?
  *
  * Distinct from whether anyone has hit it. A gene with an essentiality call, a
@@ -879,11 +959,15 @@ function Chemistry({ detail, onOpen }: { detail: Detail; onOpen: (focus: Focus) 
   const byCompound = useMemo(() => {
     const index = new Map<string, Compound>();
     for (const c of detail.compounds) index.set(c.molecule_chembl_id, c);
+    // Rank the cell measurement by pMIC, not pchembl_value. ChEMBL leaves
+    // pchembl_value null on every MIC, so ranking by it picked a blank row and
+    // the column read "—" for compounds that have a perfectly good MIC.
     const cell = new Map<string, Activity>();
     for (const a of detail.whole_cell) {
       const id = a.molecule_chembl_id ?? "";
       const best = cell.get(id);
-      if (!best || (a.pchembl_value ?? 0) > (best.pchembl_value ?? 0)) cell.set(id, a);
+      const score = (x: Activity) => x.pmic ?? x.pchembl_value ?? 0;
+      if (!best || score(a) > score(best)) cell.set(id, a);
     }
     const best = new Map<string, Activity>();
     for (const a of detail.activities) {
@@ -973,7 +1057,16 @@ function Chemistry({ detail, onOpen }: { detail: Detail; onOpen: (focus: Focus) 
                 </td>
                 <td className="n">{number(activity.pchembl_value)}</td>
                 <td className="dim">{activity.standard_type}</td>
-                <td className="n">{cell ? number(cell.pchembl_value) : "—"}</td>
+                {/* pMIC where there is one, else the whole-cell pChEMBL. The
+                    title says which, because they are different endpoints. */}
+                <td className="n" title={cell ? (cell.pmic !== null ? `pMIC from ${cell.standard_type} ${cell.standard_value} ${cell.standard_units} (${cell.pmic_basis})` : "whole-cell pChEMBL") : undefined}>
+                  {cell ? number(cell.pmic ?? cell.pchembl_value) : "—"}
+                  {cell?.resistant_panel && (
+                    <span className="chip" style={{ marginLeft: 4 }} title="measured on a resistant or clinical isolate">
+                      res
+                    </span>
+                  )}
+                </td>
                 <td className="n">{number(compound?.mw ?? null, 0)}</td>
                 <td className="n">{number(compound?.alogp ?? null, 1)}</td>
                 <td className="dim">{phaseLabel(compound?.max_phase ?? null)}</td>

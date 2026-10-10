@@ -66,8 +66,18 @@ TABLE_NOTES = {
     "Scalar columns for filtering and sorting. `n_protein_assays` is how many published "
     "ChEMBL assays run against this gene's own protein -- whether the target can be "
     "screened at all, which is a different question from `n_compounds` (whether anyone "
-    "has hit it). `hn878_*` compares vulnerability against a clinical isolate; see "
-    "strain_vulnerability for the sign convention.",
+    "has hit it). `max_assay_compounds` is the largest single published assay by distinct "
+    "compounds, which separates one real screening campaign from a dozen small follow-ups: "
+    "genome-wide only two genes reach 1,000. `hn878_*` compares vulnerability against a "
+    "clinical isolate; see strain_vulnerability for the sign convention. "
+    "**For whole-cell potency use `best_pmic` / `median_pmic`, not "
+    "`best_whole_cell_pchembl`** -- the latter is ChEMBL's pchembl_value, which exists for "
+    "only 12 genes because it is NULL on every MIC; the pmic columns cover 71. `n_mic` "
+    "counts exact MICs and `n_mic_censored` the '>' non-results, which are evidence of "
+    "no activity rather than absence of testing. `whole_cell_conditions` is a list of "
+    "structs (condition, n, n_with_pmic, best_pmic) -- UNNEST it to ask what conditions a "
+    "gene's chemistry was measured under, remembering that `unspecified` means the deposit "
+    "did not say, not standard media.",
     "crosswalk": "Identity only: Rv tag to accession, with source disagreements and "
     "the loci that share an accession.",
     "proteins": "One UniProt entry per accession, keyed on uniprot_acc: cross-references "
@@ -95,7 +105,22 @@ TABLE_NOTES = {
     "assays against the organism. A published assay for a gene's own protein means "
     "`evidence = 'direct'`; count DISTINCT assay_chembl_id, since one assay can carry "
     "hundreds of measurements. `target_summary.n_protein_assays` is that count already "
-    "done.",
+    "done. **Potency lives in two different columns and they do not overlap.** "
+    "`pchembl_value` is ChEMBL's own and is NULL on every one of the 3,870 MIC rows, "
+    "because ChEMBL computes it for affinity endpoints only -- so `max(pchembl_value)` "
+    "over whole_cell rows answers from 78 IC50/EC50 measurements and silently ignores "
+    "every MIC. `pmic` is -log10(MIC in mol/L), computed in the ingester, and is the "
+    "number to use for whole-cell potency; `pmic_basis` says which unit conversion "
+    "produced it. No row has both. **A censored MIC gets no pmic**: `standard_relation` "
+    "'>' means the compound did not inhibit at the highest concentration tested, so "
+    "those rows are NULL on purpose and counting them as untested is wrong -- they are "
+    "a measured non-result. `assay_condition` (whole_cell rows only) is the growth "
+    "condition read from the assay prose: caseum | intracellular | non_replicating | "
+    "alt_carbon | nutrient_stress | standard_media | unspecified. **`unspecified` is not "
+    "`standard_media`** -- it means the deposit never stated a medium, which is most of "
+    "them, and no condition matches `caseum` in this release at all. `resistant_panel` "
+    "is a separate flag for strain, not medium (MDR or clinical isolates), so a row can "
+    "be both.",
     "compounds": "One row per compound, with properties. Keyed on molecule_chembl_id.",
     "essentiality": "TnSeq calls, one in vitro condition. `essential` is ES or ESD; "
     "`fitness_cost` also includes growth-defect.",

@@ -199,6 +199,85 @@ assay, but not one for the Mtb protein, so mmpL3 reads 0 here while still
 showing its orthologue chemistry — which is the honest answer to "what would
 it take to screen this".
 
+### Whole-cell potency: the MICs `pchembl_value` cannot see
+
+ChEMBL computes `pchembl_value` for affinity endpoints only. It is **NULL on
+every one of the 3,870 MIC rows** in the store, because an MIC is a growth
+endpoint rather than a binding constant. So the original roll-up, which read
+`max(pchembl_value)` over whole-cell rows, answered from **78 IC50/EC50
+measurements and silently ignored every MIC** — reporting a whole-cell number
+for 12 genes when 71 have one, and reporting the wrong kind of number for
+those 12. For a TB atlas that is the wrong way round: the MIC *is* the
+whole-cell number.
+
+`activities.pmic` is `-log10(MIC in mol/L)`, converted in the ingester from the
+value and units ChEMBL reports, with `pmic_basis` recording which conversion
+produced it (including the molecular weight, when a mass unit needed one).
+3,941 of 6,752 whole-cell rows now carry one. The distribution is sane —
+median 5.6, 1st percentile 3.44, 99th 8.44 — and the two rows above pMIC 10
+are faithful conversions of ChEMBL's own deposited `1.6e-05 ug.mL-1`, not
+conversion errors. `best_whole_cell_pchembl` is kept beside it, because a
+whole-cell IC50 is a real measurement; it is simply a different endpoint, and
+no row has both.
+
+Three rules keep it honest:
+
+- **A censored MIC gets no `pmic`.** `MIC > 64 ug/mL` means the compound did
+  not inhibit at the highest concentration tested. That is a measured result,
+  not a potency of 64, and converting it would invent the one thing the
+  experiment failed to establish. A fifth of the MICs are censored this way,
+  so including them would drag every aggregate toward a potency nobody
+  observed. They are counted in `n_mic_censored` instead, because a gene whose
+  chemistry is all non-inhibition has to read differently from one nobody
+  tested.
+- **The MIC family only.** `MBC` is bactericidal rather than inhibitory and is
+  a different endpoint; `pMIC` and `-logMIC` are already logs and would be
+  double-logged. Thresholded names like `MIC>90` *are* exact values at a stated
+  inhibition level and do convert.
+- **A mass unit without a molecular weight converts to nothing**, rather than
+  to a guess.
+
+### Under which conditions, for chemistry as well as genetics
+
+The atlas answers "under which conditions is this gene required" from
+conditional TnSeq, and could not answer the same question of its chemistry:
+every MIC was pooled into one number. ChEMBL has no condition field, so
+`activities.assay_condition` reads the depositor's own prose —
+`caseum | intracellular | non_replicating | alt_carbon | nutrient_stress |
+standard_media | unspecified` — with the most demanding condition named
+winning, since an assay run in 7H9 under hypoxia is a hypoxia result.
+
+**`unspecified` is not `standard_media`**, and it is the commonest answer
+(6,118 of 6,752 rows). Most ChEMBL MICs never state a medium, and asserting
+the default would turn silence into a measurement. A gene whose every MIC is
+`unspecified` has a real answer: nobody has published its chemistry outside
+ordinary aerobic growth.
+
+**Nothing in the current release matches `caseum`.** The label is kept
+deliberately: caseum penetration is among the most decisive questions in TB
+target assessment, and a visible zero is the honest way to say the public
+chemistry does not cover it. It will not be filled by relabelling something
+else.
+
+`resistant_panel` is a **separate boolean**, not a value of the enum, because
+strain and medium are different claims: "tested on MDR clinical isolates"
+(1,121 rows) and "tested under hypoxia" must not hide each other, and a row
+can be both. Folding them into one column was tried and rejected — it let the
+resistance panels swallow a thousand rows whose medium was simply unstated.
+
+### Screened, or merely studied?
+
+`target_summary.max_assay_compounds` is the largest single published assay on
+the gene's own protein, by distinct compounds. `n_protein_assays` cannot
+separate one 1,875-compound campaign from fourteen five-compound follow-ups,
+and those are opposite answers to "is there a tractable screen here".
+
+Genome-wide the answer is stark: **two genes have a public assay reaching
+1,000 compounds** — `recA` (1,875) and `dnaB` (1,642), both PubChem
+deposits — and five reach 100. inhA, the best-studied target in TB, tops out
+at 52 compounds in any single assay. The scarcity is the finding, not a gap in
+the ingest.
+
 ### The orthologue bridge
 
 MmpL3 is among the most-pursued targets in TB drug discovery and has **no Mtb

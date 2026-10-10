@@ -85,7 +85,8 @@ const COLUMNS: [string, string, boolean][] = [
   ["n_compounds", "Compounds", true],
   ["n_protein_assays", "Assays", true],
   ["best_pchembl", "Best pChEMBL", true],
-  ["best_whole_cell_pchembl", "Cell", true],
+  ["best_pmic", "Best pMIC", true],
+  ["best_whole_cell_pchembl", "Cell IC50", true],
   ["n_variants_associated", "WHO", true],
   ["best_drug_phase", "TB phase", true],
   ["n_partners", "Partners", true],
@@ -97,7 +98,16 @@ const COLUMN_GROUPS = [
   { label: "Gene identity", keys: ["rv_id", "gene_name"] },
   { label: "Target biology", keys: ["essentiality", "vulnerability_index"] },
   { label: "Structures", keys: ["n_pdb", "plddt_mean"] },
-  { label: "Chemical evidence", keys: ["n_compounds", "n_protein_assays", "best_pchembl", "best_whole_cell_pchembl"] },
+  {
+    label: "Chemical evidence",
+    keys: [
+      "n_compounds",
+      "n_protein_assays",
+      "best_pchembl",
+      "best_pmic",
+      "best_whole_cell_pchembl",
+    ],
+  },
   { label: "Clinical evidence", keys: ["n_variants_associated", "best_drug_phase"] },
   { label: "Context", keys: ["n_partners", "n_references"] },
   { label: "Annotation", keys: ["product"] },
@@ -221,6 +231,10 @@ function cell(gene: TargetSummary, key: string): React.ReactNode {
           )}
         </>
       );
+    // The MIC-derived number. ChEMBL leaves pchembl_value null on every MIC,
+    // so "Cell IC50" beside it is a different endpoint on far fewer genes.
+    case "best_pmic":
+      return gene.best_pmic?.toFixed(2) ?? "—";
     case "best_whole_cell_pchembl":
       return gene.best_whole_cell_pchembl?.toFixed(2) ?? "—";
     case "n_variants_associated":

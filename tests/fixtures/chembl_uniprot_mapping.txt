@@ -1,0 +1,7 @@
+# chembl_37 target list, 01/05/2026
+P9WGR1	CHEMBL1849	Enoyl-[acyl-carrier-protein] reductase [NADH]	SINGLE PROTEIN
+P9WGY9	CHEMBL2006	DNA-directed RNA polymerase subunit beta	SINGLE PROTEIN
+P9WPP3	CHEMBL6195688	Methyl-branched lipid omega-hydroxylase	SINGLE PROTEIN
+P9WPL1	CHEMBL6195687	Cytochrome P450 144	SINGLE PROTEIN
+P9WJF1	CHEMBL3804751	Decaprenylphosphoryl-beta-D-ribose oxidase	SINGLE PROTEIN
+A0QP27	CHEMBL5465372	Trehalose monomycolate exporter MmpL3	SINGLE PROTEIN

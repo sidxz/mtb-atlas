@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-from atlas.sources import alphafold, essentiality, pdb, resistance, uniprot
+from atlas.sources import alphafold, chembl, essentiality, pdb, resistance, uniprot
 
 from .conftest import FIXTURES
 
@@ -98,6 +98,10 @@ def test_one_accession_split_over_two_entities_keeps_all_its_chains(entries: lis
     assert pand["ligand_ids"] == ["VGL"]
     assert pand["n_ligands"] == 1
     assert pand["ligand_ids_elsewhere"] == []
+    # The row covers both entities, so it must not be labelled as one of them.
+    assert pand["entity_description"] == (
+        "Aspartate 1-decarboxylase beta chain / Aspartate 1-decarboxylase alpha chain"
+    )
 
 
 def test_components_say_which_chain_they_sit_on(entries: list[dict]) -> None:
@@ -325,3 +329,16 @@ def test_a_ligand_rcsb_cannot_place_says_so(ligands: dict) -> None:
 def test_roles_come_from_the_same_rule_as_the_structures(ligands: dict) -> None:
     assert ligands["1W6"]["role"] == "ligand"
     assert ligands["FAD"]["role"] == "cofactor"
+
+
+# --- a source that will not state its version --------------------------------
+
+
+def test_an_unreachable_release_is_unknown_not_a_guess(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ChEMBL's status endpoint 500s sometimes; the version is not worth a build."""
+
+    def down(_url: str, **_kwargs: object) -> object:
+        raise RuntimeError("500 Internal Server Error")
+
+    monkeypatch.setattr(chembl, "fetch_json", down)
+    assert chembl.release_from_api() == "unknown"

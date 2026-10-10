@@ -217,6 +217,13 @@ def post_json(
     raise AssertionError("unreachable")
 
 
+# One dead accession should not end a long build; half of them failing is an
+# outage, and the rows that did come back would be written as if the missing
+# ones were an absence of evidence. Nothing downstream could tell the two apart.
+MAX_FAILURES = 3
+MAX_FAILURE_RATE = 0.1
+
+
 def fetch_json_many(
     urls: Sequence[str],
     *,
@@ -229,8 +236,9 @@ def fetch_json_many(
 
     AlphaFold and ChEMBL are keyed per accession or per target, so a build means
     thousands of tiny requests. Eight in flight against a shared throttle keeps
-    this to minutes without being rude. Failures are reported and skipped rather
-    than aborting a long build.
+    this to minutes without being rude. A handful of failures are reported and
+    skipped; past that the service is down rather than the key being bad, and
+    the build stops instead of writing a quietly truncated table.
     """
     out: dict[str, object] = {}
     failures: list[tuple[str, str]] = []
@@ -254,4 +262,10 @@ def fetch_json_many(
                 print(f"  {label} {done}/{len(jobs)}", file=sys.stderr)
     if failures:
         print(f"  {label}: {len(failures)} failed, e.g. {failures[0]}", file=sys.stderr)
+    if len(failures) > max(MAX_FAILURES, MAX_FAILURE_RATE * len(urls)):
+        raise RuntimeError(
+            f"{label or 'fetch'}: {len(failures)} of {len(urls)} requests failed, which is an "
+            f"outage rather than a bad key. Refusing to write a partial table. "
+            f"First failure: {failures[0]}"
+        )
     return out

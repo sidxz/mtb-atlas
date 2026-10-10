@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Any
@@ -219,7 +220,17 @@ def _float(value: Any) -> float | None:
 
 
 def release_from_api() -> str:
-    status = fetch_json(f"{API}/status.json")
+    """The release ChEMBL asks to be displayed, or "unknown" if it will not say.
+
+    The status endpoint 500s from time to time, and a version string is not
+    worth losing a build over -- the rule is that a source which will not state
+    its version gets "unknown" recorded, never a guess.
+    """
+    try:
+        status = fetch_json(f"{API}/status.json")
+    except Exception as error:  # noqa: BLE001 - any failure here means no version
+        print(f"  chembl: no release from the status endpoint ({error})", file=sys.stderr)
+        return "unknown"
     return f"{status['chembl_db_version']} ({status['chembl_release_date']})"
 
 

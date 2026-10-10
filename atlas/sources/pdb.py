@@ -218,6 +218,7 @@ def normalize(entries: Iterator[dict[str, Any]], accessions: set[str]) -> Iterat
         # pyrazinoic acid, which is pyrazinamide's active metabolite.
         chains_of: dict[str, list[str]] = {}
         entity_of: dict[str, dict[str, Any]] = {}
+        described: dict[str, list[str]] = {}
         for polymer in entry.get("polymer_entities") or []:
             identifiers = polymer.get("rcsb_polymer_entity_container_identifiers") or {}
             for reference in identifiers.get("reference_sequence_identifiers") or []:
@@ -226,6 +227,9 @@ def normalize(entries: Iterator[dict[str, Any]], accessions: set[str]) -> Iterat
                     continue
                 chains_of.setdefault(accession, []).extend(identifiers.get("auth_asym_ids") or [])
                 entity_of.setdefault(accession, polymer)
+                description = (polymer.get("rcsb_polymer_entity") or {}).get("pdbx_description")
+                if description and description not in described.setdefault(accession, []):
+                    described[accession].append(description)
 
         for accession, entity_chains in chains_of.items():
             polymer = entity_of[accession]
@@ -251,9 +255,9 @@ def normalize(entries: Iterator[dict[str, Any]], accessions: set[str]) -> Iterat
                     "initial_release_date", ""
                 )[:10],
                 "chains": chains,
-                "entity_description": (polymer.get("rcsb_polymer_entity") or {}).get(
-                    "pdbx_description"
-                ),
+                # Every entity the accession owns, so a row covering an alpha
+                # and a beta chain is not labelled as just one of them.
+                "entity_description": " / ".join(described.get(accession, [])) or None,
                 "components": components,
                 "ligand_ids": [c["comp_id"] for c in ligands],
                 "n_ligands": len(ligands),

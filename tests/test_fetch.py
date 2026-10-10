@@ -46,3 +46,36 @@ def test_an_html_page_is_never_cached(tmp_path: Path) -> None:
             URL, "status.json", source="chembl", json_body=True, client=client(*[HTML] * 4)
         )
     assert not (tmp_path / "chembl" / "status.json").exists()
+
+
+# --- an outage must not quietly truncate a table -----------------------------
+
+
+def test_a_few_bad_keys_are_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
+    """One dead accession must not end a build that is otherwise fine."""
+
+    def answer(url: str, **_: object) -> dict[str, str]:
+        if url.rsplit("/", 1)[1] == "3":
+            raise httpx.HTTPError("gone")
+        return {"url": url}
+
+    monkeypatch.setattr(fetching, "fetch_json", answer)
+    got = fetching.fetch_json_many([f"https://example.test/{i}" for i in range(40)])
+    assert len(got) == 39
+
+
+def test_a_widespread_failure_stops_the_build(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Rows missing because the network fell over are not an absence of evidence.
+
+    Writing the fraction that came back would silently replace a full table
+    with a partial one, and nothing downstream could tell the difference.
+    """
+
+    def answer(url: str, **_: object) -> dict[str, str]:
+        if int(url.rsplit("/", 1)[1]) % 2:
+            raise httpx.HTTPError("service unavailable")
+        return {"url": url}
+
+    monkeypatch.setattr(fetching, "fetch_json", answer)
+    with pytest.raises(RuntimeError, match="20 of 40"):
+        fetching.fetch_json_many([f"https://example.test/{i}" for i in range(40)])

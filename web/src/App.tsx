@@ -87,6 +87,7 @@ const COLUMNS: [string, string, boolean][] = [
   ["best_pchembl", "Best pChEMBL", true],
   ["best_pmic", "Best pMIC", true],
   ["best_whole_cell_pchembl", "Cell IC50", true],
+  ["n_close_paralogs", "Paralogs", true],
   ["n_variants_associated", "WHO", true],
   ["best_drug_phase", "TB phase", true],
   ["n_partners", "Partners", true],
@@ -96,7 +97,7 @@ const COLUMNS: [string, string, boolean][] = [
 
 const COLUMN_GROUPS = [
   { label: "Gene identity", keys: ["rv_id", "gene_name"] },
-  { label: "Target biology", keys: ["essentiality", "vulnerability_index"] },
+  { label: "Target biology", keys: ["essentiality", "vulnerability_index", "n_close_paralogs"] },
   { label: "Structures", keys: ["n_pdb", "plddt_mean"] },
   {
     label: "Chemical evidence",
@@ -237,6 +238,16 @@ function cell(gene: TargetSummary, key: string): React.ReactNode {
       return gene.best_pmic?.toFixed(2) ?? "—";
     case "best_whole_cell_pchembl":
       return gene.best_whole_cell_pchembl?.toFixed(2) ?? "—";
+    // Full-length backup copies, not family members: a shared domain is not
+    // redundancy, so this is the stricter count.
+    case "n_close_paralogs":
+      return gene.n_close_paralogs ? (
+        <span title={`closest: ${gene.closest_paralog_gene} at ${Math.round((gene.closest_paralog_identity ?? 0) * 100)}% identity`}>
+          {gene.n_close_paralogs}
+        </span>
+      ) : (
+        "—"
+      );
     case "n_variants_associated":
       return gene.n_variants_associated ?? "—";
     case "best_drug_phase":

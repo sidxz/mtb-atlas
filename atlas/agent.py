@@ -51,6 +51,7 @@ TABLES = (
     "strain_vulnerability",
     "interactions",
     "homology",
+    "paralogs",
     "chembl_targets",
     "ligands",
     "drugs",
@@ -70,6 +71,10 @@ TABLE_NOTES = {
     "compounds, which separates one real screening campaign from a dozen small follow-ups: "
     "genome-wide only two genes reach 1,000. `hn878_*` compares vulnerability against a "
     "clinical isolate; see strain_vulnerability for the sign convention. "
+    "`close_paralog` is whether a full-length second copy exists -- see the paralogs table "
+    "for why it is stricter than `close_human_homolog`. `closest_paralog_gene` is NULL when "
+    "there is no backup, while `nearest_relative_gene` is usually populated anyway, so "
+    "reading the latter as redundancy is the trap. "
     "**For whole-cell potency use `best_pmic` / `median_pmic`, not "
     "`best_whole_cell_pchembl`** -- the latter is ChEMBL's pchembl_value, which exists for "
     "only 12 genes because it is NULL on every MIC; the pmic columns cover 71. `n_mic` "
@@ -178,6 +183,21 @@ TABLE_NOTES = {
     "homology": "Human anti-target check: phmmer of each Mtb protein against the reviewed "
     "human proteome, keyed on uniprot_acc. `identity` is a FRACTION (0.48 = 48%); "
     "`close_human_homolog` means identity >= 0.30, a convention of this atlas.",
+    "paralogs": "Functional redundancy: phmmer of each Mtb protein against the Mtb "
+    "proteome itself, keyed on uniprot_acc. Answers 'could a second copy cover for this "
+    "target', which no other table does. **The `close_paralog` flag needs identity >= 0.30 "
+    "AND coverage >= 0.70, deliberately stricter than `close_human_homolog`, which flags "
+    "on identity alone.** The questions differ: a shared domain is already a selectivity "
+    "worry for an off-target, but a backup copy has to be the same protein, not share a "
+    "piece of it. Identity alone would call 2,009 genes redundant including dprE1 (30.8% "
+    "over 37% of the protein) and mmpL3 (31.7% over 21%), neither of which has a backup. "
+    "**Two different 'closest' columns.** `closest_close_gene` is the nearest BACKUP and is "
+    "NULL when there is none, even though relatives exist; `closest_gene` is the nearest "
+    "RELATIVE, ranked by bitscore rather than identity so that a short exact fragment does "
+    "not outrank a full-length near-copy. Self-hits are dropped, and so are pairs of loci "
+    "filing the identical sequence under two accessions -- those are in "
+    "crosswalk.shared_accession and are identity collapse, not paralogy. `identity` and "
+    "`coverage` are FRACTIONS.",
     "drugs": "One row per ChEMBL parent molecule with a TUBERCULOSIS indication. "
     "`pref_name` is UPPER CASE ('ISONIAZID'), so match case-insensitively. "
     "`max_phase_tb` is the highest phase for TB; `max_phase` is for ANY indication, so an "

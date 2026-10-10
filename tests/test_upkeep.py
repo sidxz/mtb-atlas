@@ -71,6 +71,7 @@ def test_every_source_is_registered_with_a_stage() -> None:
         "bosch-2021",
         "string-db",
         "phmmer-human",
+        "phmmer-paralog",
         "clinicaltrials-gov",
         "mtbtndb",
     }

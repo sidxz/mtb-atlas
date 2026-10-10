@@ -217,6 +217,14 @@ This is the rule that outranks completeness.
   and can disagree in sign. The *M. smegmatis* sheet is deliberately not
   ingested: an `MSMEG` tag reaches an Rv locus only through an orthologue
   bridge this atlas does not have.
+- **Redundancy and anti-target similarity use different thresholds on purpose.**
+  `close_human_homolog` flags on identity alone, because a shared domain is
+  already a selectivity worry. `close_paralog` needs **30% identity over 70% of
+  the query**, because a backup copy has to be the same protein: identity alone
+  calls 2,009 genes redundant including dprE1 (37% coverage) and mmpL3 (21%),
+  neither of which has a backup. `closest_paralog_gene` is the nearest *backup*
+  and is NULL when there is none; `nearest_relative_gene` is the nearest
+  *relative* and usually is not. Do not read the second as redundancy.
 - **Human homology is computed, not looked up, and always shown with its
   number.** UniRef co-membership was tried and returned zero homologs for all
   3,978 accessions, because UniRef50 clusters above the 25-40% range where

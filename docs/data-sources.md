@@ -649,6 +649,60 @@ coverage and a percent identity computed from the aligned columns. A hit at
 convention, which is why the identity is always shown beside the flag. GroEL2
 comes back 48% identical to HSPD1. Both proteomes are UniProt, CC BY 4.0.
 
+## Paralogs: functional redundancy
+
+No download, no new source: the same `phmmer` machinery pointed at the Mtb
+proteome instead of the human one, reusing the cached FASTA. 15.8 s for
+3,997 x 3,997.
+
+An essential, vulnerable, structurally tractable gene with a close paralog is a
+different proposition from the same gene standing alone. Inhibit one copy and
+the other may cover for it — and the compound then looks inactive for a reason
+that has nothing to do with the chemistry. It was the first thing after
+essentiality that the store could not answer.
+
+**The flag is deliberately stricter than the human one, and that is the whole
+design.** `close_human_homolog` fires on identity alone, because a shared
+domain is already a selectivity worry for an off-target. A *backup copy* has to
+be the same protein, not share a piece of it, so `close_paralog` requires
+**≥ 30% identity over ≥ 70% of the query**. The difference is not cosmetic:
+
+| rule | genes flagged | dprE1 | mmpL3 | groEL2 |
+|---|---|---|---|---|
+| identity ≥ 30% alone | 2,009 | yes (30.8% / 37% cov) | yes (31.7% / 21% cov) | yes |
+| identity **and** coverage | 1,346 | no | no | yes (62% / 98% cov) |
+
+dprE1 and mmpL3 both have family members and neither has a backup; groEL2 has
+groEL1 at 62% over 98% of the protein, which is real redundancy. Median
+coverage among 30%-identity best hits is 0.68, so the threshold discriminates
+rather than rubber-stamps. This is the UniRef50 lesson in another costume: a
+family-level link is not evidence that two proteins do the same job.
+
+**Two different "closest" columns, and conflating them is the trap.**
+`closest_paralog_gene` is the nearest *backup* and is NULL when there is none,
+even though relatives exist. `nearest_relative_gene` is the nearest *relative*
+and is usually populated anyway — mmpL3 reads `mmpL13b` at 31.5% over 47%. It
+is ranked by bit score rather than identity, because ranking by identity
+crowns a short exact fragment over a full-length near-copy: mmpL3's answer
+under identity ranking was mmpL1 over a fifth of the protein.
+
+Three things are dropped, each for a reason:
+
+- **Self-hits.** A protein's best hit against its own proteome is itself at
+  100%.
+- **Identical sequences under two accessions.** Those are annotation artefacts
+  — the `shared_accession` case the crosswalk already records, 55 loci
+  including the IS6110 transposase across 16. Left in, each would be the
+  other's perfect full-length "backup" and the flag would fire on every one.
+- **Hits weaker than E ≤ 1e-5**, phmmer's own reporting threshold.
+
+What it immediately buys: 489 essential genes, of which **87 have a
+full-length backup copy and 402 do not**. The 87 are worth knowing about —
+kasA/kasB at 66%, nrdF2/nrdF1 at 71%, glyA1/glyA2 at 68%, groEL2/groEL1 at
+62%. And the atlas can now answer a question it could not form before:
+**129 genes are essential, have no backup copy, have no close human homolog,
+and have a structure.**
+
 ## ChEMBL: TB drugs and mechanisms
 
 The clinical end of the atlas starts here. Same release and licence as the

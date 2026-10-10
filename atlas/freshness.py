@@ -184,6 +184,12 @@ SOURCES: tuple[Source, ...] = (
         "evidence",
         frozen="computed here from UniProt; it moves when UniProt does",
     ),
+    Source(
+        "phmmer-paralog",
+        "paralogs",
+        "evidence",
+        frozen="computed here from the same UniProt proteome as phmmer-human",
+    ),
 )
 
 BY_NAME = {source.name: source for source in SOURCES}

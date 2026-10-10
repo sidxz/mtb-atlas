@@ -170,6 +170,7 @@ def evidence_store(store: Path) -> Path:
         ("vulnerability", "bosch-2021", "Bosch 2021 Table S3"),
         ("interactions", "string-db", "STRING v12.5"),
         ("homology", "phmmer-human", "phmmer vs reviewed human proteome"),
+        ("paralogs", "phmmer-paralog", "phmmer vs the Mtb proteome itself"),
     ):
         write_parquet(
             name,

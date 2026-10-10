@@ -81,6 +81,8 @@ SORTABLE = {
     "vulnerability_index",
     "n_partners",
     "human_homolog_identity",
+    "n_close_paralogs",
+    "closest_paralog_identity",
     "plddt_mean",
     "length",
     "n_compounds",
@@ -238,6 +240,21 @@ class TargetSummary(BaseModel):
     human_homolog_acc: str | None = None
     human_homolog_identity: float | None = None
     human_homolog_evalue: float | None = None
+
+    # Functional redundancy. `close_paralog` is stricter than
+    # `close_human_homolog`: a backup copy must be the same protein, not merely
+    # share a domain, so it requires coverage as well as identity.
+    has_paralog: bool = False
+    n_paralogs: int = 0
+    close_paralog: bool = False
+    n_close_paralogs: int = 0
+    closest_paralog_gene: str | None = None
+    closest_paralog_identity: float | None = None
+    # The nearest relative even when it is not a backup, so a family-level link
+    # does not read as "no paralog at all".
+    nearest_relative_gene: str | None = None
+    nearest_relative_identity: float | None = None
+    nearest_relative_coverage: float | None = None
     n_partners: int = 0
     top_partner_score: int | None = None
     has_structure: bool = False

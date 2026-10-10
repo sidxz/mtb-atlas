@@ -66,6 +66,24 @@ export interface TargetSummary {
   n_variants_associated: number;
   n_variants_mappable: number;
   resistance_drugs: string[];
+  /**
+   * Functional redundancy: could a second copy cover for this target?
+   * `close_paralog` is stricter than `close_human_homolog` on purpose — it
+   * needs coverage as well as identity, because a backup has to be the same
+   * protein rather than merely share a domain with it.
+   */
+  has_paralog: boolean;
+  n_paralogs: number;
+  close_paralog: boolean;
+  n_close_paralogs: number;
+  /** The nearest *backup*. Null when relatives exist but none is full-length. */
+  closest_paralog_gene: string | null;
+  closest_paralog_identity: number | null;
+  /** The nearest *relative*, by bitscore. Usually populated even with no backup. */
+  nearest_relative_gene: string | null;
+  nearest_relative_identity: number | null;
+  nearest_relative_coverage: number | null;
+
   /** CRISPRi knockdown. More negative is more vulnerable. */
   vulnerability_index: number | null;
   vi_lower: number | null;

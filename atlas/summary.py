@@ -219,6 +219,22 @@ SELECT
     h.identity       AS human_homolog_identity,
     h.evalue         AS human_homolog_evalue,
 
+    -- Functional redundancy: could a second copy cover for this target?
+    -- `close_paralog` needs identity AND coverage, unlike close_human_homolog,
+    -- which flags on identity alone -- a shared domain is already a
+    -- selectivity worry, but only a full-length twin is a backup.
+    coalesce(pg.has_paralog, false)    AS has_paralog,
+    coalesce(pg.n_paralogs, 0)         AS n_paralogs,
+    coalesce(pg.close_paralog, false)  AS close_paralog,
+    coalesce(pg.n_close_paralogs, 0)   AS n_close_paralogs,
+    pg.closest_close_gene     AS closest_paralog_gene,
+    pg.closest_close_identity AS closest_paralog_identity,
+    -- The nearest relative even when it is not a backup, so the family-level
+    -- link stays visible rather than reading as "no paralog at all".
+    pg.closest_gene     AS nearest_relative_gene,
+    pg.closest_identity AS nearest_relative_identity,
+    pg.closest_coverage AS nearest_relative_coverage,
+
     coalesce(i.n_partners, 0) AS n_partners,
     i.top_partner_score,
 
@@ -296,6 +312,7 @@ LEFT JOIN res ON res.gene = coalesce(w.gene_name, w.rv_id)
 LEFT JOIN vuln v ON v.rv_id = w.rv_id
 LEFT JOIN strain_vuln sv ON sv.rv_id = w.rv_id
 LEFT JOIN hom  h ON h.uniprot_acc = w.uniprot_acc
+LEFT JOIN para pg ON pg.uniprot_acc = w.uniprot_acc
 LEFT JOIN inter i ON i.rv_id = w.rv_id
 LEFT JOIN prot pr ON pr.uniprot_acc = w.uniprot_acc
 LEFT JOIN drug_link    dl ON dl.rv_id = w.rv_id
@@ -355,6 +372,7 @@ TABLES = {
     "vuln": "vulnerability",
     "strain_vuln": "strain_vulnerability",
     "hom": "homology",
+    "para": "paralogs",
     "interactions": "interactions",
     "cond": "conditional_fitness",
     "prot": "proteins",

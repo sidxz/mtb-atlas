@@ -30,6 +30,7 @@ const SOURCES = {
   vulnerability: "Bosch et al. 2021, Cell · Table S3 · CC BY 4.0",
   string: "STRING v12.5 · CC BY 4.0",
   homology: "phmmer vs reviewed human proteome (UniProt) · CC BY 4.0",
+  paralogs: "phmmer vs the Mtb proteome itself (UniProt) · CC BY 4.0",
   identity: "Mycobrowser release 5 (licence not stated) · UniProt · CC BY 4.0",
   clinical: "ChEMBL TB indications and mechanisms · Bosch 2021 · ClinicalTrials.gov",
   uniprot: "UniProt · CC BY 4.0",
@@ -517,6 +518,54 @@ function Evidence({ detail }: { detail: Detail }) {
             <div className="note">
               No reviewed human protein matches at E ≤ 1e-5 (phmmer over the whole human
               proteome).
+            </div>
+          </>
+        )}
+      </Row>
+
+      <Row label="Redundancy" source={SOURCES.paralogs}>
+        {detail.close_paralog ? (
+          <>
+            <span className="chip warn">{detail.closest_paralog_gene}</span>{" "}
+            <span className="mono">
+              {Math.round((detail.closest_paralog_identity ?? 0) * 100)}% identity
+            </span>
+            {detail.n_close_paralogs > 1 && (
+              <span className="dim"> · {detail.n_close_paralogs} full-length copies</span>
+            )}
+            <div className="note">
+              A second copy spans this protein, so inhibiting one may be covered by the
+              other — a compound can look inactive for a reason that is nothing to do with
+              the chemistry.
+            </div>
+          </>
+        ) : detail.has_paralog ? (
+          <>
+            <span className="chip ok">no backup copy</span>{" "}
+            <span className="dim">
+              nearest relative {detail.nearest_relative_gene} at{" "}
+              <span className="mono">
+                {Math.round((detail.nearest_relative_identity ?? 0) * 100)}%
+              </span>{" "}
+              over{" "}
+              <span className="mono">
+                {Math.round((detail.nearest_relative_coverage ?? 0) * 100)}%
+              </span>{" "}
+              of the protein
+            </span>
+            <div className="note">
+              {detail.n_paralogs} relative{detail.n_paralogs === 1 ? "" : "s"} in the genome,
+              none of them a full-length copy. A shared domain is not a backup: the line here
+              is 30% identity over 70% of the protein, which is this atlas's convention and
+              stricter than the one used for the human homolog above.
+            </div>
+          </>
+        ) : (
+          <>
+            <span className="chip ok">none detected</span>
+            <div className="note">
+              No other Mtb protein matches at E ≤ 1e-5, so nothing in the genome is placed to
+              cover for this one.
             </div>
           </>
         )}

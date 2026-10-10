@@ -13,7 +13,18 @@ import sys
 from pathlib import Path
 
 from . import crosswalk, summary
-from .sources import alphafold, chembl, essentiality, mycobrowser, pdb, resistance, uniprot
+from .sources import (
+    alphafold,
+    chembl,
+    essentiality,
+    homology,
+    mycobrowser,
+    pdb,
+    resistance,
+    string_db,
+    uniprot,
+    vulnerability,
+)
 from .store import provenance, read
 
 IDENTITY = (mycobrowser, uniprot, chembl)
@@ -67,6 +78,12 @@ def build_evidence(*, force: bool = False) -> list[Path]:
     paths.append(essentiality.build(force=force))
     _say("[evidence] resistance (WHO catalogue)")
     paths.append(resistance.build(force=force))
+    _say("[evidence] vulnerability (Bosch 2021 CRISPRi)")
+    paths.append(vulnerability.build(force=force))
+    _say("[evidence] interactions (STRING)")
+    paths.append(string_db.build(force=force))
+    _say("[evidence] human homology (phmmer vs human proteome)")
+    paths.append(homology.build(retrieved_at=retrieved_at, force=force))
     _say("[summary] target_summary")
     paths.append(summary.build())
     return paths

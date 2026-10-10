@@ -11,6 +11,8 @@ dependencies = [
     "openpyxl>=3.1",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
+    "anthropic>=1.13",
+    "pyhmmer>=0.12",
 ]
 
 [project.optional-dependencies]

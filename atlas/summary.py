@@ -56,6 +56,17 @@ struct AS (
     FROM structures s
     GROUP BY 1
 ),
+inter AS (
+    -- Edges are stored once per unordered pair, so each gene has to be counted
+    -- from both ends of the edge.
+    SELECT rv_id, count(*) AS n_partners, max(combined_score) AS top_partner_score
+    FROM (
+        SELECT rv_id, combined_score FROM interactions
+        UNION ALL
+        SELECT partner_rv_id AS rv_id, combined_score FROM interactions
+    )
+    GROUP BY 1
+),
 res AS (
     SELECT r.gene,
            count(*)                                            AS n_catalogued,
@@ -69,6 +80,23 @@ SELECT
     w.rv_id, w.feature, w.gene_name, w.product, w.functional_category AS category,
     w.start, w.stop, w.strand, w.is_pseudogene, w.length, w.protein_name,
     w.uniprot_acc, w.acc_status, w.conflict, w.shared_accession, w.shares_accession_with,
+
+    v.vulnerability_index,
+    v.vi_lower,
+    v.vi_upper,
+    coalesce(v.certain, false)         AS vulnerability_certain,
+    coalesce(v.crispr_essential, false) AS crispr_essential,
+    v.antibacterial,
+
+    coalesce(h.human_homolog, false)       AS human_homolog,
+    coalesce(h.close_human_homolog, false) AS close_human_homolog,
+    h.human_gene     AS human_homolog_gene,
+    h.human_acc      AS human_homolog_acc,
+    h.identity       AS human_homolog_identity,
+    h.evalue         AS human_homolog_evalue,
+
+    coalesce(i.n_partners, 0) AS n_partners,
+    i.top_partner_score,
 
     e.call            AS essentiality,
     e.call_label      AS essentiality_label,
@@ -113,6 +141,9 @@ LEFT JOIN pred  p   ON p.uniprot_acc = w.uniprot_acc
 LEFT JOIN protein_act pa ON pa.rv_id = w.rv_id
 LEFT JOIN cell_act    ca ON ca.rv_id = w.rv_id
 LEFT JOIN res ON res.gene = coalesce(w.gene_name, w.rv_id)
+LEFT JOIN vuln v ON v.rv_id = w.rv_id
+LEFT JOIN hom  h ON h.uniprot_acc = w.uniprot_acc
+LEFT JOIN inter i ON i.rv_id = w.rv_id
 ORDER BY w.start
 """
 
@@ -123,6 +154,9 @@ TABLES = {
     "pred": "predicted_structures",
     "ess": "essentiality",
     "resistance": "resistance",
+    "vuln": "vulnerability",
+    "hom": "homology",
+    "interactions": "interactions",
 }
 
 
@@ -158,7 +192,11 @@ def counts(*, store: Path | None = None) -> dict[str, int]:
             sum(in_who_catalogue::int) AS in_who_catalogue,
             sum((n_variants_associated > 0)::int) AS with_resistance,
             sum(structural_gap::int) AS structural_gap,
-            sum(conflict::int) AS id_conflicts
+            sum(conflict::int) AS id_conflicts,
+            sum((vulnerability_index IS NOT NULL
+                 AND vulnerability_certain)::int) AS vulnerability_measured,
+            sum(human_homolog::int) AS with_human_homolog,
+            sum(close_human_homolog::int) AS with_close_human_homolog
         """)
     row = relation.fetchone()
     return {name: int(value or 0) for name, value in zip(relation.columns, row, strict=True)}

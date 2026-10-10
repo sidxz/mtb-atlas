@@ -29,6 +29,9 @@ LICENCES = {
     "predicted_structures": ("AlphaFold DB", "CC BY 4.0"),
     "essentiality": ("DeJesus 2017, mBio", "CC BY 4.0"),
     "resistance": ("WHO catalogue 2nd ed.", "ODC-By 1.0"),
+    "vulnerability": ("Bosch 2021, Cell (CRISPRi)", "CC BY 4.0"),
+    "interactions": ("STRING v12.5", "CC BY 4.0"),
+    "homology": ("phmmer vs reviewed human proteome", "CC BY 4.0"),
 }
 
 SORTABLE = {
@@ -40,6 +43,9 @@ SORTABLE = {
     "best_pchembl",
     "best_whole_cell_pchembl",
     "n_variants_associated",
+    "vulnerability_index",
+    "n_partners",
+    "human_homolog_identity",
     "plddt_mean",
     "length",
     "n_compounds",
@@ -112,6 +118,22 @@ class TargetSummary(BaseModel):
     n_variants_associated: int = 0
     n_variants_mappable: int = 0
     resistance_drugs: list[str] = Field(default_factory=list)
+    # CRISPRi knockdown. More negative is more vulnerable; `certain` is the
+    # authors' own flag and is true for only ~600 genes.
+    vulnerability_index: float | None = None
+    vi_lower: float | None = None
+    vi_upper: float | None = None
+    vulnerability_certain: bool = False
+    crispr_essential: bool = False
+    antibacterial: str | None = None
+    human_homolog: bool = False
+    close_human_homolog: bool = False
+    human_homolog_gene: str | None = None
+    human_homolog_acc: str | None = None
+    human_homolog_identity: float | None = None
+    human_homolog_evalue: float | None = None
+    n_partners: int = 0
+    top_partner_score: int | None = None
     has_structure: bool = False
     has_ligands: bool = False
     structural_gap: bool = False
@@ -139,6 +161,11 @@ class TargetDetail(TargetSummary):
     whole_cell: list[dict[str, Any]] = Field(default_factory=list)
     compounds: list[dict[str, Any]] = Field(default_factory=list)
     variants: list[dict[str, Any]] = Field(default_factory=list)
+    partners: list[dict[str, Any]] = Field(default_factory=list)
+    interpro_ids: list[str] = Field(default_factory=list)
+    pfam_ids: list[str] = Field(default_factory=list)
+    go_ids: list[str] = Field(default_factory=list)
+    ec_numbers: list[str] = Field(default_factory=list)
     absences: list[str] = Field(default_factory=list)
 
 
@@ -170,6 +197,11 @@ def meta() -> Meta:
             "Whole-cell potency is attached to a gene only through a compound "
             "that already has protein-level activity on it.",
             "No druggability or pocket call is made: no public source provides one.",
+            "CRISPRi vulnerability is on a negative scale; more negative is more "
+            "vulnerable. Only ~600 genes carry the study's own `certain` flag.",
+            "Human homology is computed here with phmmer against the reviewed human "
+            "proteome, reported as E-value and percent identity. The 30% 'close' "
+            "threshold is this atlas's line, not a fact of biology.",
         ],
     )
 
@@ -187,7 +219,18 @@ def targets(
         bool | None, Query(description="Essential, has a structure, has no ligands")
     ] = None,
     conflict: bool | None = None,
+    crispr_essential: bool | None = None,
+    vulnerability_certain: bool | None = None,
+    human_homolog: Annotated[
+        bool | None, Query(description="Has any human homolog at E <= 1e-5")
+    ] = None,
+    close_human_homolog: Annotated[
+        bool | None, Query(description="Human homolog at >= 30% identity")
+    ] = None,
     min_pchembl: float | None = None,
+    max_vulnerability_index: Annotated[
+        float | None, Query(description="More negative is more vulnerable")
+    ] = None,
     sort: str = "start",
     order: Literal["asc", "desc"] = "asc",
     limit: Annotated[int, Query(ge=1, le=5000)] = 100,
@@ -218,6 +261,10 @@ def targets(
         ("in_who_catalogue", in_who_catalogue),
         ("structural_gap", structural_gap),
         ("conflict", conflict),
+        ("crispr_essential", crispr_essential),
+        ("vulnerability_certain", vulnerability_certain),
+        ("human_homolog", human_homolog),
+        ("close_human_homolog", close_human_homolog),
     ):
         if value is not None:
             where.append(f"{column} = ?")
@@ -225,6 +272,9 @@ def targets(
     if min_pchembl is not None:
         where.append("best_pchembl >= ?")
         params.append(min_pchembl)
+    if max_vulnerability_index is not None:
+        where.append("vulnerability_index <= ?")
+        params.append(max_vulnerability_index)
 
     clause = f"WHERE {' AND '.join(where)}" if where else ""
     connection = _db()
@@ -308,6 +358,24 @@ def target(rv_id: str) -> TargetDetail:
         " ORDER BY grading, residue_position NULLS LAST",
         [gene_key],
     )
+    partners = _query(
+        connection,
+        "SELECT partner_rv_id AS rv_id, partner_name AS gene_name, combined_score,"
+        " experimental, database, textmining, coexpression"
+        " FROM interactions WHERE rv_id = ?"
+        " UNION ALL"
+        " SELECT rv_id, rv_name AS gene_name, combined_score,"
+        " experimental, database, textmining, coexpression"
+        " FROM interactions WHERE partner_rv_id = ?"
+        " ORDER BY combined_score DESC LIMIT 40",
+        [rv_id, rv_id],
+    )
+    annotations = _query(
+        connection,
+        "SELECT interpro_ids, pfam_ids, go_ids, ec_numbers FROM proteins WHERE uniprot_acc = ?",
+        [accession],
+    )
+    annotation = annotations[0] if annotations else {}
 
     absences = []
     if not structures:
@@ -318,6 +386,13 @@ def target(rv_id: str) -> TargetDetail:
         absences.append(
             "Not in the WHO catalogue, which covers only the 65 genes with matched "
             "phenotypic drug-susceptibility testing."
+        )
+    if record.get("vulnerability_index") is None:
+        absences.append("No CRISPRi vulnerability measurement for this gene.")
+    elif not record.get("vulnerability_certain"):
+        absences.append(
+            "A vulnerability index exists but did not meet the study's own criteria "
+            "for a confident estimate, so treat it as indicative only."
         )
     absences.append("No druggability or pocket call: no public source provides one.")
 
@@ -330,6 +405,11 @@ def target(rv_id: str) -> TargetDetail:
         whole_cell=whole_cell,
         compounds=compounds,
         variants=variants,
+        partners=partners,
+        interpro_ids=list(annotation.get("interpro_ids") or []),
+        pfam_ids=list(annotation.get("pfam_ids") or []),
+        go_ids=list(annotation.get("go_ids") or []),
+        ec_numbers=list(annotation.get("ec_numbers") or []),
         absences=absences,
     )
 
@@ -357,3 +437,39 @@ def _query(
     cursor = connection.execute(sql, params)
     names = [c[0] for c in cursor.description]
     return [dict(zip(names, row, strict=True)) for row in cursor.fetchall()]
+
+
+# --- agent -------------------------------------------------------------------
+
+
+class Question(BaseModel):
+    question: str = Field(min_length=3, max_length=2000)
+    effort: Literal["low", "medium", "high", "xhigh"] = "high"
+
+
+class AgentAnswer(BaseModel):
+    """The answer plus the queries behind it, so it can be checked rather than trusted."""
+
+    answer: str
+    queries: list[dict[str, Any]]
+    sources: dict[str, str]
+
+
+@app.post("/ask", response_model=AgentAnswer)
+def ask(body: Question) -> AgentAnswer:
+    from . import agent
+
+    try:
+        result = agent.ask(body.question, effort=body.effort)
+    except RuntimeError as error:
+        # No credentials configured: a 503 rather than a 500, because the rest of
+        # the API is fine and this one route simply is not available.
+        raise HTTPException(503, str(error)) from error
+    return AgentAnswer(
+        answer=result.text,
+        queries=[
+            {"tool": c.name, "sql": c.input.get("sql"), "rows": c.rows, "error": c.error}
+            for c in result.calls
+        ],
+        sources=result.sources,
+    )

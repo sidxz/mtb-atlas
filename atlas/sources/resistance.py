@@ -66,11 +66,18 @@ def residue(mutation: str) -> tuple[int | None, str | None]:
     promoter variants, frameshifts and stop codons cannot be drawn on a
     structure, and a viewer that silently dropped them would overstate how much
     of a gene's resistance is structural.
+
+    `p.Trp191Ter` matches the shape of a substitution but is a truncation: the
+    protein stops there rather than carrying a different residue. Drawing it as
+    a point change on a structure would misrepresent it, and the catalogue's
+    own `effect` column already says `stop_gained`.
     """
     match = MISSENSE.match(mutation or "")
     if not match:
         return None, None
     wild, position, mutant = match.groups()
+    if mutant == "Ter":
+        return None, None
     return int(position), f"{AA3.get(wild, wild)}{position}{AA3.get(mutant, mutant)}"
 
 

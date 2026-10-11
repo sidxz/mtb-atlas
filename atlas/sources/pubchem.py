@@ -27,8 +27,8 @@ measured on the 28 AIDs of 10,000 or more tested compounds (2026-10-11):
   summary can be tested for Mtb afterwards. A target `Name` or assay `Name` test
   for "tubercul" or "mycobacter" rejects 8 of the 28, among them AID 1671170
   ("Biochemical assay for Mt-TrpRS"). The *Bos taurus* MsrA, *S. aureus* NadD and
-  *B. subtilis* Sfp screens that motivated such a test are not in this search at
-  all: they come from a free-text search for "tuberculosis".
+  *B. subtilis* Sfp screens that motivated such a test (AIDs 651718, 602163,
+  602399, 1490) are not in the taxonomy search at all.
 - `Method` describes how the outcome was called (a curve, or one concentration),
   not where the assay sits in a funnel. AID 1626 is the 215,397-compound primary
   screen and PubChem calls it `confirmatory`.
@@ -51,8 +51,15 @@ PUG = "https://pubchem.ncbi.nlm.nih.gov/rest/pug"
 PACE = 0.25
 # Taxonomy 1773 is M. tuberculosis. [ORGN] explodes to the strains beneath it.
 MTB_TAXON = "1773"
-# Reproducible, and quoted in docs/data-sources.md: 12,519 AIDs on 2026-10-11.
-SEARCH_TERM = f"txid{MTB_TAXON}[ORGN]"
+# The campaigns worth their download. The floor is this atlas's choice: below it
+# sit BindingDB's re-postings of PDB affinities, which are measurements and not
+# screens, and ChEMBL's re-postings of single assays (all but 172 of the 12,519).
+MIN_TESTED = 10_000
+# Reproducible: 28 AIDs on 2026-10-11, of 12,519 under `txid1773[ORGN]` alone.
+# The floor is in the search because the summaries are the expensive part. Asking
+# for all 12,519 is 501 requests, and PubChem answered 429 from the 337th (24 MB
+# in) and kept answering it through fetch's backoff, so the build would die.
+SEARCH_TERM = f"txid{MTB_TAXON}[ORGN] AND {MIN_TESTED}:100000000[TSC]"
 AID_BATCH = 25
 
 # "A total of 216,163 compounds were screened": the depositor's own figure for

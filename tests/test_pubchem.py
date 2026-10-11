@@ -292,3 +292,20 @@ def test_aids_come_back_as_strings_in_the_order_pubchem_gave_them(monkeypatch):
     monkeypatch.setattr(pubchem, "fetch", fake_fetch)
     assert pubchem.fetch_aids() == ["375", "2060911"]
     assert "txid1773[ORGN]" in seen["url"]
+
+
+def test_the_search_carries_the_size_floor_so_only_large_summaries_are_fetched(monkeypatch):
+    """12,519 AIDs carry the Mtb tag and 28 reach 10,000 tested SIDs. Fetching every
+    summary is 501 requests, and PubChem answered 429 from the 337th and kept
+    answering it through fetch's backoff, so the floor goes in the search term."""
+    seen = {}
+
+    def fake_fetch(url, dest, **kwargs):
+        seen["url"] = url
+        return _Page(json.dumps({"esearchresult": {"count": "0", "idlist": []}}))
+
+    monkeypatch.setattr(pubchem, "fetch", fake_fetch)
+    pubchem.fetch_aids()
+    assert f"{pubchem.MIN_TESTED}:" in seen["url"]
+    assert "[TSC]" in seen["url"]
+    assert pubchem.MIN_TESTED == 10_000

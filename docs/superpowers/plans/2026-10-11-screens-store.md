@@ -1477,7 +1477,7 @@ The per-compound outcomes, and the project links that are the funnel as the depo
 
 **Interfaces:**
 - Produces: `fetch_results(aid, *, force=False) -> Fetched`, `normalize_results(path, aid, chembl_by_cid) -> Iterator[dict]`, `fetch_project(aid, *, force=False) -> list[str]`, `group_projects(members) -> dict[str, str]`.
-- `normalize_results` row shape: `{"stage_id", "screen_id", "pubchem_cid", "pubchem_sid", "molecule_chembl_id", "outcome", "endpoint", "standard_value", "standard_units", "standard_relation", "target_accession"}`.
+- `normalize_results` row shape (as built in Task 7, 13 keys): `{"stage_id", "screen_id", "result_tag", "pubchem_cid", "pubchem_sid", "molecule_chembl_id", "outcome", "activity_score", "endpoint", "standard_value", "standard_units", "standard_relation", "activity_comment"}`. **No `target_accession`** -- it is campaign-level and lives on the stage row, from the summary's `Target[].Accession`.
 
 - [ ] **Step 1: Write the fixtures**
 
@@ -1714,7 +1714,7 @@ Both sources write into one shape. This is where the campaign, its stages and it
 **Interfaces:**
 - Consumes: everything from Tasks 3–7.
 - Produces: `pubchem.build(*, retrieved_at, force=False) -> list[Path]` writing `screens`, `screen_stages`, `screen_results`; `chembl.build_campaigns(activities, *, retrieved_at, force=False) -> list[dict]` returning rows for the same three tables so one writer stamps them; `chembl.campaign_screens(assays, activities, documents) -> list[dict]`.
-- Table keys: `screens` on `screen_id`; `screen_stages` on `stage_id`; `screen_results` on `(stage_id, pubchem_cid, molecule_chembl_id)`.
+- Table keys: `screens` on `screen_id`; `screen_stages` on `stage_id`; `screen_results` on **`(stage_id, result_tag, activity_id)`**. The key was wrong three times before this: on the real AID 1671170, `(sid)` repeats 280 times, `(sid, endpoint)` 21 times, and even `(sid, endpoint, value, relation, units)` 15 times -- the deposit contains fully identical measurement rows. `result_tag` is PubChem's own row number, the only thing that separates them, and uniqueness is asserted on every build.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2367,7 +2367,7 @@ In `atlas/agent.py`, add the three names to `TABLES` after `"ligands"`, and thes
 
 ```python
     "screens": "One row per screening CAMPAIGN, keyed on screen_id "
-    "(`pubchem:1626`, `pubchem:project:449762`, `chembl:CHEMBL_DOC`). "
+    "(`pubchem:1626`, `pubchem:project:435019`, `chembl:CHEMBL_DOC`); a declared project is ONE row, not one per member AID. "
     "**`n_active` is NULL, not 0, where the depositor stated no activity call** "
     "-- `outcome_stated` says which, and PubChem's own summary endpoint reports "
     "0 actives for a 65,366-compound deposit that simply has no cutoff. "
@@ -2392,8 +2392,8 @@ In `atlas/agent.py`, add the three names to `TABLES` after `"ligands"`, and thes
     "assay is a selectivity or therapeutic index ChEMBL computed from two other "
     "rows: a number, but not a measurement. `stages_source` says whether the "
     "stage was stated by the depositor or classified from their prose.",
-    "screen_results": "One row per compound per stage, keyed on "
-    "(stage_id, pubchem_cid, molecule_chembl_id) -- **the inactives are here**, "
+    "screen_results": "One row per RESULT ROW a source deposited -- a SID, not a compound -- "
+    "keyed on (stage_id, result_tag, activity_id). **The inactives are here**, "
     "which is what makes 'tested and did nothing' answerable. "
     "**`outcome` NULL is not inactive**: it means the source stated no call "
     "(every ChEMBL row, and every row of a deposit with no cutoff), so filter "

@@ -847,6 +847,7 @@ RESULT_KEYS = {
     "standard_relation",
     "result_tag",
     "activity_id",
+    "activity_comment",
 }
 
 
@@ -890,6 +891,17 @@ def _activities() -> list[dict]:
             "standard_relation": "=",
             "standard_value": "20.0",
             "standard_units": "uM",
+        },
+        {
+            # A test that failed: ChEMBL files the comment and no value at all.
+            "activity_id": 14,
+            "assay_chembl_id": "CHEMBL100",
+            "molecule_chembl_id": "M2",
+            "standard_type": "MIC",
+            "standard_relation": None,
+            "standard_value": None,
+            "standard_units": None,
+            "activity_comment": "Not Determined",
         },
     ]
 
@@ -983,8 +995,8 @@ def test_an_activity_outside_the_campaigns_assays_is_not_counted():
 def test_a_results_row_is_one_activity_with_the_value_as_a_number():
     stages = _stages()
     rows = chembl.campaign_results(stages, _activities())
-    assert [row["activity_id"] for row in rows] == [11, 12, 13]
-    first, censored, cytotox = rows
+    assert [row["activity_id"] for row in rows] == [11, 12, 13, 14]
+    first, censored, cytotox, _ = rows
     assert first["stage_id"] == "chembl:CHEMBL100"
     assert first["screen_id"] == "chembl:CHEMBL_DOC1"
     assert first["molecule_chembl_id"] == "M1"
@@ -1000,6 +1012,17 @@ def test_a_results_row_is_one_activity_with_the_value_as_a_number():
     # `>` 100 is a bound, stored with its relation and not as a measurement.
     assert (censored["standard_relation"], censored["standard_value"]) == (">", 100.0)
     assert (cytotox["stage_id"], cytotox["endpoint"]) == ("chembl:CHEMBL102", "CC50")
+
+
+def test_a_chembl_comment_is_kept_and_a_measurement_without_one_has_none():
+    """ "Not Determined" is a measurement that failed, with no value to go beside it. In a
+    30-document sample 122 of 4,286 activities carried one, every one valueless; dropping
+    the column leaves a row that says "MIC" and nothing else, with no way to tell why."""
+    rows = {row["activity_id"]: row for row in chembl.campaign_results(_stages(), _activities())}
+    assert rows[14]["activity_comment"] == "Not Determined"
+    assert (rows[14]["standard_value"], rows[14]["standard_relation"]) == (None, None)
+    assert rows[14]["endpoint"] == "MIC"
+    assert [rows[i]["activity_comment"] for i in (11, 12, 13)] == [None, None, None]
 
 
 def test_chembl_states_no_outcome_and_the_pubchem_columns_are_empty():
@@ -1021,6 +1044,7 @@ def test_an_activity_with_no_compound_or_no_campaign_assay_has_no_results_row():
         11,
         12,
         13,
+        14,
     ]
 
 
@@ -1068,7 +1092,7 @@ def test_only_publications_have_their_activities_fetched_and_the_rows_say_chembl
     assert calls["assays"] == (["CHEMBL_DOC1"], True)
     assert calls["activities"] == (["CHEMBL_DOC1"], True)
     assert [row["screen_id"] for row in screens] == ["chembl:CHEMBL_DOC1"]
-    assert len(stages) == 7 and len(results) == 3
+    assert len(stages) == 7 and len(results) == 4
     assert {s["assay_chembl_id"]: s["n_tested"] for s in stages}["CHEMBL100"] == 2
     # Each row says where it came from: this is a ChEMBL paper, whatever ingester wrote it.
     for row in [*screens, *stages, *results]:
@@ -1102,7 +1126,9 @@ def _eutils(aid: str, members: list[str]) -> dict:
     return {"linksets": [linkset]}
 
 
-def _fake_pubchem(monkeypatch, tmp_path: Path, *, project: list[str] | None = None) -> dict:
+def _fake_pubchem(
+    monkeypatch, tmp_path: Path, *, project: list[str] | None = None, overlap: bool = False
+) -> dict:
     """Two campaigns' worth of PubChem, from the committed fixtures and no network.
 
     The result files are trimmed to five rows each, so their summary counts are trimmed to
@@ -1132,6 +1158,13 @@ def _fake_pubchem(monkeypatch, tmp_path: Path, *, project: list[str] | None = No
         "1626": FIXTURES / "pubchem_aid_results.csv",
         "1671170": FIXTURES / "pubchem_aid_unspecified.csv",
     }
+    if overlap:
+        # The second assay re-tests two of the first's substances, as a confirmatory stage
+        # re-tests a primary screen's: SIDs 26660563 and 49681785 stand in for two of its own.
+        text = files["1671170"].read_text()
+        text = text.replace("312400166", "26660563").replace("312401710", "49681785")
+        files["1671170"] = tmp_path / "overlapping.csv"
+        files["1671170"].write_text(text)
     monkeypatch.setattr(pubchem, "fetch_aids", lambda *, force=False: ["1626", "1671170"])
     monkeypatch.setattr(pubchem, "fetch_summaries", lambda aids, *, force=False: summaries)
     monkeypatch.setattr(
@@ -1192,7 +1225,7 @@ def test_a_declared_project_is_one_campaign_row_and_no_result_is_orphaned(monkey
     life), the ChEMBL paper is a third thing. `screen_id` is the table's key, so a row per
     AID would write the campaign twice, and a result still keyed on its AID would match no
     campaign at all."""
-    env, paths = _build(monkeypatch, tmp_path, project=["1626", "1671170"])
+    env, paths = _build(monkeypatch, tmp_path, project=["1626", "1671170"], overlap=True)
     assert [p.name for p in paths] == [
         "screens.parquet",
         "screen_stages.parquet",
@@ -1203,10 +1236,23 @@ def test_a_declared_project_is_one_campaign_row_and_no_result_is_orphaned(monkey
         "SELECT screen_id, aid, n_stages, n_tested, project_declared FROM <screens> "
         "ORDER BY screen_id",
     )
+    # 5 SIDs in one stage and 3 in the other, two of them the same substance: 6 tested, not 8.
     assert screens == [
         ("chembl:CHEMBL_DOC1", None, 7, 2, False),
-        ("pubchem:project:1626", None, 2, 8, True),
+        ("pubchem:project:1626", None, 2, 6, True),
     ]
+    # The calls overlap between stages, so a campaign of several gives none of them.
+    assert _sql(
+        env,
+        "SELECT n_active, n_inactive, n_inconclusive, n_unspecified, outcome_stated "
+        "FROM <screens> WHERE screen_id = 'pubchem:project:1626'",
+    ) == [(None, None, None, None, True)]
+    # The per-assay figures are where the stages' own numbers are.
+    assert _sql(
+        env,
+        "SELECT stage_id, n_tested, n_active FROM <screen_stages> "
+        "WHERE stage_id LIKE 'pubchem:%' ORDER BY stage_id",
+    ) == [("pubchem:1626", 5, 2), ("pubchem:1671170", 3, None)]
     stages = _sql(env, "SELECT stage_id, screen_id FROM <screen_stages> ORDER BY stage_id")
     assert [s for s in stages if s[0].startswith("pubchem")] == [
         ("pubchem:1626", "pubchem:project:1626"),
@@ -1220,7 +1266,7 @@ def test_a_declared_project_is_one_campaign_row_and_no_result_is_orphaned(monkey
         "SELECT count(*) FROM <screen_results> r LEFT JOIN <screen_stages> s USING (stage_id)"
     )
     assert _sql(env, orphan_stages + " WHERE s.stage_id IS NULL") == [(0,)]
-    assert _sql(env, "SELECT count(*) FROM <screen_results>") == [(13,)]
+    assert _sql(env, "SELECT count(*) FROM <screen_results>") == [(14,)]
     # A campaign's stage count is the stages it has, in the table.
     assert _sql(
         env,
@@ -1282,6 +1328,11 @@ def test_the_columns_keep_their_types_when_one_source_leaves_them_empty(monkeypa
     assert (results["activity_id"], results["result_tag"]) == ("BIGINT", "BIGINT")
     assert results["standard_value"] == "DOUBLE"
     assert results["activity_score"] == "BIGINT"
+    # PubChem's rows come first and have no comment, so this is the NULL-first case again.
+    assert results["activity_comment"] == "VARCHAR"
+    assert _sql(
+        env, "SELECT activity_comment, count(*) FROM <screen_results> GROUP BY ALL ORDER BY 1"
+    ) == [("Not Determined", 1), (None, 13)]
     screens = types("screens")
     assert screens["modalities"] == "VARCHAR[]"
     assert screens["targets"].startswith("STRUCT(") and screens["targets"].endswith("[]")
@@ -1492,8 +1543,8 @@ def test_the_diff_compares_a_result_on_the_key_that_tells_rows_apart(tmp_path):
             store=store,
         )
     (diff,) = storediff.compare(old, new)
-    assert (diff.before, diff.after, diff.added, diff.removed) == (8, 7, 0, 1)
-    assert diff.examples_removed == ["chembl:CHEMBL102 None 13"]
+    assert (diff.before, diff.after, diff.added, diff.removed) == (9, 8, 0, 1)
+    assert diff.examples_removed == ["chembl:CHEMBL100 None 14"]
 
 
 def test_both_sources_emit_one_key_set_per_table():
@@ -1510,7 +1561,9 @@ def test_both_sources_emit_one_key_set_per_table():
     chembl_screens = chembl.campaign_screens(stages, _activities(), _documents())
     assert set(chembl_screens[0]) == set(pubchem_screens[0]) == SCREEN_KEYS
     # The campaign row `build` writes is built from the same row, and keeps the set.
-    merged = pubchem.campaign_row("pubchem:project:1", pubchem_screens[:2], declared=True)
+    merged = pubchem.campaign_row(
+        "pubchem:project:1", pubchem_screens[:2], declared=True, n_tested=1
+    )
     assert set(merged) == SCREEN_KEYS
 
     pubchem_stage = pubchem.stage_row(pubchem_screens[0], "pubchem:1626")

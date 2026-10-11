@@ -441,6 +441,11 @@ depositor stated (AID 449775 groups 39 AIDs); 10 of the 20 largest non-ChEMBL
 campaigns declare one, and the other 10 declare nothing, which is not the same as
 having had no follow-up. A project is one `screens` row named for its lowest member
 AID. On 2026-10-11, AIDs 588335 and 588726 both reach 10,000 SIDs and share one.
+Its `n_tested` is the distinct SIDs across its assays, not the sum, which would count a
+library screened twice as two libraries; its call counts (`n_active` and the rest) are
+NULL, because a SID called active in one assay and inactive in the next belongs to
+both counts or to a rule this pipeline would have to invent. Each assay's own figures
+are on `screen_stages`.
 PubChem does not state the funnel stage: its `Method` is how the outcome was called
 (AID 1626, the 215,397-SID primary screen, says `confirmatory`), so the stage is read
 from the title and `stages_source` is `from_prose`.
@@ -449,7 +454,10 @@ from the title and `stages_source` is `from_prose`.
 document that is a publication is ingested from ChEMBL; a deposited dataset (ChEMBL
 files Dundee's 1,413,047-row library as a `DATASET`) is ingested from PubChem as
 AIDs 1671154 to 1671185. Each row carries its own `source`, `source_version` and
-`retrieved_at`, because `screens` is fed by both.
+`retrieved_at`, because `screens` is fed by both. ChEMBL's `activity_comment` is kept
+on its `screen_results` rows (NULL on PubChem's) and is not read as an outcome: in a
+30-document sample of whole-cell publications, 122 of 4,286 activities had one
+(`Not Determined` 116, `Non-toxic` 6), and every one had no value.
 
 ### Licence
 

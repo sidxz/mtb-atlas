@@ -438,6 +438,8 @@ RESULT_KEYS = {
     # ChEMBL's activity. Each source fills one and leaves the other NULL.
     "result_tag",
     "activity_id",
+    # ChEMBL's own comment on an activity ("Not Determined"). PubChem has no equivalent.
+    "activity_comment",
 }
 
 
@@ -919,6 +921,8 @@ def test_a_result_row_carries_its_number_in_the_pubchem_table():
     assert [row["result_tag"] for row in _results()] == [1, 13, 2045, 2046, 2275]
     assert [row["result_tag"] for row in _unspecified()] == [2227, 2228, 3777, 3778, 65639]
     assert all(row["activity_id"] is None for row in _results() + _unspecified())
+    # A PubChem row has no ChEMBL comment, and the column is there for the ChEMBL rows.
+    assert all(row["activity_comment"] is None for row in _results() + _unspecified())
 
 
 def test_the_sid_and_endpoint_do_not_tell_two_rows_apart_but_the_row_number_does():
@@ -999,25 +1003,27 @@ def test_two_assays_of_one_project_are_one_campaign_row():
     """AIDs 588335 and 588726 both reach 10,000 SIDs and share a declared project: two
     `screens` rows under one `screen_id` would break the table's key.
 
-    The counts are summed over the stages that were ingested, so a compound tested in
-    both counts twice here and once on each stage. The calls are summed from the stages
-    that stated any: an unstated stage adds to `n_unspecified` and to nothing else."""
+    `n_tested` is the number of distinct SIDs across the stages, counted by the caller
+    from the result rows: a project that screens one library in two assays tested it
+    once, and the sum (here 280,763) would flatter the screen by the overlap. Whether a
+    SID called active in one stage and inactive in the next is "active" is a choice this
+    pipeline has no business making, and per-stage counts of calls overlap, so none of the
+    call counts is given for a campaign of several stages: they are NULL and the figures
+    are on each stage."""
     rows = _rows()
     called, uncalled = rows["1626"], rows["1671170"]
-    campaign = pubchem.campaign_row("pubchem:project:1626", [uncalled, called], declared=True)
+    campaign = pubchem.campaign_row(
+        "pubchem:project:1626", [uncalled, called], declared=True, n_tested=270000
+    )
     assert campaign["screen_id"] == "pubchem:project:1626"
     assert campaign["n_stages"] == 2
     assert campaign["aid"] is None
-    assert campaign["n_tested"] == 215397 + 65366
+    assert campaign["n_tested"] == 270000
+    assert campaign["n_tested"] < called["n_tested"] + uncalled["n_tested"]
+    # A stage stated its calls, so the campaign did; the counts are not summed.
     assert campaign["outcome_stated"] is True
-    assert (campaign["n_active"], campaign["n_inactive"], campaign["n_inconclusive"]) == (
-        2044,
-        209843,
-        3510,
-    )
-    assert campaign["n_unspecified"] == 65366
-    parts = ("n_active", "n_inactive", "n_inconclusive", "n_unspecified")
-    assert sum(campaign[part] for part in parts) == campaign["n_tested"]
+    for part in ("n_active", "n_inactive", "n_inconclusive", "n_unspecified"):
+        assert campaign[part] is None, part
     # The biggest stage names the campaign and states its library size.
     assert campaign["title"] == called["title"]
     assert campaign["library_size_stated"] == 216163
@@ -1029,22 +1035,35 @@ def test_two_assays_of_one_project_are_one_campaign_row():
 def test_a_campaign_none_of_whose_assays_stated_a_call_states_none():
     rows = _rows()
     campaign = pubchem.campaign_row(
-        "pubchem:project:1671170", [rows["1671170"], rows["1671178"]], declared=True
+        "pubchem:project:1671170",
+        [rows["1671170"], rows["1671178"]],
+        declared=True,
+        n_tested=100000,
     )
     assert campaign["outcome_stated"] is False
-    assert (campaign["n_active"], campaign["n_inactive"], campaign["n_inconclusive"]) == (
-        None,
-        None,
-        None,
-    )
-    assert campaign["n_unspecified"] == campaign["n_tested"] == 65366 + 66592
+    assert campaign["n_tested"] == 100000
+    for part in ("n_active", "n_inactive", "n_inconclusive", "n_unspecified"):
+        assert campaign[part] is None, part
+
+
+def test_a_campaign_of_several_assays_is_refused_without_its_distinct_count():
+    """Falling back to the sum would put the flattering number back in silently."""
+    rows = _rows()
+    with pytest.raises(ValueError, match="distinct"):
+        pubchem.campaign_row("pubchem:project:1626", [rows["1626"], rows["1671170"]], declared=True)
+
+
+def test_a_campaign_of_one_assay_keeps_its_own_call_counts_and_ignores_a_stray_count():
+    row = _rows()["1626"]
+    campaign = pubchem.campaign_row("pubchem:1626", [row], declared=False, n_tested=1)
+    assert (campaign["n_tested"], campaign["n_active"]) == (215397, 2044)
 
 
 def test_a_campaign_lists_a_target_once_however_many_of_its_assays_name_it():
     rows = _rows()
     twin = {**rows["2060911"], "aid": "2060912"}
     campaign = pubchem.campaign_row(
-        "pubchem:project:2060911", [rows["2060911"], twin], declared=True
+        "pubchem:project:2060911", [rows["2060911"], twin], declared=True, n_tested=93270
     )
     assert len(campaign["targets"]) == 1
 

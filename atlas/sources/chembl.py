@@ -851,6 +851,9 @@ def campaign_results(
                 "standard_relation": row.get("standard_relation"),
                 "result_tag": None,
                 "activity_id": row.get("activity_id"),
+                # ChEMBL's own comment on the activity, kept rather than dropped: "Not
+                # Determined" is a measurement that failed, and it comes with no value.
+                "activity_comment": row.get("activity_comment"),
             }
         )
     return rows

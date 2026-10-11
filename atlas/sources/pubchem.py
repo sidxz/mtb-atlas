@@ -52,6 +52,7 @@ import itertools
 import json
 import math
 import re
+from collections import Counter
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -349,6 +350,7 @@ def normalize_results(
                 # `activity_id` is ChEMBL's equivalent and stays NULL on this side.
                 "result_tag": int(row["PUBCHEM_RESULT_TAG"]),
                 "activity_id": None,
+                "activity_comment": None,
                 "endpoint": _text(row.get("Standard Type")),
                 "standard_value": _number(row.get("Standard Value"), aid),
                 "standard_units": _text(row.get("Standard Units")),
@@ -602,26 +604,39 @@ def stage_row(screen: Mapping[str, Any], campaign: str) -> dict[str, Any]:
 
 
 def campaign_row(
-    screen_id: str, members: Sequence[Mapping[str, Any]], *, declared: bool
+    screen_id: str,
+    members: Sequence[Mapping[str, Any]],
+    *,
+    declared: bool,
+    n_tested: int | None = None,
 ) -> dict[str, Any]:
     """One `screens` row from the `normalize_screens` rows of a campaign's AIDs.
 
     With one AID it is that AID's row under the campaign's id. With several, the
-    biggest names the campaign and states its library size, and the counts are summed
-    over the stages ingested: a compound tested in two of them counts twice here and
-    once on each stage, where `screen_stages` has the figure per assay. The calls are
-    summed over the stages that stated any, so an unstated stage adds to `n_unspecified`
-    and nothing else, and `n_active + n_inactive + n_inconclusive + n_unspecified ==
-    n_tested` still holds. `aid` is NULL when there is no single one to name.
+    biggest names the campaign and states its library size, and `aid` is NULL because
+    there is no single one to name. Two figures would be wrong as sums and are not:
+
+    - `n_tested` is the number of **distinct SIDs** across the stages, which the caller
+      counts from the result rows and must pass. A project that screens one library in
+      two assays tested it once, and the sum flatters the screen by the overlap (AIDs
+      588335 and 588726 share a project and both reach 10,000 SIDs). There is no fallback
+      to the sum, so a campaign of several stages without the count is an error.
+    - `n_active`, `n_inactive`, `n_inconclusive` and `n_unspecified` are NULL. Distinct
+      counting is possible but is not a partition across stages: a substance called
+      active in the primary and inactive in the confirmatory is in both counts, or in one
+      by a rule this pipeline would have to invent. NULL says "not counted here"; the
+      figures are on each stage (`screen_stages.n_active`) and in `screen_results`.
+      `outcome_stated` is true if any stage stated its calls.
     """
     lead = max(members, key=lambda member: member["n_tested"])
     if len(members) == 1:
         return {**lead, "screen_id": screen_id, "project_declared": declared}
+    if n_tested is None:
+        raise ValueError(
+            f"{screen_id} has {len(members)} assays, so its n_tested must be the distinct SIDs "
+            "across them, counted from the results; the sum would count a substance twice"
+        )
     stated = [member for member in members if member["outcome_stated"]]
-
-    def calls(key: str) -> int | None:
-        return sum(member[key] for member in stated) if stated else None
-
     methods = sorted({member["outcome_method"] for member in members if member["outcome_method"]})
     targets = {(t["accession"], t["name"]): t for member in members for t in member["targets"]}
     return {
@@ -630,11 +645,11 @@ def campaign_row(
         "aid": None,
         "depositor": "; ".join(sorted({member["depositor"] for member in members})),
         "n_stages": len(members),
-        "n_tested": sum(member["n_tested"] for member in members),
-        "n_active": calls("n_active"),
-        "n_inactive": calls("n_inactive"),
-        "n_inconclusive": calls("n_inconclusive"),
-        "n_unspecified": sum(member["n_unspecified"] for member in members),
+        "n_tested": n_tested,
+        "n_active": None,
+        "n_inactive": None,
+        "n_inconclusive": None,
+        "n_unspecified": None,
         "outcome_stated": bool(stated),
         "outcome_method": "; ".join(methods) or None,
         "project_declared": declared,
@@ -670,6 +685,10 @@ def build(
     # Every check runs before anything is written, one AID's rows in memory at a time
     # (the largest has 359,484), so a bad download leaves the store as it was. The same
     # pass collects the CIDs, which cut the bridge: the file has 2,832,793 pairs.
+    # It also counts the distinct SIDs of each campaign of several assays, which are the
+    # only SID sets kept: a project's n_tested is that union and not the sum of its stages.
+    stages_of = Counter(campaign_of.values())
+    distinct: dict[str, set[str]] = {c: set() for c, n in stages_of.items() if n > 1}
     cids: set[str] = set()
     for summary in summaries:
         aid = summary["aid"]
@@ -677,6 +696,8 @@ def build(
         check_complete(aid, rows, summary["n_tested"])
         check_result_key(rows)
         cids.update(row["pubchem_cid"] for row in rows if row["pubchem_cid"])
+        if campaign_of[aid] in distinct:
+            distinct[campaign_of[aid]].update(row["pubchem_sid"] for row in rows)
     # A key carries its stage_id, so each source is checked on its own.
     check_result_key(extra_results)
     chembl_by_cid = unichem.chembl_by_cid(bridge, only=cids)
@@ -686,7 +707,12 @@ def build(
         summary["targets"] = link_targets(summary["targets"], rv_by_acc, force=force)
         campaigns.setdefault(campaign_of[summary["aid"]], []).append(summary)
     screens = [
-        campaign_row(campaign, members, declared=campaign.startswith("pubchem:project:"))
+        campaign_row(
+            campaign,
+            members,
+            declared=campaign.startswith("pubchem:project:"),
+            n_tested=len(distinct[campaign]) if campaign in distinct else None,
+        )
         for campaign, members in campaigns.items()
     ]
     stages = [stage_row(s, campaign_of[s["aid"]]) for s in summaries]

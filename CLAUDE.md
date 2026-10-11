@@ -351,9 +351,19 @@ This is the rule that outranks completeness.
   screen** in the store (`screens.targets` is the only trace). This atlas is
   keyed to H37Rv and mapping one strain's accession to its sibling would let
   that strain's data stand in for another's, so an unresolved target is
-  recorded, not bridged. Three more screens reach no gene, for EMBL and PDB
-  accessions: 356,486 (bioA), 355,326 (fadD28) and 10,011 SIDs (panC), so
-  fadD28 reads a largest screen of 47 compounds beside an unplaced 355,326. The 199 publications that report
+  recorded, not bridged. **Four campaigns reach no gene, for three different
+  reasons, and one is a defect**; two of the three largest target-based screens
+  are among them. BioA (356,486 SIDs, `CCE37082`) is *M. tuberculosis* UT205,
+  and its locus tag `UDA_1568` against H37Rv's `Rv1568` is a numbering
+  coincidence of shared synteny, not an identity: it is the near-match that
+  would tempt a reader to bridge it, and the refusal is right. MbtI (104,781)
+  is CDC 1551, also right. PanC (10,011, `2A88_A`) is a PDB chain, the
+  designed unresolved case. **FadD28 (355,326, `CAB06100`) is H37Rv, its
+  record states `/locus_tag="Rv2941"`, and it fails only because UniProt holds
+  no cross-reference for the id**: a false absence with a known fix (a new
+  fetch route and accession-kind branch, costed first among the follow-ups at the
+  end of `docs/data-sources.md`), so fadD28 reads a largest screen of 47
+  compounds beside an unplaced 355,326. The 199 publications that report
   both a protein assay and a whole-cell MIC have reported both -- that is not
   target deconvolution, and calling it that would invent the resistant-mutant
   experiment nobody deposited.

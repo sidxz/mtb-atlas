@@ -100,7 +100,9 @@ reads nine screens and a NULL count of actives, because none of the nine has an 
 counts. A zero is a count and a NULL is "nobody said". A gene can also read small beside a large
 screen the atlas could not place on an H37Rv locus: `mbtI` reads none beside a 104,781-compound
 MbtI screen, because that deposit names UniProt's CDC 1551 accession and the atlas is keyed to
-H37Rv. ChEMBL's half covers 972 of the 1,926
+H37Rv. Four such campaigns exist; three are correct refusals (another strain, or a PDB chain)
+and one, `fadD28` against a 355,326-compound screen, is a known bridging defect, listed with its
+cost in `docs/data-sources.md`. ChEMBL's half covers 972 of the 1,926
 publications that have a whole-cell Mtb assay: it holds the papers in which a compound that
 hits an Mtb protein was also tested on cells, and says so in `docs/data-sources.md`.
 

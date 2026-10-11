@@ -671,8 +671,9 @@ rebuild on a warm cache is byte-identical for `screens` and `screen_stages`.
 
 **Targets: 14 of the 18 reached a locus.** The 18 target accessions across 16 AIDs are 7
 UniProt, 8 RefSeq `NP_` and 3 other (2 EMBL, 1 PDB chain). All 8 RefSeq resolved through
-UniProt, 6 of the 7 UniProt ones joined the crosswalk directly, and the 3 others reach
-nothing, as expected. The seventh UniProt one is a finding: AID 493033 (salicylate synthase
+UniProt, 6 of the 7 UniProt ones joined the crosswalk directly, and the 3 others (2 EMBL ids,
+1 PDB chain) reach nothing. That is the designed outcome for the PDB chain and for `CCE37082`,
+but not for `CAB06100`, which is H37Rv and is a defect (below). The seventh UniProt one is a finding: AID 493033 (salicylate synthase
 MbtI, 104,781 SIDs) names `P9WFX0`, UniProt's CDC 1551 entry, while the crosswalk holds
 `P9WFX1` for Rv2386c. It reaches no locus and is recorded unmatched with its accession and
 name; `mbtI` reads no PubChem screen, and the sibling accession is not guessed. That is
@@ -681,20 +682,38 @@ H37Rv, and silently mapping a CDC 1551 accession to its H37Rv sibling is a conve
 would let one strain's data stand in for another's. (Whether the two proteins are identical is
 a separate question nothing here has asked.)
 
-**The cost of recording rather than bridging is genes that read small or zero beside a large
-screen, and it is the most misleading cell this layer can produce.** Four campaigns are in the
-store and reach no gene: `pubchem:project:602481` (356,486 SIDs, target `CCE37082`, named
-`bioA`), `pubchem:project:588549` (355,326, `CAB06100`, named `FADD28`), `pubchem:493033`
-(**104,781, MbtI, `P9WFX0`**, 931 actives and 103,850 inactives) and `pubchem:375` (10,011,
-`2A88_A`, pantothenate synthetase). So `mbtI` (Rv2386c) reads `n_target_screens = 0`,
-`max_screen_compounds` NULL and `n_protein_assays = 0`; `bioA` reads 0 screens; `fadD28`
-reads 3 with a largest of 47 compounds beside an unplaced 355,326, and `panC` 12 with a
-largest of 42 beside an unplaced 10,011. Nothing on `target_summary` says
-why; the only trace is `screens.targets`, where `rv_ids` is empty. The rule is right (a name
-is never matched to a gene, an EMBL id or PDB chain is not looked up, a strain is not
-bridged) but the reading has to change: `n_target_screens = 0` means *no screen the atlas
-could place on this H37Rv locus*, and an unplaced accession in `screens.targets` has to be
-checked before saying a protein was never screened.
+**Four campaigns reach no gene, for three different reasons, and one of them is a defect.**
+Two of the three largest target-based screens in the store (359,484, 356,486 and 355,326
+substances) are among them, and a gene reading `n_target_screens = 0` or a small number beside a
+six-figure screen is the most misleading cell this layer can produce. The only trace on the
+store is `screens.targets`, where `rv_ids` is empty. Do not document them as one phenomenon:
+
+| campaign | protein | accession | substances | why it reaches no gene |
+|---|---|---|---|---|
+| `pubchem:project:602481` | BioA | `CCE37082` | 356,486 | **Not H37Rv.** ENA: `/organism="Mycobacterium tuberculosis UT205"`, `/locus_tag="UDA_1568"`. A correct refusal |
+| `pubchem:project:588549` | FadD28 | `CAB06100` | 355,326 | **H37Rv, and a defect.** NCBI: `/organism="Mycobacterium tuberculosis H37Rv"`, `/gene="fadD28"`, `/locus_tag="Rv2941"`. See below |
+| `pubchem:493033` | MbtI | `P9WFX0` | 104,781 | **Not H37Rv.** UniProt's CDC 1551 entry. A correct refusal |
+| `pubchem:375` | PanC | `2A88_A` | 10,011 | A PDB chain, the designed unresolved case. A correct refusal |
+
+So `mbtI` reads `n_target_screens = 0`, `max_screen_compounds` NULL and `n_protein_assays = 0`;
+`bioA` reads 0 screens; `panC` reads 12 with a largest of 42 compounds beside an unplaced
+10,011; and `fadD28` reads 3 with a largest of 47 beside an unplaced 355,326.
+
+**Why three are right to refuse, and the trap in `UDA_1568`.** BioA is the instructive one:
+the UT205 gene's locus tag `UDA_1568` sits against H37Rv's `Rv1568`, and the match is a
+numbering coincidence of shared synteny, not an identity. It is exactly the near-match that
+would tempt a later reader to "fix" a 356,486-substance screen reading zero by bridging.
+Do not. A name is never matched to a gene symbol either: the AID names this protein `bioA`,
+which is also an H37Rv symbol.
+
+**`CAB06100` is the fourth, and it is a false absence with a known fix.** Its record states
+the canonical key directly: H37Rv, `/gene="fadD28"`, `/locus_tag="Rv2941"`. It fails only
+because `link_targets` bridges through UniProt and UniProt holds no cross-reference for this
+EMBL id (the API-layer session tried an `xref:` search and the ID-mapping service with
+`EMBL-GenBank-DDBJ_CDS`, and both returned empty; I did not repeat it). The NCBI protein record does carry a UniProtKB/TrEMBL cross-reference, `P96290`, which is
+not the accession the crosswalk holds for Rv2941 (`P9WQ59`); I did not resolve how the two relate.
+It is a defect and not a boundary, and it is item 1 under *Follow-ups the first build
+named*. Until then `fadD28` understates what has been screened against it.
 
 **One campaign, one source.** No ChEMBL publication is also a PubChem AID: the eight
 ChEMBL-deposited AIDs all belong to the one DATASET document the builder skips
@@ -1823,7 +1842,22 @@ source.
 
 Each is a decision someone can pick up, with what it would cost. None is started.
 
-1. **Widen the ChEMBL enumeration to every whole-cell Mtb document.** Today 977 of 1,932
+1. **A defect: `fadD28` reads a false absence.** AID 588549 (355,326 substances, the third
+   largest target-based screen in the store) names the EMBL protein `CAB06100`, an H37Rv protein
+   whose record states `/locus_tag="Rv2941"`, and reaches no gene because the only bridge is
+   UniProt's cross-references. The fix: a new fetch route that reads the `locus_tag` qualifier
+   from the authoritative protein record (NCBI `efetch db=protein&rettype=gp` answered for this
+   id; ENA's browser API answered 404 for it, though it answered for `CCE37082`), a new
+   accession-kind branch in `link_targets` beside `uniprot`, `refseq` and `other`, fixtures and
+   tests. **The branch must accept a record only when its organism is H37Rv (taxon 83332) and its
+   `locus_tag` is a locus the crosswalk holds**, because that guard is what keeps `CCE37082`
+   (UT205, `UDA_1568`) refused. Cost: one request per EMBL-kind accession (two among the 28
+   AIDs, one of which would then resolve), perhaps 100 lines with its tests (an estimate), and a behaviour
+   change that needs its own review. Effect: `fadD28` would read 4 own screens and a largest of
+   355,326. It fixes the bridge and nothing else: the UT205, CDC 1551 and PDB-chain refusals
+   stand.
+
+2. **Widen the ChEMBL enumeration to every whole-cell Mtb document.** Today 977 of 1,932
    documents are candidates, because the list is read from `activities` (compound-first); 954
    publications with a whole-cell Mtb assay are in no campaign. The extension is a different
    candidate source: documents with an assay on `CHEMBL360` or `CHEMBL2111188` (10,067 assays,
@@ -1834,17 +1868,17 @@ Each is a decision someone can pick up, with what it would cost. None is started
    `screen_results`; and a rebuild of every number in the README, since each gene's
    `n_target_screens` and the 999 campaigns would change. It needs its own review. The
    potency layer's compound-first rule stays as it is: only the campaign list widens.
-2. **The four absent screening sets** (Pathogen Box, GSK TB set, Malaria Box TB screen, one
+3. **The four absent screening sets** (Pathogen Box, GSK TB set, Malaria Box TB screen, one
    patent: 6,276 activities between them). The builder keeps publications only because one
    DATASET (Dundee's, 1,413,047 activities) is too big to fetch. A size cap would bring the
    small ones in; the cost is a policy about what a dataset is, and a few thousand rows.
-3. **A real freshness probe for UniChem**: compare the live `Last-Modified` with the one
+4. **A real freshness probe for UniChem**: compare the live `Last-Modified` with the one
    `fetch.py` keeps in the raw sidecar. About 50 lines; until then `atlas check` reads
    `unknown`.
-4. **The `/ask` sandbox's memory.** `screen_results` takes the process from 0.5 GB to 1.9 GB
+5. **The `/ask` sandbox's memory.** `screen_results` takes the process from 0.5 GB to 1.9 GB
    resident. A pre-aggregated table for the agent, or a different sandbox, belongs to the API
    plan.
-5. **Row level against campaign level on `outcome`** (218 `IC50` rows `Active` inside
+6. **Row level against campaign level on `outcome`** (218 `IC50` rows `Active` inside
    campaigns with `outcome_stated` false), and **one of `max_assay_compounds` and
    `max_screen_compounds`** retiring. Both belong to the plan that changes the API.
 

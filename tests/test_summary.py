@@ -238,8 +238,10 @@ def test_a_stage_on_the_genes_own_protein_counts_the_screen(rows: dict) -> None:
 
 
 def test_a_complex_stage_is_counted_apart_from_the_genes_own_screens(rows: dict) -> None:
-    """The crosswalk maps ClpP1P2 to both subunits. Its stage tested 3 compounds in a 2021
-    paper, and credited to a subunit that would move every one of the gene's own columns."""
+    """The crosswalk maps ClpP1P2 to both subunits. Its ChEMBL stage tested 3 compounds in a 2021
+    paper, and credited to a subunit that would move every one of the gene's own columns. The
+    PubChem deposit lists ClpP1 and ClpP2 as two targets (AID 1671185 does), which is the same
+    complex; PubChem has no target type, so the number of targets is all there is to tell by."""
     for rv_id in ("Rv2460c", "Rv2461c"):
         assert rows[rv_id]["n_target_screens"] == 0
         assert rows[rv_id]["n_complex_screens"] == 2  # ChEMBL's stage, PubChem's deposit
@@ -295,13 +297,6 @@ def test_stated_actives_reach_every_locus_of_a_shared_accession(rows: dict) -> N
         assert rows[rv_id]["n_target_screens"] == 1
         assert rows[rv_id]["n_screen_actives"] == 7
         assert rows[rv_id]["shared_accession"] is True
-
-
-def test_a_pubchem_deposit_naming_two_proteins_is_a_complex_screen(rows: dict) -> None:
-    """AID 1671185 lists ClpP1 and ClpP2 as two targets, which is ChEMBL's one PROTEIN COMPLEX.
-    PubChem has no target type, so the number of targets is all there is to tell by."""
-    assert rows["Rv2461c"]["n_target_screens"] == 0
-    assert rows["Rv2460c"]["n_target_screens"] == 0
 
 
 def test_a_screen_of_an_orthologue_is_not_a_screen_of_this_protein(

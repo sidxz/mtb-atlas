@@ -223,7 +223,7 @@ def evidence_store(store: Path) -> Path:
                 "CHEMBL4662931",
                 "Inhibition of Mycobacterium tuberculosis ClpP1P2 protease",
             ),
-            # A stage on a target whose type was not looked up (see `targets` below).
+            # A stage on a target whose type was not looked up: absent from `stage_targets`.
             (
                 "CHEMBL9100003",
                 "CHEMBL_DOC2",
@@ -326,10 +326,8 @@ def evidence_store(store: Path) -> Path:
     pubchem_stages = [
         pubchem.stage_row(deposit, deposit["screen_id"]) for deposit in pubchem_screens
     ]
-    labels = {
-        chembl.SOURCE: {"source_version": "ChEMBL_37 (2026-05-01)", "retrieved_at": "2026-10-09"},
-        pubchem.SOURCE: {"source_version": "E-utilities fixture", "retrieved_at": "2026-10-09"},
-    }
+    pubchem_label = {"source_version": "E-utilities fixture", "retrieved_at": "2026-10-09"}
+    chembl_label = {"source_version": "ChEMBL_37 (2026-05-01)", "retrieved_at": "2026-10-09"}
     # PubChem's rows first, as in the pipeline: `provenance()` reads the first row.
     for name, own, extra in (
         ("screens", pubchem_screens, chembl_screens),
@@ -338,8 +336,8 @@ def evidence_store(store: Path) -> Path:
         write_stamped(
             name,
             [
-                *stamp(own, source=pubchem.SOURCE, **labels[pubchem.SOURCE]),
-                *stamp(extra, source=chembl.SOURCE, **labels[chembl.SOURCE]),
+                *stamp(own, source=pubchem.SOURCE, **pubchem_label),
+                *stamp(extra, source=chembl.SOURCE, **chembl_label),
             ],
             store=store,
         )

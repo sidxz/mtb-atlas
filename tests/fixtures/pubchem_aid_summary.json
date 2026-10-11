@@ -147,6 +147,39 @@
         "CIDCountInconclusive": 0,
         "CIDCountUnspecified": 0,
         "CIDCountProbe": 0
+      },
+      {
+        "AID": 2253871,
+        "SourceName": "ChEMBL",
+        "SourceID": "CHEMBL6128047",
+        "Name": "Antitubercular activity against multidrug resistant Mycobacterium tuberculosis 16833 assessed as bacterial growth inhibition incubated for 7 days in 7H9 medium by alamar blue staining based microplate fluorometric analysis",
+        "Description": [
+          "Title: Design, synthesis and antimycobacterial activity of novel benzothiazinones with improved water solubility.",
+          "",
+          "Abstract: Nitrobenzothiazinones (BTZs) represent a novel type of antitubercular agents targeting DprE1. Two clinical candidates BTZ043 and PBTZ169, as well as many other BTZs showed potent anti-TB activity, but they are all highly lipophilic and their poor aqueous solubility is still a serious issue need to be addressed. Here, we designed and synthesized a series of new BTZ derivatives, wherein a hydrophilic COOH or NH<sub>2</sub> group is directly attached to the oxime moiety of TZY-5-84 discovered in our lab, through various linkers. Two compounds 1a and 3 were first reported to possess excellent activity against MTB H<sub>37</sub>Rv and MDR-MTB strains (MIC: <0.029-0.095 μM), low toxicity and acceptable oral PK profiles, as well as significantly improved water solubility (1200 and > 2000 μg/mL, respectively), suggesting they may serve as promising hydrophilic BTZs for further antitubercular drug discovery."
+        ],
+        "NumberOfTIDs": 5,
+        "HasScore": false,
+        "Method": "confirmatory",
+        "Version": 1,
+        "Revision": 1,
+        "LastDataChange": {
+          "Year": 2026,
+          "Month": 6,
+          "Day": 14
+        },
+        "SIDCountAll": 15,
+        "SIDCountActive": 13,
+        "SIDCountInactive": 0,
+        "SIDCountInconclusive": 0,
+        "SIDCountUnspecified": 2,
+        "SIDCountProbe": 0,
+        "CIDCountAll": 15,
+        "CIDCountActive": 13,
+        "CIDCountInactive": 0,
+        "CIDCountInconclusive": 0,
+        "CIDCountUnspecified": 2,
+        "CIDCountProbe": 0
       }
     ]
   }

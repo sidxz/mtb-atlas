@@ -148,17 +148,18 @@ file has, so its test writes a two-line temporary file.
 
 ## `pubchem_aid_summary.json`
 
-Four real records from PUG-REST's `assay/aid/<aids>/summary/JSON`, fetched
+Five real records from PUG-REST's `assay/aid/<aids>/summary/JSON`, fetched
 2026-10-11, with `Protocol` and `Comment` dropped (nothing reads them) and the
 description of AID 1626 cut to its institution lines and the paragraph that
 states the library size. Nothing is synthetic.
 
 | AID | Exercises |
 |---|---|
-| `1626` | The TAACF primary screen: real calls (2,044 / 209,843 / 3,510), `Method` is `confirmatory` though it is a single-concentration primary, no `Target` key (whole-cell), prose says 216,163 compounds against 215,397 deposited |
+| `1626` | The TAACF primary screen: real calls (2,044 / 209,843 / 3,510), `Method` is `confirmatory` though it is a single-concentration primary, no `Target` key (whole-cell), prose says 216,163 compounds against 215,397 SIDs deposited (215,098 CIDs) |
 | `1671170` | `SIDCountActive: 0` and `SIDCountUnspecified` equal to `SIDCountAll`: no cutoff was deposited. Neither its title (`Mt-TrpRS`) nor its target name says *tuberculosis* |
 | `1671178` | The other all-`Unspecified` shape: 25 actives (the IC50 rows) beside `SIDCountUnspecified` equal to `SIDCountAll`. Six of the eight ChEMBL deposits among the 28 large AIDs look like this |
-| `2060911` | `SourceName` is the bare string `11908`; a prose library of 100,639 against 93,270 deposited; a UniProt target accession |
+| `2060911` | `SourceName` is the bare string `11908`; a prose library of 100,639 compounds against 93,270 SIDs deposited; a UniProt target accession |
+| `2253871` | A **partial** deposit: 13 actives and 2 `Unspecified` of 15 SIDs, so `0 < SIDCountUnspecified < SIDCountAll`. A small ChEMBL deposit, far below the 10,000 floor, kept only for the shape (1,912 of the 8,400 small AIDs fetched look like this; none of the 28 large ones do) |
 
 The summary has no `TaxonomyID` on any target and no `PubMedID` field, in any of
-the 28 AIDs of 10,000 or more tested compounds.
+the 28 AIDs of 10,000 or more tested SIDs.

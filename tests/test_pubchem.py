@@ -87,9 +87,27 @@ def test_unichem_identical_repeat_is_not_a_collision(tmp_path):
 
 # --- campaign discovery -------------------------------------------------------
 #
-# The fixture is four real summaries from PUG-REST (fetched 2026-10-11) with
+# The fixture is five real summaries from PUG-REST (fetched 2026-10-11) with
 # their Protocol and Comment text dropped; tests/fixtures/README.md says why each
 # one is there.
+#
+# `SIDCountAll` counts SIDs (substances), not compounds: AID 1626 has 215,397 SIDs
+# over 215,098 CIDs, and its prose says 216,163 compounds were screened.
+
+
+def _summary(**counts) -> dict:
+    """A well-formed summary with every count PubChem always sends."""
+    base = {
+        "AID": 1,
+        "SourceName": "Some Depositor",
+        "Name": "x",
+        "SIDCountAll": 100,
+        "SIDCountActive": 0,
+        "SIDCountInactive": 0,
+        "SIDCountInconclusive": 0,
+        "SIDCountUnspecified": 100,
+    }
+    return {**base, **counts}
 
 
 def _summaries() -> list[dict]:
@@ -104,9 +122,11 @@ def _rows() -> dict[str, dict]:
 def test_zero_active_means_no_call_was_stated_not_that_nothing_was_active():
     """PubChem's summary reports SIDCountActive: 0 for a deposit with no cutoff.
 
-    Read literally it says a 65,366-compound screen found nothing. Every one of
+    Read literally it says a screen of 65,366 SIDs found nothing. Every one of
     its rows is `Unspecified`: the depositor never stated a threshold, so
-    `n_active` is NULL and `outcome_stated` is false.
+    `n_active` is NULL and `outcome_stated` is false. The number of SIDs left
+    without a call is PubChem's own and is kept: it is not a zero that means
+    "no call", it is the count of them.
     """
     row = _rows()["1671170"]
     assert row["outcome_stated"] is False
@@ -114,13 +134,14 @@ def test_zero_active_means_no_call_was_stated_not_that_nothing_was_active():
     assert row["n_inactive"] is None
     assert row["n_inconclusive"] is None
     assert row["n_tested"] == 65366
+    assert row["n_unspecified"] == 65366
 
 
 def test_a_few_actives_beside_an_all_unspecified_set_is_still_no_call():
     """Six of the eight ChEMBL deposits among the 28 are not zero-active at all.
 
     AID 1671178 (Pks13) reports 25 actives, and `SIDCountUnspecified` equal to
-    `SIDCountAll`: the 25 are the IC50 rows, and every one of those compounds
+    `SIDCountAll`: the 25 are the IC50 rows, and every one of those SIDs
     also has a single-point row that carries no call. Deciding `outcome_stated`
     from "is any call count above zero" would publish 25 actives and 0 inactives
     for a screen that called nothing inactive, which is the false zero again.
@@ -130,16 +151,59 @@ def test_a_few_actives_beside_an_all_unspecified_set_is_still_no_call():
     assert row["outcome_stated"] is False
     assert row["n_active"] is None
     assert row["n_inactive"] is None
+    assert row["n_unspecified"] == 66592
 
 
-def test_a_summary_with_no_unspecified_field_falls_back_to_the_call_counts():
-    """The field is the better signal, but a response without it must not read as stated."""
-    bare = {"AID": 1, "Name": "x", "SIDCountAll": 100}
-    row = pubchem.normalize_screens([bare])[0]
+def test_a_partial_deposit_keeps_its_calls_and_says_how_many_sids_have_none():
+    """AID 2253871 (a small ChEMBL deposit, below the floor) calls 13 of its 15 SIDs.
+
+    1,912 of the 8,400 small AIDs fetched look like this and none of the 28 large
+    ones do. The calls are real, so they are kept; without `n_unspecified` the
+    13 + 0 + 0 against 15 tested would have a gap and nothing to explain it.
+    """
+    row = _rows()["2253871"]
+    assert row["outcome_stated"] is True
+    assert (row["n_active"], row["n_inactive"], row["n_inconclusive"]) == (13, 0, 0)
+    assert row["n_unspecified"] == 2
+    assert row["n_tested"] == 15
+    assert 13 + 0 + 0 + row["n_unspecified"] == row["n_tested"]
+
+
+def test_a_summary_whose_calls_are_all_zero_is_not_a_stated_outcome():
+    """No SID is Unspecified here, yet nothing was called either (every SID is a
+    probe, say). Reading it as stated would publish 0 actives for a screen that
+    called nothing."""
+    row = pubchem.normalize_screens([_summary(SIDCountUnspecified=0)])[0]
     assert row["outcome_stated"] is False
     assert row["n_active"] is None
-    called = {**bare, "SIDCountActive": 3, "SIDCountInactive": 97}
-    assert pubchem.normalize_screens([called])[0]["outcome_stated"] is True
+    assert row["n_unspecified"] == 0
+    called = pubchem.normalize_screens(
+        [_summary(SIDCountActive=3, SIDCountInactive=97, SIDCountUnspecified=0)]
+    )[0]
+    assert called["outcome_stated"] is True
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "SIDCountAll",
+        "SIDCountActive",
+        "SIDCountInactive",
+        "SIDCountInconclusive",
+        "SIDCountUnspecified",
+        "SourceName",
+    ],
+)
+def test_a_summary_missing_a_field_the_row_depends_on_raises(key):
+    """A missing count read as 0 would be a stated zero, which is the false zero
+    this module exists to avoid; a missing depositor would be a campaign whose
+    licence cannot be traced. Real summaries always carry all of these."""
+    summary = _summary()
+    del summary[key]
+    with pytest.raises(ValueError, match=key):
+        pubchem.normalize_screens([summary])
+    with pytest.raises(ValueError, match=key):
+        pubchem.normalize_screens([{**summary, key: None}])
 
 
 def test_a_real_screen_keeps_every_call_it_stated():
@@ -148,6 +212,7 @@ def test_a_real_screen_keeps_every_call_it_stated():
     assert row["n_active"] == 2044
     assert row["n_inactive"] == 209843
     assert row["n_inconclusive"] == 3510
+    assert row["n_unspecified"] == 0
     assert row["screen_id"] == "pubchem:1626"
     assert row["depositor"] == "SRMLSC"
 
@@ -171,11 +236,11 @@ def test_a_campaign_that_never_says_mtb_is_still_a_campaign():
     large AIDs that the taxonomy search selects (RecA, MbtI, FadD28, RmlC/D,
     CoaBC, ClpP1P2 and the Cornell heat-shock screen), all of them Mtb campaigns.
     """
-    assert set(_rows()) == {"1626", "1671170", "1671178", "2060911"}
+    assert set(_rows()) == {"1626", "1671170", "1671178", "2060911", "2253871"}
 
 
 def test_the_method_is_how_the_outcome_was_called_not_where_the_assay_sits():
-    """PubChem calls AID 1626 `confirmatory`; it is the 215,397-compound primary screen.
+    """PubChem calls AID 1626 `confirmatory`; it is the 215,397-SID primary screen.
 
     The field says an outcome came from a dose-response curve, and AID 1626 has
     IC50 columns. Read as a funnel stage it would label the largest primary
@@ -220,6 +285,7 @@ def test_a_campaign_row_has_exactly_the_agreed_keys():
         "n_active",
         "n_inactive",
         "n_inconclusive",
+        "n_unspecified",
         "outcome_stated",
         "outcome_method",
         "stages_source",
@@ -268,6 +334,22 @@ def test_summaries_are_fetched_in_batches_that_cover_every_aid_once(monkeypatch)
     assert all(kwargs["min_interval"] >= 0.2 for _, _, kwargs in calls)
 
 
+def test_a_summary_pubchem_does_not_return_raises_instead_of_dropping_the_campaign(monkeypatch):
+    """PUG-REST skips an AID it cannot find and still answers 200 for the rest
+    (checked with AID 999999999 beside two real ones), so a lost summary is
+    silent. An absent campaign would read as an answer."""
+
+    def fake_fetch(url, dest, **kwargs):
+        aids = url.split("/aid/")[1].split("/")[0].split(",")
+        kept = [a for a in aids if a not in {"1010", "1055"}]
+        body = {"AssaySummaries": {"AssaySummary": [{"AID": int(a)} for a in kept]}}
+        return _Page(json.dumps(body))
+
+    monkeypatch.setattr(pubchem, "fetch", fake_fetch)
+    with pytest.raises(ValueError, match="1010.*1055"):
+        pubchem.fetch_summaries([str(n) for n in range(1000, 1060)])
+
+
 def test_a_truncated_aid_list_raises_instead_of_dropping_campaigns(monkeypatch):
     """esearch returns `retmax` ids and says how many matched; a list shorter than
     the count would silently lose campaigns."""
@@ -286,11 +368,13 @@ def test_aids_come_back_as_strings_in_the_order_pubchem_gave_them(monkeypatch):
 
     def fake_fetch(url, dest, **kwargs):
         seen["url"] = url
-        body = {"esearchresult": {"count": "2", "idlist": ["375", "2060911"]}}
+        body = {"esearchresult": {"count": "3", "idlist": ["2060911", "375", "1626"]}}
         return _Page(json.dumps(body))
 
     monkeypatch.setattr(pubchem, "fetch", fake_fetch)
-    assert pubchem.fetch_aids() == ["375", "2060911"]
+    # Neither ascending nor descending, as numbers or as strings, and not the
+    # reverse of itself: any sort or reversal changes it.
+    assert pubchem.fetch_aids() == ["2060911", "375", "1626"]
     assert "txid1773[ORGN]" in seen["url"]
 
 

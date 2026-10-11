@@ -1,9 +1,13 @@
 """PubChem BioAssay: the public Mtb screening campaigns, with their inactives.
 
 PubChem is the only public source that states an outcome per compound at
-screening scale -- AID 1626 deposits 209,843 `Inactive` rows beside its 2,044
+screening scale -- AID 1626 deposits 209,843 `Inactive` SIDs beside its 2,044
 actives -- which is what makes "tested and did nothing" a provable answer
 rather than an absence.
+
+Counts here are SIDs (substances, `SIDCountAll`), not compounds: AID 1626 has
+215,397 SIDs over 215,098 CIDs, and its prose says 216,163 compounds were
+screened. Those are three numbers, and only the first is `n_tested`.
 
 This half finds the campaigns: the taxonomy search selects the AIDs, the assay
 summary supplies the counts, and `normalize_screens` turns each into one row.
@@ -16,12 +20,14 @@ So `depositor` is recorded on every campaign and no blanket licence is claimed.
 
 The zero that means "no call". A deposit with no stated activity threshold
 reports `SIDCountActive: 0` against a full tested set, which read literally says
-a 65,366-compound screen found nothing. The depositor never stated a cutoff, so
-`outcome_stated` is stored, `n_active` is NULL where it is false, and nothing in
-this module writes a 0 that means "no call".
+a screen of 65,366 SIDs found nothing. The depositor never stated a cutoff, so
+`outcome_stated` is stored and `n_active` is NULL where it is false. A count
+PubChem does not send is an error, never a 0: every count a row reports is one
+PubChem stated, and `n_unspecified` is stored beside the three call counts so
+that a deposit which called only some of its SIDs shows the gap.
 
 Three things about the summary endpoint that are easy to assume wrongly, each
-measured on the 28 AIDs of 10,000 or more tested compounds (2026-10-11):
+measured on the 28 AIDs of 10,000 or more tested SIDs (2026-10-11):
 
 - It carries **no taxonomy**. The search term selects the AIDs; nothing in the
   summary can be tested for Mtb afterwards. A target `Name` or assay `Name` test
@@ -30,7 +36,7 @@ measured on the 28 AIDs of 10,000 or more tested compounds (2026-10-11):
   *B. subtilis* Sfp screens that motivated such a test (AIDs 651718, 602163,
   602399, 1490) are not in the taxonomy search at all.
 - `Method` describes how the outcome was called (a curve, or one concentration),
-  not where the assay sits in a funnel. AID 1626 is the 215,397-compound primary
+  not where the assay sits in a funnel. AID 1626 is the 215,397-SID primary
   screen and PubChem calls it `confirmatory`.
 - It has **no PubMed id** and no deposit year.
 """
@@ -51,9 +57,9 @@ PUG = "https://pubchem.ncbi.nlm.nih.gov/rest/pug"
 PACE = 0.25
 # Taxonomy 1773 is M. tuberculosis. [ORGN] explodes to the strains beneath it.
 MTB_TAXON = "1773"
-# The campaigns worth their download. The floor is this atlas's choice: below it
-# sit BindingDB's re-postings of PDB affinities, which are measurements and not
-# screens, and ChEMBL's re-postings of single assays (all but 172 of the 12,519).
+# The campaigns worth their download, in SIDs. The floor is this atlas's choice:
+# below it sit BindingDB's re-postings of PDB affinities, which are measurements
+# and not screens, and the small ChEMBL-deposited AIDs that make up most of the tag.
 MIN_TESTED = 10_000
 # Reproducible: 28 AIDs on 2026-10-11, of 12,519 under `txid1773[ORGN]` alone.
 # The floor is in the search because the summaries are the expensive part. Asking
@@ -89,7 +95,12 @@ def fetch_aids(*, force: bool = False) -> list[str]:
 
 
 def fetch_summaries(aids: Sequence[str], *, force: bool = False) -> list[dict[str, Any]]:
-    """The assay summary for each AID, which carries the counts and the target."""
+    """The assay summary for each AID, which carries the counts and the target.
+
+    Raises if any AID comes back without one. PUG-REST skips an AID it cannot find
+    and still answers 200 for the rest, so a lost summary would be a campaign
+    missing from the atlas with nothing to say so.
+    """
     out: list[dict[str, Any]] = []
     for index in range(0, len(aids), AID_BATCH):
         batch = aids[index : index + AID_BATCH]
@@ -102,6 +113,9 @@ def fetch_summaries(aids: Sequence[str], *, force: bool = False) -> list[dict[st
             json_body=True,
         )
         out += json.loads(page.text)["AssaySummaries"]["AssaySummary"]
+    got = {str(summary["AID"]) for summary in out}
+    if missing := [aid for aid in aids if aid not in got]:
+        raise ValueError(f"PubChem returned no summary for AIDs {', '.join(missing)}")
     return out
 
 
@@ -110,6 +124,14 @@ def _library_size(summary: Mapping[str, Any]) -> int | None:
         if match := _LIBRARY_SIZE.search(str(line)):
             return int(match.group(1).replace(",", ""))
     return None
+
+
+def _required(summary: Mapping[str, Any], key: str) -> Any:
+    """A field the row cannot be honest without. Absent is not zero, and a campaign
+    with no depositor has no licence to trace."""
+    if summary.get(key) is None:
+        raise ValueError(f"AID {summary.get('AID')} summary has no {key}")
+    return summary[key]
 
 
 def normalize_screens(summaries: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
@@ -123,16 +145,19 @@ def normalize_screens(summaries: Iterable[Mapping[str, Any]]) -> list[dict[str, 
     an all-`Unspecified` set, and "any call count above zero" would publish those
     actives with a 0 for inactives that means "never called". `n_active`,
     `n_inactive` and `n_inconclusive` are NULL wherever it is false.
+
+    Where it is true, each is the number of SIDs the depositor called that way,
+    and a deposit that called only some of its SIDs (a partial one: 1,912 of the
+    8,400 small AIDs fetched, none of the 28 large) has `n_unspecified` for the rest.
     """
     rows = []
     for summary in summaries:
-        tested = summary.get("SIDCountAll") or 0
-        active = summary.get("SIDCountActive") or 0
-        inactive = summary.get("SIDCountInactive") or 0
-        inconclusive = summary.get("SIDCountInconclusive") or 0
-        stated = bool(active or inactive or inconclusive) and (
-            summary.get("SIDCountUnspecified") != tested
-        )
+        tested = _required(summary, "SIDCountAll")
+        active = _required(summary, "SIDCountActive")
+        inactive = _required(summary, "SIDCountInactive")
+        inconclusive = _required(summary, "SIDCountInconclusive")
+        unspecified = _required(summary, "SIDCountUnspecified")
+        stated = bool(active or inactive or inconclusive) and unspecified != tested
         aid = str(summary["AID"])
         rows.append(
             {
@@ -140,7 +165,7 @@ def normalize_screens(summaries: Iterable[Mapping[str, Any]]) -> list[dict[str, 
                 "aid": aid,
                 "title": summary.get("Name"),
                 # Stored as given: AID 2060911's is the bare string "11908".
-                "depositor": summary.get("SourceName"),
+                "depositor": _required(summary, "SourceName"),
                 "deposit_kind": "dataset",
                 # The depositor names the library in prose or not at all;
                 # PubChem has no field for it.
@@ -154,6 +179,9 @@ def normalize_screens(summaries: Iterable[Mapping[str, Any]]) -> list[dict[str, 
                 "n_active": active if stated else None,
                 "n_inactive": inactive if stated else None,
                 "n_inconclusive": inconclusive if stated else None,
+                # PubChem's own count of SIDs with no call, so it is never a
+                # zero standing in for one.
+                "n_unspecified": unspecified,
                 "outcome_stated": stated,
                 # What PubChem states is how the outcome was called, kept under
                 # its own name. The stage comes from the project structure and

@@ -1,0 +1,17 @@
+{
+  "assays": [
+    {"assay_chembl_id": "CHEMBL100", "document_chembl_id": "CHEMBL_DOC1", "assay_type": "F", "target_chembl_id": "CHEMBL360", "description": "Antitubercular activity against Mycobacterium tuberculosis H37Rv after 14 days by MABA", "assay_strain": "H37Rv"},
+    {"assay_chembl_id": "CHEMBL101", "document_chembl_id": "CHEMBL_DOC1", "assay_type": "B", "target_chembl_id": "CHEMBL4105939", "description": "Inhibition of Mycobacterium tuberculosis Pks13 thioesterase", "assay_strain": null},
+    {"assay_chembl_id": "CHEMBL102", "document_chembl_id": "CHEMBL_DOC1", "assay_type": "T", "target_chembl_id": "CHEMBL_VERO", "description": "Cytotoxicity against african green monkey Vero cells after 72 hrs by MTT assay", "assay_strain": null},
+    {"assay_chembl_id": "CHEMBL103", "document_chembl_id": "CHEMBL_DOC1", "assay_type": "A", "target_chembl_id": null, "description": "Metabolic stability in human liver microsomes", "assay_strain": null},
+    {"assay_chembl_id": "CHEMBL104", "document_chembl_id": "CHEMBL_DOC1", "assay_type": "F", "target_chembl_id": null, "description": "Antitubercular activity against Mycobacterium tuberculosis H37Rv infected in BALB/c mouse assessed as reduction in CFU count in lung at 25 mg/kg", "assay_strain": null},
+    {"assay_chembl_id": "CHEMBL105", "document_chembl_id": "CHEMBL_DOC1", "assay_type": "F", "target_chembl_id": "CHEMBL_SAUR", "description": "Growth inhibition of Staphylococcus aureus Newman", "assay_strain": null},
+    {"assay_chembl_id": "CHEMBL106", "document_chembl_id": "CHEMBL_DOC1", "assay_type": "F", "target_chembl_id": null, "description": "Selectivity index, ratio of CC50 for Vero cells to MIC for Mycobacterium tuberculosis H37Rv", "assay_strain": null}
+  ],
+  "targets": {
+    "CHEMBL360": {"target_type": "ORGANISM", "organism": "Mycobacterium tuberculosis"},
+    "CHEMBL4105939": {"target_type": "SINGLE PROTEIN", "organism": "Mycobacterium tuberculosis"},
+    "CHEMBL_VERO": {"target_type": "CELL-LINE", "organism": "Chlorocebus aethiops"},
+    "CHEMBL_SAUR": {"target_type": "ORGANISM", "organism": "Staphylococcus aureus"}
+  }
+}

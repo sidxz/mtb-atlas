@@ -539,6 +539,140 @@ def classify_stage(
     return "primary"
 
 
+# --- campaigns: the document, and every assay in it --------------------------
+#
+# A campaign's cytotoxicity, microsome and animal assays are filed against
+# CELL-LINE, ADMET and non-molecular targets, so a target-keyed query cannot
+# see them: these documents hold 11,686 assays on Mtb targets and 38,335 in
+# total. The document is therefore the unit of the second fetch.
+
+CAMPAIGN_ASSAY_FIELDS = (
+    "assay_chembl_id,document_chembl_id,assay_type,target_chembl_id,description,assay_strain"
+)
+CAMPAIGN_ACTIVITY_FIELDS = (
+    "activity_id,assay_chembl_id,document_chembl_id,molecule_chembl_id,standard_type,"
+    "standard_relation,standard_value,standard_units,pchembl_value,activity_comment"
+)
+# Ten documents per request, not fifty: one deposited dataset holds 410k
+# activity rows, and a batch containing it pages past ChEMBL's patience at
+# deep offsets. Deposited datasets are fetched by target instead, which is
+# what `census_rows` already does.
+DOC_BATCH = 10
+
+
+def campaign_documents(activities: Iterable[Mapping[str, Any]]) -> list[str]:
+    """The documents that reported whole-cell Mtb activity.
+
+    These are the campaigns: a paper that measured growth inhibition is the
+    unit a screening record is organised by, and whatever else it measured on
+    the same compounds is its hit profiling.
+    """
+    return sorted(
+        {
+            row["document_chembl_id"]
+            for row in activities
+            if row.get("evidence") == "whole_cell" and row.get("document_chembl_id")
+        }
+    )
+
+
+def campaign_assays(documents: Sequence[str], *, force: bool = False) -> list[dict[str, Any]]:
+    """Every assay in these documents, whatever it was run against."""
+    rows: list[dict[str, Any]] = []
+    for index in range(0, len(documents), DOC_BATCH):
+        batch = documents[index : index + DOC_BATCH]
+        rows += pages(
+            "assay",
+            f"document_chembl_id__in={','.join(batch)}&only={CAMPAIGN_ASSAY_FIELDS}",
+            "assays",
+            f"campaigns/assays-{index}",
+            force=force,
+        )
+    return rows
+
+
+def campaign_activities(documents: Sequence[str], *, force: bool = False) -> list[dict[str, Any]]:
+    """Every activity in these documents, which is the per-compound coverage."""
+    rows: list[dict[str, Any]] = []
+    for index in range(0, len(documents), DOC_BATCH):
+        batch = documents[index : index + DOC_BATCH]
+        rows += pages(
+            "activity",
+            f"document_chembl_id__in={','.join(batch)}&only={CAMPAIGN_ACTIVITY_FIELDS}",
+            "activities",
+            f"campaigns/activities-{index}",
+            force=force,
+        )
+    return rows
+
+
+def campaign_targets(
+    assays: Iterable[Mapping[str, Any]], *, force: bool = False
+) -> dict[str, dict[str, Any]]:
+    """Target type and organism for every target these assays name."""
+    ids = sorted({a["target_chembl_id"] for a in assays if a.get("target_chembl_id")})
+    out: dict[str, dict[str, Any]] = {}
+    urls = [
+        f"{API}/target.json?target_chembl_id__in={batch}"
+        f"&only=target_chembl_id,target_type,organism&limit={ID_BATCH}"
+        for batch in batches(ids)
+    ]
+    for payload in fetch_json_many(
+        urls, workers=6, min_interval=0.1, label="chembl campaign targets"
+    ).values():
+        for target in payload["targets"]:
+            out[target["target_chembl_id"]] = {
+                "target_type": target.get("target_type"),
+                "organism": target.get("organism"),
+            }
+    return out
+
+
+def normalize_campaign_assays(
+    assays: Iterable[Mapping[str, Any]], targets: Mapping[str, Mapping[str, Any]]
+) -> list[dict[str, Any]]:
+    """One stage row per assay, with what it measured and where in the funnel."""
+    rows = []
+    for assay in assays:
+        target = targets.get(assay.get("target_chembl_id") or "", {})
+        description = assay.get("description")
+        organism = target.get("organism")
+        target_type = target.get("target_type")
+        derived = is_derived(description)
+        modality = "other" if derived else classify_modality(description, target_type, organism)
+        rows.append(
+            {
+                "stage_id": f"chembl:{assay['assay_chembl_id']}",
+                "screen_id": f"chembl:{assay['document_chembl_id']}",
+                "assay_chembl_id": assay["assay_chembl_id"],
+                "document_chembl_id": assay["document_chembl_id"],
+                # modality travels with it: `classify_stage` derives `profiling`
+                # from it, so that the two axes cannot drift apart. Passing the
+                # description alone reintroduces the disagreement Task 3 fixed.
+                "stage": classify_stage(description, modality=modality),
+                "modality": modality,
+                "description": description,
+                "target_chembl_id": assay.get("target_chembl_id"),
+                "target_type": target_type,
+                "target_organism": organism,
+                "derived": derived,
+                # Only a whole-cell stage has a growth condition; purified
+                # protein has no medium to speak of. Same rule as `activities`.
+                "assay_condition": (
+                    classify_condition(description) if modality == "phenotypic_mtb" else None
+                ),
+                "strain": assay.get("assay_strain"),
+                # Filled by `stamp_stage_counts` once the activities are in
+                # hand. Present here so both sources emit one key set for
+                # `screen_stages` -- a column missing from half the rows types
+                # as NULL for all of them.
+                "n_tested": None,
+                "n_active": None,
+            }
+        )
+    return rows
+
+
 def annotate_activities(
     rows: Iterable[dict[str, Any]], compounds: Iterable[dict[str, Any]]
 ) -> list[dict[str, Any]]:

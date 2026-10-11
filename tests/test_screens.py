@@ -14,10 +14,12 @@ import pytest
 from atlas.sources import chembl
 from atlas.sources.chembl import (
     aggregate_sizes,
+    campaign_documents,
     census_rows,
     classify_modality,
     classify_stage,
     is_derived,
+    normalize_campaign_assays,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -365,6 +367,21 @@ def test_the_readout_takes_plural_organs_and_the_spelled_out_cfu(readout):
     )
 
 
+@pytest.mark.parametrize("organ", ["lung", "spleen"])
+def test_a_singular_organ_alone_is_a_bacterial_readout(organ):
+    """Every singular positive above also says "CFU", so `lungs?` could lose its `s?` and the
+    suite would pass. Here the organ is the only readout word in the sentence."""
+    assert (
+        classify_modality(
+            "Antitubercular activity against Mycobacterium tuberculosis H37Rv infected in "
+            f"BALB/c mouse assessed as reduction of bacterial count in {organ}",
+            "ORGANISM",
+            _MTB,
+        )
+        == "in_vivo_efficacy"
+    )
+
+
 def test_a_real_animal_study_that_says_cells_is_still_in_vivo():
     """The culture words are specific on purpose. A bare "cells" alternative would exclude
     this study, which dosed mice and counted CFU in lung cells."""
@@ -388,6 +405,26 @@ def test_animal_pharmacokinetics_is_adme_even_though_chembl_files_it_against_the
             "Clearance rate after i.v. administration in rats", "ORGANISM", "Rattus norvegicus"
         )
         == "adme"
+    )
+
+
+def test_an_admet_target_is_adme_on_its_own_when_the_prose_says_nothing():
+    """927 corpus assays reach `adme` solely through `target_type == "ADMET"`: their prose
+    names no ADME word at all. Dropping that clause relabels all of them `other`."""
+    assert classify_modality("Measured property of the compound", "ADMET", None) == "adme"
+    assert classify_modality("Measured property of the compound", None, None) == "other"
+
+
+def test_efficacy_is_decided_before_adme_though_clearance_is_an_adme_word():
+    """14 corpus rows depend on the order: a bacterial-clearance study in a mouse lung
+    says "clearance", which would read as host ADME if the ADME test ran first."""
+    assert (
+        classify_modality(
+            "Clearance of Mycobacterium tuberculosis H37Rv in BALB/c mouse lung",
+            "ORGANISM",
+            "Mus musculus",
+        )
+        == "in_vivo_efficacy"
     )
 
 
@@ -488,3 +525,113 @@ def test_stage_order_is_stated_then_counter_screen_then_profiling_then_confirmat
 def test_qhts_is_a_primary_screen_not_a_confirmation():
     """NCGC's qHTS runs a concentration-response curve across the whole library."""
     assert classify_stage("qHTS for inhibitors of Mycobacterium tuberculosis") == "primary"
+
+
+def _campaign() -> tuple[list[dict], dict[str, dict]]:
+    data = json.loads((FIXTURES / "chembl_campaign_assays.json").read_text())
+    return data["assays"], data["targets"]
+
+
+def test_the_campaign_is_the_document_and_its_stages_are_the_assays():
+    assays, targets = _campaign()
+    rows = normalize_campaign_assays(assays, targets)
+    assert {row["screen_id"] for row in rows} == {"chembl:CHEMBL_DOC1"}
+    assert len(rows) == 7
+    assert rows[0]["stage_id"] == "chembl:CHEMBL100"
+
+
+def test_every_modality_in_one_paper_is_kept_apart():
+    assays, targets = _campaign()
+    by_assay = {row["assay_chembl_id"]: row for row in normalize_campaign_assays(assays, targets)}
+    assert by_assay["CHEMBL100"]["modality"] == "phenotypic_mtb"
+    assert by_assay["CHEMBL101"]["modality"] == "biochemical_mtb"
+    assert by_assay["CHEMBL102"]["modality"] == "mammalian_cytotox"
+    assert by_assay["CHEMBL103"]["modality"] == "adme"
+    assert by_assay["CHEMBL104"]["modality"] == "in_vivo_efficacy"
+    # A selectivity panel against another organism is not Mtb evidence.
+    assert by_assay["CHEMBL105"]["modality"] == "other_pathogen"
+
+
+def test_a_derived_index_is_flagged_and_not_given_a_modality_of_its_own():
+    assays, targets = _campaign()
+    by_assay = {row["assay_chembl_id"]: row for row in normalize_campaign_assays(assays, targets)}
+    assert by_assay["CHEMBL106"]["derived"] is True
+    assert by_assay["CHEMBL106"]["modality"] == "other"
+    # Everything else in the paper is a measurement.
+    assert sum(row["derived"] for row in normalize_campaign_assays(assays, targets)) == 1
+
+
+def test_a_whole_cell_stage_keeps_its_condition_and_strain():
+    assays, targets = _campaign()
+    by_assay = {row["assay_chembl_id"]: row for row in normalize_campaign_assays(assays, targets)}
+    # The existing condition classifier, reused: this one names no medium.
+    assert by_assay["CHEMBL100"]["assay_condition"] == "unspecified"
+    assert by_assay["CHEMBL100"]["strain"] == "H37Rv"
+    # A biochemical assay on purified protein has no growth condition at all.
+    assert by_assay["CHEMBL101"]["assay_condition"] is None
+
+
+def test_a_stage_follows_the_modality_read_from_the_target_not_the_prose_alone():
+    """The prose says nothing about cells; the CELL-LINE target does. The stage has to be
+    derived from the modality the target settled, or the two columns disagree."""
+    assay = {
+        "assay_chembl_id": "CHEMBL1",
+        "document_chembl_id": "CHEMBL_DOC1",
+        "target_chembl_id": "CHEMBL_HEK",
+        "description": "Antiproliferative activity",
+    }
+    targets = {"CHEMBL_HEK": {"target_type": "CELL-LINE", "organism": "Homo sapiens"}}
+    (row,) = normalize_campaign_assays([assay], targets)
+    assert row["modality"] == "mammalian_cytotox"
+    assert row["stage"] == "profiling"
+    # The fixture's own profiling rows, so the column is checked against a whole paper.
+    assays, fixture_targets = _campaign()
+    stages = {
+        r["assay_chembl_id"]: r["stage"] for r in normalize_campaign_assays(assays, fixture_targets)
+    }
+    assert [stages[a] for a in ("CHEMBL100", "CHEMBL101", "CHEMBL105")] == ["primary"] * 3
+    assert [stages[a] for a in ("CHEMBL102", "CHEMBL103", "CHEMBL104")] == ["profiling"] * 3
+
+
+@pytest.mark.parametrize(
+    ("fetch_all", "endpoint", "fields", "dest"),
+    [
+        (chembl.campaign_assays, "assay", chembl.CAMPAIGN_ASSAY_FIELDS, "campaigns/assays"),
+        (
+            chembl.campaign_activities,
+            "activity",
+            chembl.CAMPAIGN_ACTIVITY_FIELDS,
+            "campaigns/activities",
+        ),
+    ],
+    ids=["assays", "activities"],
+)
+def test_a_campaign_is_fetched_by_document_in_batches_of_ten(
+    monkeypatch: pytest.MonkeyPatch, fetch_all, endpoint, fields, dest
+):
+    """The query is keyed on the document, not the target: that is the whole difference
+    between the 11,686 assays a target query sees and the 38,335 a document holds."""
+    calls: list[tuple] = []
+
+    def fake_pages(endpoint, query, key, dest, *, force):
+        calls.append((endpoint, query, dest, force))
+        return [{"from": dest}]
+
+    monkeypatch.setattr(chembl, "pages", fake_pages)
+    documents = [f"CHEMBL_DOC{n}" for n in range(23)]
+    assert len(fetch_all(documents, force=True)) == 3
+    assert [call[0] for call in calls] == [endpoint] * 3
+    assert [call[2] for call in calls] == [f"{dest}-0", f"{dest}-10", f"{dest}-20"]
+    assert all(call[3] is True for call in calls)
+    assert calls[0][1] == f"document_chembl_id__in={','.join(documents[:10])}&only={fields}"
+    assert calls[2][1].startswith(f"document_chembl_id__in={','.join(documents[20:])}&")
+    assert not any("target_chembl_id=" in call[1] for call in calls)
+
+
+def test_campaign_documents_are_the_documents_behind_whole_cell_activities():
+    activities = [
+        {"assay_chembl_id": "A", "evidence": "whole_cell", "document_chembl_id": "CHEMBL_DOC1"},
+        {"assay_chembl_id": "B", "evidence": "direct", "document_chembl_id": "CHEMBL_DOC2"},
+        {"assay_chembl_id": "C", "evidence": "whole_cell", "document_chembl_id": None},
+    ]
+    assert campaign_documents(activities) == ["CHEMBL_DOC1"]

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import tempfile
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -40,17 +40,66 @@ def write_parquet(
     if clash:
         raise ValueError(f"{name}: rows already carry provenance columns {sorted(clash)}")
 
+    stamped = stamp(rows, source=source, source_version=source_version, retrieved_at=retrieved_at)
+    return _write(name, stamped, store)
+
+
+def stamp(
+    rows: Iterable[Mapping[str, Any]], *, source: str, source_version: str, retrieved_at: str
+) -> Iterator[dict[str, Any]]:
+    """`rows` with their provenance attached, for `write_stamped`.
+
+    A generator, so a table of millions of rows is never held twice.
+    """
+    labels = {"source": source, "source_version": source_version, "retrieved_at": retrieved_at}
+    for row in rows:
+        if clash := set(row) & set(PROVENANCE):
+            raise ValueError(f"rows already carry provenance columns {sorted(clash)}")
+        yield {**row, **labels}
+
+
+def write_stamped(
+    name: str, rows: Iterable[Mapping[str, Any]], *, store: Path | None = None
+) -> Path:
+    """Write rows that each carry their own provenance, for a table two sources feed.
+
+    `screens` holds PubChem's campaigns and ChEMBL's literature campaigns. One stamp
+    for the table would label a ChEMBL paper `pubchem`, and the UI shows provenance
+    for every value. A row without all three columns is refused, never written
+    unlabelled. `provenance()` reads the first row, so that is the source whose
+    version the table answers for.
+    """
+    return _write(name, rows, store, require_provenance=True)
+
+
+def _write(
+    name: str,
+    rows: Iterable[Mapping[str, Any]],
+    store: Path | None,
+    *,
+    require_provenance: bool = False,
+) -> Path:
     out_dir = store or STORE
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / f"{name}.parquet"
 
-    stamp = {"source": source, "source_version": source_version, "retrieved_at": retrieved_at}
+    count = 0
     with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False, encoding="utf-8") as tmp:
-        for row in rows:
-            # default=str so dates round-trip: DuckDB types `retrieved_at` as DATE
-            # on the way in, and a rebuild feeds that value straight back here.
-            tmp.write(json.dumps({**row, **stamp}, default=str) + "\n")
         tmp_path = Path(tmp.name)
+        try:
+            for row in rows:
+                if require_provenance and (missing := [k for k in PROVENANCE if not row.get(k)]):
+                    raise ValueError(f"{name}: a row carries no {', '.join(missing)}: {dict(row)}")
+                # default=str so dates round-trip: DuckDB types `retrieved_at` as DATE
+                # on the way in, and a rebuild feeds that value straight back here.
+                tmp.write(json.dumps(row, default=str) + "\n")
+                count += 1
+        except BaseException:
+            tmp_path.unlink(missing_ok=True)
+            raise
+    if not count:
+        tmp_path.unlink(missing_ok=True)
+        raise ValueError(f"refusing to write an empty {name}.parquet")
 
     try:
         # sample_size=-1 reads every row to settle a column's type. The default samples

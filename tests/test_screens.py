@@ -1365,6 +1365,86 @@ def test_a_chembl_activity_listed_twice_stops_the_build(monkeypatch, tmp_path):
         )
 
 
+def test_the_evidence_stage_hands_the_campaigns_and_the_crosswalk_to_pubchems_build(
+    monkeypatch, evidence_store
+):
+    """`build_evidence` reaches 17 services and cannot run here, so every other builder is
+    stubbed and only this block is real. It reads the store the way a build does."""
+    import duckdb
+
+    from atlas import pipeline, store
+
+    monkeypatch.setattr(store, "STORE", evidence_store)
+    marker = Path("/built-elsewhere.parquet")
+    for module, name in [
+        (pipeline.pdb, "build"),
+        (pipeline.pdb, "build_ligands"),
+        (pipeline.alphafold, "build"),
+        (pipeline.essentiality, "build"),
+        (pipeline.resistance, "build"),
+        (pipeline.conditional, "build"),
+        (pipeline.vulnerability, "build"),
+        (pipeline.vulnerability, "build_strain"),
+        (pipeline.string_db, "build"),
+        (pipeline.homology, "build"),
+        (pipeline.paralogs, "build"),
+        (pipeline.orthologue_structures, "build"),
+        (pipeline.precedent, "build"),
+    ]:
+        monkeypatch.setattr(module, name, lambda *a, **k: marker)
+    monkeypatch.setattr(pipeline.chembl, "build_bioactivity", lambda *a, **k: [])
+    monkeypatch.setattr(pipeline.mtbtndb, "build", lambda *a, **k: [])
+
+    seen: dict = {}
+
+    def fake_campaigns(activities, **kwargs):
+        seen["campaigns"] = (activities, kwargs)
+        return ["screen"], ["stage"], ["result"]
+
+    def fake_build(**kwargs):
+        seen["build"] = kwargs
+        return [Path("/screens.parquet")]
+
+    monkeypatch.setattr(pipeline.chembl, "build_campaigns", fake_campaigns)
+    monkeypatch.setattr(pipeline.pubchem, "build", fake_build)
+    monkeypatch.setattr(
+        pipeline.unichem, "fetch_raw", lambda *, force: _Downloaded(Path("/unichem.txt.gz"))
+    )
+
+    paths = pipeline.build_evidence(force=True)
+
+    activities, kwargs = seen["campaigns"]
+    wanted = {
+        d
+        for (d,) in duckdb.sql(
+            f"SELECT document_chembl_id FROM '{evidence_store / 'activities.parquet'}' "
+            "WHERE evidence = 'whole_cell'"
+        ).fetchall()
+    }
+    assert wanted, "the fixture store must hold a whole-cell activity for this to prove anything"
+    assert {row["document_chembl_id"] for row in activities} == wanted
+    assert {row["evidence"] for row in activities} == {"whole_cell"}
+    assert kwargs == {"retrieved_at": "2026-10-09", "force": True}
+
+    built = seen["build"]
+    assert built["bridge"] == Path("/unichem.txt.gz")
+    assert (built["extra_screens"], built["extra_stages"], built["extra_results"]) == (
+        ["screen"],
+        ["stage"],
+        ["result"],
+    )
+    assert built["retrieved_at"] == "2026-10-09" and built["force"] is True
+    # The crosswalk's own accession -> loci map, and a shared accession keeps both loci.
+    walk = duckdb.sql(
+        f"SELECT uniprot_acc, rv_id FROM '{evidence_store / 'crosswalk.parquet'}' "
+        "WHERE uniprot_acc IS NOT NULL"
+    ).fetchall()
+    assert {a: sorted(v) for a, v in built["rv_by_acc"].items()} == {
+        a: sorted(rv for acc, rv in walk if acc == a) for a in {acc for acc, _ in walk}
+    }
+    assert Path("/screens.parquet") in paths
+
+
 def test_the_diff_compares_a_result_on_the_key_that_tells_rows_apart(tmp_path):
     """A PubChem row has a NULL `activity_id` and a ChEMBL row a NULL `result_tag`, and EXCEPT
     treats two NULLs as equal, so the composite key compares. A key that needed `NULL = NULL`

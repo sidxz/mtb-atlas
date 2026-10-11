@@ -12,9 +12,10 @@ FIXTURES = Path(__file__).parent / "fixtures"
 def test_unichem_maps_cid_to_chembl_id_and_skips_half_rows():
     mapping = unichem.chembl_by_cid(FIXTURES / "unichem_src1src22.txt")
     assert mapping == {
-        "4": "CHEMBL6329",
-        "5": "CHEMBL1098659",
-        "6": "CHEMBL1004",
+        "12846578": "CHEMBL6329",
+        "22247451": "CHEMBL1098659",
+        "962": "CHEMBL1098659",
+        "3162": "CHEMBL1004",
         "16694118": "CHEMBL3833402",
         "24850": "CHEMBL3833402",
         "75366293": "CHEMBL3833402",
@@ -23,8 +24,8 @@ def test_unichem_maps_cid_to_chembl_id_and_skips_half_rows():
 
 def test_unichem_normalize_keeps_both_identifiers():
     rows = list(unichem.normalize(FIXTURES / "unichem_src1src22.txt"))
-    assert rows[0] == {"molecule_chembl_id": "CHEMBL6329", "pubchem_cid": "4"}
-    assert len(rows) == 6
+    assert rows[0] == {"molecule_chembl_id": "CHEMBL6329", "pubchem_cid": "12846578"}
+    assert len(rows) == 7
 
 
 def test_one_compound_can_have_several_pubchem_entries():

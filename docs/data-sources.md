@@ -352,10 +352,14 @@ directory state no licence, so the licence recorded here is ChEMBL's, not one
 UniChem states itself.
 
 **Why one file.** PubChem keys a screen on CID; ChEMBL keys a compound on
-`molecule_chembl_id`. Without a mapping, a 215,397-compound PubChem screen cannot
-reach a ChEMBL compound. The alternative is a PubChem lookup per compound. This
-file is fetched once and covers the whole mapping. Nothing reads it yet; the
-PubChem ingester will be its first consumer.
+`molecule_chembl_id`. Without a mapping, PubChem AID 1626 cannot reach a ChEMBL
+compound. Its `SIDCountAll` is 215,397 tested SIDs, checked live on 2026-10-11
+(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/assay/aid/1626/summary/JSON`: source
+SRMLSC, "High Throughput Screen to Identify Inhibitors of Mycobacterium
+tuberculosis H37Rv"). Its own description says 216,163 compounds were screened, so
+the SID count is the figure used here. The alternative is a PubChem lookup per
+compound. This file is fetched once and covers the whole mapping. Nothing reads it
+yet; the PubChem ingester will be its first consumer.
 
 **Fan-out, measured on the full file** (2,832,793 pairs, 2,800,246 distinct ChEMBL ids):
 

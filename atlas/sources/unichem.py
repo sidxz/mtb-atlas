@@ -1,11 +1,12 @@
 """UniChem: the ChEMBL <-> PubChem compound bridge, as one file.
 
 PubChem keys a screening result on CID and ChEMBL keys a compound on
-`molecule_chembl_id`. Without a bridge, a 215,397-compound screen cannot be
-reached from a compound page. The alternatives were a request per compound
-against PubChem's synonym endpoint, or PubChem's CID-Synonym dump (about 1 GB
-compressed); UniChem publishes the whole src1 <-> src22 mapping as a single
-gzipped file from the same provider as ChEMBL.
+`molecule_chembl_id`. Without a bridge, PubChem AID 1626 (215,397 tested SIDs,
+`SIDCountAll`) cannot be reached from a compound page. The alternatives were a
+request per compound against PubChem's synonym endpoint, or PubChem's
+`CID-Synonym-filtered.gz` dump (976,534,762 bytes, 977 MB compressed); UniChem
+publishes the whole src1 <-> src22 mapping as a single gzipped file from the
+same provider as ChEMBL.
 
 Licence: CC BY-SA 3.0, as ChEMBL's distribution states. UniChem's own README
 names no licence, so this is inherited from the ChEMBL FTP tree, not stated by

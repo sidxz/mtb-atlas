@@ -362,7 +362,15 @@ rest. Prose caps at 78ch; `tabular-nums` stays.
   genes this panel is empty, and that is the answer.
 - **Compound page panel** — "Tested in": every campaign that tested this
   molecule, with the outcome. This is where a zero becomes provable — "tested
-  in AID 1626 (215,397-compound MLSMR library), inactive".
+  in AID 1626 (215,098 compounds of the MLSMR library), inactive".
+
+  **The unit matters and this sentence had it wrong.** AID 1626's `SIDCountAll`
+  is 215,397, but a SID is a depositor's *sample*, not a compound: the same
+  summary gives `CIDCountAll` as 215,098, and the UniChem bridge is keyed on
+  CID. The depositor's own prose says 216,163 compounds were screened, which is
+  a third number and belongs in `library_size_stated`. So: 216,163 claimed
+  screened, 215,397 samples deposited, 215,098 distinct compounds. Any string
+  shown to a reader uses compounds and says so.
 
 ### Hit profiling
 

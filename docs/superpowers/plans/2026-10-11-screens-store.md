@@ -1117,7 +1117,7 @@ Create `atlas/sources/unichem.py`:
 """UniChem: the ChEMBL <-> PubChem compound bridge, as one file.
 
 PubChem keys a screening result on CID and ChEMBL keys a compound on
-`molecule_chembl_id`. Without a bridge, a 215,397-compound screen cannot be
+`molecule_chembl_id`. Without a bridge, a 215,098-compound screen (AID 1626; 215,397 deposited SIDs) cannot be
 reached from a compound page. The alternatives were a request per compound
 against PubChem's synonym endpoint, or PubChem's 1.5 GB CID-Synonym dump;
 UniChem publishes the whole src1 <-> src22 mapping as a single gzipped file
@@ -2565,7 +2565,7 @@ claimed. Nothing is redistributed: the pipeline fetches at build time and
 
 `ftp.ebi.ac.uk/pub/databases/chembl/UniChem/data/wholeSourceMapping/src_id1/src1src22.txt.gz`,
 22.8 MB. One file maps every ChEMBL id to its PubChem CID, which is what lets
-a 215,397-compound screen be reached from a compound page. The alternatives
+a 215,098-compound screen (AID 1626; the SID count is 215,397) be reached from a compound page. The alternatives
 were one request per compound against PubChem's synonym endpoint, or PubChem's
 1.5 GB CID-Synonym dump.
 

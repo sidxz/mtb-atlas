@@ -366,7 +366,11 @@ TABLE_NOTES = {
     "target AS THE DEPOSITOR GAVE IT (accession, name) with `accession_kind` (uniprot | "
     "refseq | other), `uniprot_accessions` and the loci it reaches in `rv_ids`; empty "
     "`rv_ids` means unmatched, not 'no gene', a shared accession reaches every locus that "
-    "owns it, and a `name` is never matched to a gene symbol. ChEMBL campaigns have empty "
+    "owns it, and a `name` is never matched to a gene symbol. **Four deposits reach no "
+    "locus** -- 356,486 SIDs (bioA), 355,326 (fadD28), 104,781 (MbtI, accession P9WFX0, the "
+    "CDC 1551 entry where the H37Rv crosswalk holds P9WFX1) and 10,011 (panC) -- so those genes "
+    "read 0 or a small `n_target_screens` beside a screen of that size: before saying a protein "
+    "was never screened, look for an unplaced accession here. ChEMBL campaigns have empty "
     "`targets` and reach genes through screen_stages. `year` is NULL for PubChem, which "
     "carries no deposit year. `depositor` matters legally: PubChem's licence is per "
     "depositor (`licence`), 'Scientific Literature' marks a ChEMBL paper.",

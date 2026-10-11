@@ -500,12 +500,8 @@ SELECT
     coalesce(asz.max_complex_assay_compounds, 0) AS max_complex_assay_compounds,
     asz.latest_protein_assay_year,
     ax.protein_assay_example,
-    coalesce(ss.n_target_screens, 0)  AS n_target_screens,
-    coalesce(ss.n_complex_screens, 0) AS n_complex_screens,
-    ss.max_screen_compounds,
-    -- NOT coalesced: see screen_scale.
-    ss.n_screen_actives,
-    ss.latest_screen_year,
+
+    -- SCREEN COLUMNS
 
     -- CLINICAL COLUMNS
 
@@ -551,6 +547,27 @@ LEFT JOIN gene_trials  gt ON gt.rv_id = w.rv_id
 ORDER BY w.start
 """
 
+SCREEN_COLUMNS = """
+    coalesce(ss.n_target_screens, 0)  AS n_target_screens,
+    coalesce(ss.n_complex_screens, 0) AS n_complex_screens,
+    ss.max_screen_compounds,
+    -- NOT coalesced: see screen_scale.
+    ss.n_screen_actives,
+    ss.latest_screen_year,
+"""
+# A store built before the screening layer, or one that stopped short of it, has no
+# `screens` or `screen_stages`. Then every screen column is NULL rather than 0: "no
+# screen exists for this gene" and "the layer was never built" are different answers.
+# `assay_sizes` is not the precedent -- built, its 0 is a real answer about a gene; a 0
+# from a table that is not there is not an answer at all. One missing table is as
+# unbuilt as both, because one stage writes them together.
+UNBUILT_SCREEN_COLUMNS = """
+    NULL::BIGINT AS n_target_screens,
+    NULL::BIGINT AS n_complex_screens,
+    NULL::BIGINT AS max_screen_compounds,
+    NULL::HUGEINT AS n_screen_actives,
+    NULL::BIGINT AS latest_screen_year,
+"""
 CLINICAL_COLUMNS = """
     coalesce(dl.n_drugs, 0)             AS n_drugs,
     dl.best_drug_phase,
@@ -650,8 +667,13 @@ def build(*, store: Path | None = None) -> Path:
             stand_ins[name] if name in absent else f"SELECT * FROM '{base / f'{name}.parquet'}'"
         )
         connection.sql(f"CREATE VIEW {alias} AS {source}")
+    unbuilt_screens = any(name in absent for name in ("screens", "screen_stages"))
     rows = connection.sql(
         SUMMARY_SQL.replace(
+            "    -- SCREEN COLUMNS\n",
+            UNBUILT_SCREEN_COLUMNS if unbuilt_screens else SCREEN_COLUMNS,
+        )
+        .replace(
             "    -- CLINICAL COLUMNS\n",
             UNBUILT_CLINICAL_COLUMNS if missing else CLINICAL_COLUMNS,
         )

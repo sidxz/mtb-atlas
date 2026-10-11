@@ -17,6 +17,14 @@ from atlas import store as store_module
 from atlas.store import read, records
 from atlas.summary import counts, unclassified
 
+SCREEN_COLUMN_NAMES = (
+    "n_target_screens",
+    "n_complex_screens",
+    "max_screen_compounds",
+    "n_screen_actives",
+    "latest_screen_year",
+)
+
 
 @pytest.fixture(scope="session")
 def rows(evidence_store: Path) -> dict[str, dict]:
@@ -361,19 +369,32 @@ def test_the_summary_command_prints_the_unclassified_share(
     assert "10  stages at the default 'primary' (90.9% of 11)" in printed
 
 
-def test_a_store_without_the_screens_still_summarises(
-    evidence_store: Path, tmp_path_factory: pytest.TempPathFactory
+@pytest.mark.parametrize(
+    "missing", [("screens", "screen_stages"), ("screens",), ("screen_stages",)]
+)
+def test_an_unbuilt_screening_layer_is_null_not_zero(
+    evidence_store: Path, tmp_path_factory: pytest.TempPathFactory, missing: tuple[str, ...]
 ) -> None:
-    """A store built before the screening layer has neither table; absence is not a failure."""
+    """ "No screen exists for this gene" and "the screening layer was never built" are different
+    answers. A 0 from a table that is not there is not an answer at all, so every screen column
+    reads NULL, as the clinical ones do. (The census is different: built, its 0 is a real answer.)
+    One table missing is as unbuilt as both: the layer is written by one stage."""
     out = tmp_path_factory.mktemp("no-screens")
     for parquet in evidence_store.glob("*.parquet"):
-        if parquet.stem not in ("screens", "screen_stages", "target_summary"):
+        if parquet.stem not in (*missing, "target_summary"):
             shutil.copy(parquet, out / parquet.name)
     summary.build(store=out)
-    by_id = {r["rv_id"]: r for r in records("target_summary", store=out)}
-    assert by_id["Rv3790"]["n_target_screens"] == 0
-    assert by_id["Rv2461c"]["n_complex_screens"] == 0
-    assert by_id["Rv3790"]["n_screen_actives"] is None
+    for row in records("target_summary", store=out):
+        for column in SCREEN_COLUMN_NAMES:
+            assert row[column] is None, (row["rv_id"], column)
+    assert {r["rv_id"] for r in records("target_summary", store=out)} >= {"Rv3790", "Rv2461c"}
+
+
+def test_a_built_screening_layer_never_reads_null_for_a_count(rows: dict) -> None:
+    """The other half: with the tables present, zero screens is a real 0 on every gene."""
+    for row in rows.values():
+        assert row["n_target_screens"] is not None, row["rv_id"]
+        assert row["n_complex_screens"] is not None, row["rv_id"]
 
 
 # --- resistance ---------------------------------------------------------------

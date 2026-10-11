@@ -395,16 +395,36 @@ _DERIVED = re.compile(
     r"^\s*(selectivity|therapeutic|resistance)\s+(index|ratio)\b|\bratio of\b", re.I
 )
 
-# An animal, a bacterial readout, and the organism named. All three, because
-# "Toxicity in BALB/c mouse" is an animal study and not an efficacy result,
-# and a mouse PK curve is ADME.
-_ANIMAL = re.compile(r"\b(mice|mouse|murine|guinea pig|marmoset|rabbit|rat|rats)\b", re.I)
-_BACTERIAL_READOUT = re.compile(r"\b(cfu|lung|spleen|bacterial load|burden|survival)\b", re.I)
-_ADME = re.compile(
-    r"pharmacokinetic|\bauc\b|cmax|half[- ]life|\bt1/2\b|bioavailab|clearance|microsom|"
-    r"hepatocyte|solubility|permeab|caco|plasma protein|metabolic stability|\bcyp\b",
+# What classify_modality asks of the prose. Each pattern is narrow on purpose: a
+# pattern that over- or under-matches changes a published count, and every one of
+# these was widened or narrowed against the 38,335 assays of the Mtb whole-cell papers.
+#
+# In-vivo efficacy needs all of an animal, a bacterial readout and the organism, and
+# no cell culture. "Toxicity in BALB/c mouse" is an animal without a readout, a mouse
+# PK curve is ADME, and a mouse macrophage infected with Mtb names an animal, a CFU
+# and the organism without being an animal study. `_CULTURE` carries unambiguous culture
+# words only: a bare "cells" would exclude a real study that counts "lung cells".
+_ANIMAL = re.compile(
+    r"\b(mice|mouse|murine|guinea[- ]pigs?|marmosets?|rabbits?|rats?|hamsters?|macaques?"
+    r"|monkeys?|zebrafish)\b",
     re.I,
 )
+_BACTERIAL_READOUT = re.compile(r"\b(cfu|lung|spleen|bacterial load|burden|survival)\b", re.I)
+_CULTURE = re.compile(r"macrophage|intracellular|monolayer|thp-?1|j774|raw 264|bone marrow", re.I)
+# ADME. An AUC arrives as AUC, AUC0-24, AUC (0 to 24 hrs), AUClast, AUCinfinity or fAUC, so
+# a trailing word boundary alone misses most of them. A CYP isoform is a family digit and a
+# subfamily letter (CYP3A4, CYP2D6, CYP2C19), CYP450, or a bare CYP; *M. tuberculosis*' own
+# P450s (CYP51, CYP121, CYP125) have no subfamily letter and are binding assays on a
+# purified protein, which is not ADME. `_NOT_ADME` removes two shapes that name a
+# pharmacokinetic word without being host ADME: the hollow-fibre in-vitro PK/PD model,
+# and bacterial clearance inside a macrophage.
+_ADME = re.compile(
+    r"pharmacokinetic|\bf?auc(?:last|inf|(?![a-z]))|cmax|half[- ]life|\bt1/2\b|bioavailab|"
+    r"clearance|microsom|hepatocyte|solubility|permeab|caco|plasma protein|"
+    r"metabolic stability|\bcyp(?:[1-4][a-z]|450|\b)",
+    re.I,
+)
+_NOT_ADME = re.compile(r"hollow.fib|macrophage", re.I)
 _CYTOTOX = re.compile(r"cytotox|\bcc50\b|cell viability|\bvero\b|hepg2", re.I)
 _MTB = re.compile(r"tubercul", re.I)
 
@@ -419,28 +439,45 @@ def classify_modality(
 ) -> str:
     """What this assay measured, from its own target record and its prose.
 
-    The target record is checked before the prose only where it is the more specific
-    claim: a `CELL-LINE` target with no ADME or in-vivo language is a mammalian reading,
-    while an ADME endpoint wins over the cell line it ran in, because a Caco-2
-    permeability assay is ADME. An `ORGANISM` target on a mycobacterium other than
-    *M. tuberculosis* is `other_pathogen` before any prose is read, since "cytotoxicity"
-    or "antitubercular" there describes an NTM study.
+    Explicit prose beats target typing, and the order below is the whole rule:
+
+    1. An `ORGANISM` target on a mycobacterium other than *M. tuberculosis* is
+       `other_pathogen` before any prose is read, since "cytotoxicity" or
+       "antitubercular" there describes an NTM study. BCG and *M. bovis* are in the
+       M. tuberculosis complex, and ChEMBL names them "Mycobacterium tuberculosis variant ...".
+    2. An animal, a bacterial readout and the organism, and no cell culture, is
+       `in_vivo_efficacy`. The target is not consulted: ChEMBL files a mouse infection
+       study against the *mouse*, so an organism-first rule would lose these studies.
+    3. Cytotoxicity prose is `mammalian_cytotox` even on an `ADMET` target, which is how
+       ChEMBL types a few hundred cytotoxicity assays.
+    4. ADME prose or an `ADMET` target is `adme`. ChEMBL files animal pharmacokinetics
+       against the *animal* as an `ORGANISM` target, so an organism-first rule here
+       would relabel every one of them `other_pathogen`.
+    5. A `CELL-LINE` target with none of that is mammalian. It comes after ADME because
+       the endpoint wins over the cell line it ran in: Caco-2 permeability is ADME.
+    6. Then the *M. tuberculosis* target types, then any other organism, then `other`.
     """
     text = description or ""
     organism = organism or ""
-    if (
-        target_type == "ORGANISM"
-        and organism.startswith("Myco")
-        and not organism.startswith("Mycobacterium tuberculosis")
-    ):
+    is_mtb = organism.startswith("Mycobacterium tuberculosis")
+    # "Myco", not "Mycobact": the renamed M. smegmatis is Mycolicibacterium, which
+    # contains no "Mycobact" and would slip past the narrower prefix.
+    if target_type == "ORGANISM" and organism.startswith("Myco") and not is_mtb:
         return "other_pathogen"
-    if _ANIMAL.search(text) and _BACTERIAL_READOUT.search(text) and _MTB.search(text):
+    if (
+        _ANIMAL.search(text)
+        and _BACTERIAL_READOUT.search(text)
+        and _MTB.search(text)
+        and not _CULTURE.search(text)
+    ):
         return "in_vivo_efficacy"
-    if target_type == "ADMET" or _ADME.search(text):
-        return "adme"
-    if target_type == "CELL-LINE" or _CYTOTOX.search(text):
+    if _CYTOTOX.search(text):
         return "mammalian_cytotox"
-    if organism.startswith("Mycobacterium tuberculosis"):
+    if (target_type == "ADMET" or _ADME.search(text)) and not _NOT_ADME.search(text):
+        return "adme"
+    if target_type == "CELL-LINE":
+        return "mammalian_cytotox"
+    if is_mtb:
         if target_type == "ORGANISM":
             return "phenotypic_mtb"
         if target_type in ("SINGLE PROTEIN", "PROTEIN COMPLEX", "PROTEIN FAMILY"):
@@ -450,23 +487,34 @@ def classify_modality(
     return "other"
 
 
-# PubChem states the stage; ChEMBL leaves it in the prose. `primary` is the
-# fallback for an Mtb assay that names no stage, because a paper's MIC table
-# is the first time its compounds met the organism.
-_COUNTER = re.compile(r"counter-?screen|selectivity against|counterscreen", re.I)
-_CONFIRM = re.compile(r"dose[- ]?response|confirmat|retest|titration|\bqhts\b", re.I)
-_PROFILING = re.compile(
-    r"cytotox|\bcc50\b|cell viability|hepg2|pharmacokinetic|microsom|hepatocyte|solubility|"
-    r"permeab|clearance|\bcfu\b|lung|spleen",
-    re.I,
-)
+# PubChem states the stage; ChEMBL leaves it in the prose. `primary` is what an assay
+# is when nothing names another stage -- the function takes no organism, so it is the
+# fallback for any description, not only an Mtb one. A paper's MIC table is the first
+# time its compounds met the organism.
+_COUNTER = re.compile(r"counter[- ]?screen|selectivity against", re.I)
+# qHTS is deliberately absent: NCGC's qHTS is a *primary* screen that runs a full
+# concentration-response curve across the whole library, so reading it as confirmatory
+# is backwards. It matched 0 of 38,335 ChEMBL descriptions and 0 of 124 PubChem titles.
+_CONFIRM = re.compile(r"dose[- ]?response|confirmat|retest|titration", re.I)
+# What a profiling assay measures is already decided by `classify_modality`, so the
+# stage is read from that rather than from a second list of words that has to be edited
+# in step with the first.
+_PROFILING = ("mammalian_cytotox", "adme", "in_vivo_efficacy")
 
 
-def classify_stage(description: str | None, *, pubchem_type: str | None = None) -> str:
+def classify_stage(
+    description: str | None, *, pubchem_type: str | None = None, modality: str | None = None
+) -> str:
     """Where in the funnel this assay sits.
 
     `pubchem_type` wins when it is `Confirmatory` or `Screening`, the two values PubChem
-    uses for a stage. Any other value, such as `Summary` or `Other`, falls through to the prose.
+    uses for a stage. Any other value, such as `Summary` or `Other`, falls through.
+    Then, in order: counter-screen prose; a cytotoxicity, ADME or in-vivo `modality`,
+    which is `profiling` by definition; confirmation prose; else `primary`. Profiling
+    comes before confirmation because a cytotoxicity dose-response is still profiling.
+
+    Pass the `modality` you have already computed from the target record. Without one it
+    is read from the description alone, which cannot see an `ADMET` or `CELL-LINE` target.
     """
     if pubchem_type:
         stated = pubchem_type.strip().lower()
@@ -477,10 +525,10 @@ def classify_stage(description: str | None, *, pubchem_type: str | None = None) 
     text = description or ""
     if _COUNTER.search(text):
         return "counter_screen"
+    if (modality or classify_modality(text, None, None)) in _PROFILING:
+        return "profiling"
     if _CONFIRM.search(text):
         return "confirmatory"
-    if _PROFILING.search(text):
-        return "profiling"
     return "primary"
 
 

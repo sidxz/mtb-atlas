@@ -53,3 +53,11 @@ def test_unichem_raises_when_a_cid_maps_to_two_chembl_ids(tmp_path):
     path.write_text("From src:'1'\tTo src:'22'\nCHEMBL6329\t12846578\nCHEMBL1004\t12846578\n")
     with pytest.raises(ValueError, match="CID 12846578 maps to both CHEMBL6329 and CHEMBL1004"):
         unichem.chembl_by_cid(path)
+
+
+def test_unichem_identical_repeat_is_not_a_collision(tmp_path):
+    """The same pair twice changes no attribution, so it is kept rather than raised on."""
+    path = tmp_path / "repeat.txt"
+    lines = ["From src:'1'\tTo src:'22'", "CHEMBL6329\t12846578", "CHEMBL6329\t12846578"]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    assert unichem.chembl_by_cid(path) == {"12846578": "CHEMBL6329"}

@@ -43,7 +43,13 @@ def _lines(path: Path) -> Iterator[str]:
 
 
 def normalize(path: Path) -> Iterator[dict[str, Any]]:
-    """One row per mapped pair. A half-row is not a mapping and is skipped."""
+    """One row per mapped pair. A line that is not a mapping is skipped.
+
+    Two checks for two shapes. The length check catches a line that is not two
+    fields: without it the unpack below raises and aborts the build. The emptiness
+    check catches two fields with one side blank: without it that line would map
+    an empty string to a compound, a silent corruption rather than a crash.
+    """
     for line in _lines(path):
         parts = line.rstrip("\n").split("\t")
         if len(parts) != 2:

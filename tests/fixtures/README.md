@@ -130,17 +130,18 @@ screens differently — that is what proves `annotated = false` and a NULL
 ## `unichem_src1src22.txt`
 
 The header and the mapped pairs are real rows of UniChem's `src1src22` file,
-fetched 2026-10-11. The two half-rows are **deliberately synthetic**: neither
-occurs in the live file, which has no malformed lines at all. They exist to
-prove the parser's two-field guard skips a line that is not a mapping. Do not
-read them as an observed upstream shape.
+fetched 2026-10-11. The four malformed lines are **deliberately synthetic**: the
+live file has no malformed lines at all. Do not read them as observed upstream
+shapes. Each one exists to exercise one guard in `normalize`.
 
 | Rows | Exercises |
 |---|---|
 | `CHEMBL6329` → `12846578`; `CHEMBL1004` → `3162` | Single-CID compounds: the plain mapping |
 | `CHEMBL1098659` → `22247451` and `962` | One compound, two PubChem CIDs |
 | `CHEMBL3833402` → `16694118`, `24850`, `75366293` | One compound, three CIDs, all three real |
-| `CHEMBL6328` with no CID; a `\t7` line with no ChEMBL id | **Synthetic.** Must be skipped, not mapped |
+| **Synthetic:** `CHEMBL6328` with no CID; a `\t7` line with no ChEMBL id | The emptiness check: two fields, one side blank |
+| **Synthetic:** `12846579` alone | The length check: one field, which would fail the unpack |
+| **Synthetic:** `CHEMBL1004`, `3162`, `x` | The length check: three fields |
 
 The CID-collision case is not a fixture. A collision is not a shape the real
 file has, so its test writes a two-line temporary file.

@@ -227,6 +227,9 @@ def test_the_schema_warns_about_every_screens_trap() -> None:
             "`unspecified` is not `standard_media`",  # ... and the silence must not become a medium
             "`strain` mixes organisms",  # H37Rv spellings, host animals and S. aureus in one column
             "THIS ATLAS",  # a derived row: a ratio the atlas did not make
+            "choose an endpoint family",  # Selectivity Index, a bare Ratio, TI and PI differ
+            "a distinct string",  # 'Selectivity Index' and 'Selectivity index' are two strings
+            "concentrations filed under a ratio's name",  # `SI` rows with units ug ml-1
             "falls back to `other`",  # `modality`'s, and it reads the target record too
         ),
         "screen_results": (

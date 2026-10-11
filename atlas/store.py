@@ -53,9 +53,12 @@ def write_parquet(
         tmp_path = Path(tmp.name)
 
     try:
+        # sample_size=-1 reads every row to settle a column's type. The default samples
+        # 20,480, and a column that is NULL throughout the sample types as JSON, which
+        # stores every later string with its quotation marks and no error to say so.
         duckdb.connect().execute(
-            f"COPY (SELECT * FROM read_json_auto('{tmp_path}', format='newline_delimited')) "
-            f"TO '{out}' (FORMAT PARQUET)"
+            f"COPY (SELECT * FROM read_json_auto('{tmp_path}', format='newline_delimited', "
+            f"sample_size=-1)) TO '{out}' (FORMAT PARQUET)"
         )
     finally:
         tmp_path.unlink(missing_ok=True)

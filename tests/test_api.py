@@ -6,18 +6,126 @@ exercises every route without a network or a full build.
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from atlas import api, store, summary
+from atlas.sources import chembl
 
 
 @pytest.fixture
 def client(evidence_store: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     for module in (api, store, summary):
         monkeypatch.setattr(module, "STORE", evidence_store)
+    return TestClient(api.app)
+
+
+# The shared fixture store stops at campaigns and stages. Result rows are added to a
+# copy, through the ingesters' own functions, so nothing here changes what every other
+# test reads.
+MACOZINONE = "CHEMBL3330226"
+
+
+def _pubchem_row(stage: str, tag: int, outcome: str | None, cid: str) -> dict[str, object]:
+    """A row in the shape `pubchem.normalize_results` yields."""
+    return {
+        "stage_id": stage,
+        "screen_id": stage,
+        "pubchem_cid": cid,
+        "pubchem_sid": f"9{tag}",
+        "molecule_chembl_id": None,
+        "outcome": outcome,
+        "activity_score": 80 if outcome == "active" else 0,
+        "result_tag": tag,
+        "activity_id": None,
+        "activity_comment": None,
+        "endpoint": None,
+        "standard_value": None,
+        "standard_units": None,
+        "standard_relation": None,
+    }
+
+
+@pytest.fixture(scope="module")
+def screen_store(evidence_store: Path, tmp_path_factory: pytest.TempPathFactory) -> Path:
+    copy = tmp_path_factory.mktemp("screens") / "store"
+    shutil.copytree(evidence_store, copy)
+    # A paper whose stages measure the compound, not a protein: whole-cell potency,
+    # the three tiers beyond it, and a pathogen that is not Mtb. None reaches a gene,
+    # so target_summary (built without them) stays true.
+    assays = [
+        {
+            "assay_chembl_id": assay_id,
+            "document_chembl_id": "CHEMBL_DOC3",
+            "target_chembl_id": target,
+            "description": description,
+            "assay_strain": None,
+        }
+        for assay_id, target, description in (
+            ("CHEMBL9300001", "CHEMBL360", "Antimycobacterial activity against M. tuberculosis"),
+            ("CHEMBL9300002", None, "Cytotoxicity against African green monkey Vero cells"),
+            ("CHEMBL9300003", None, "Metabolic stability in mouse liver microsomes"),
+            ("CHEMBL9300004", "CHEMBL352", "Antibacterial activity against S. aureus"),
+        )
+    ]
+    organisms = {
+        "CHEMBL360": {"target_type": "ORGANISM", "organism": "Mycobacterium tuberculosis"},
+        "CHEMBL352": {"target_type": "ORGANISM", "organism": "Staphylococcus aureus"},
+    }
+    acts = [
+        {"assay_chembl_id": assay, "molecule_chembl_id": molecule, "activity_id": i}
+        for i, (assay, molecule) in enumerate(
+            (
+                ("CHEMBL9300001", MACOZINONE),  # potency, and a tier beyond it
+                ("CHEMBL9300002", MACOZINONE),
+                ("CHEMBL9300001", "CHEMBL_POTENCY_ONLY"),
+                ("CHEMBL9300004", "CHEMBL_ELSEWHERE"),  # neither Mtb potency nor a tier
+                ("CHEMBL9300003", "CHEMBL_ADME_ONLY"),
+                ("CHEMBL9100001", "CHEMBL_PROTEIN"),  # dprE1's own protein: potency
+                ("CHEMBL9100004", "CHEMBL_DERIVED_ONLY"),  # a computed ratio: not tested
+            ),
+            start=1,
+        )
+    ]
+    new_stages = chembl.stamp_stage_counts(
+        chembl.normalize_campaign_assays(assays, organisms), acts
+    )
+    new_screens = chembl.campaign_screens(
+        new_stages,
+        acts,
+        {"CHEMBL_DOC3": {"doc_type": "PUBLICATION", "title": "A third paper", "year": 2023}},
+    )
+    label = {"source_version": "ChEMBL_37 (2026-05-01)", "retrieved_at": "2026-10-09"}
+    for name, extra in (("screens", new_screens), ("screen_stages", new_stages)):
+        rows = [*store.records(name, store=copy), *store.stamp(extra, source="chembl", **label)]
+        store.write_stamped(name, rows, store=copy)
+    stages = store.records("screen_stages", store=copy)
+    results = [
+        *store.stamp(chembl.campaign_results(stages, acts), source="chembl", **label),
+        *store.stamp(
+            [
+                # Calls stated: one active, one inactive.
+                _pubchem_row("pubchem:9000008", 1, "active", "101"),
+                _pubchem_row("pubchem:9000008", 2, "inactive", "102"),
+                # No cutoff deposited: no call, which is not inactive.
+                _pubchem_row("pubchem:9000001", 1, None, "103"),
+            ],
+            source="pubchem",
+            source_version="E-utilities fixture",
+            retrieved_at="2026-10-09",
+        ),
+    ]
+    store.write_stamped("screen_results", results, store=copy)
+    return copy
+
+
+@pytest.fixture
+def screens(screen_store: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    for module in (api, store, summary):
+        monkeypatch.setattr(module, "STORE", screen_store)
     return TestClient(api.app)
 
 
@@ -200,7 +308,11 @@ def test_a_wildcard_in_the_term_is_a_character_not_a_pattern(client: TestClient)
     """`%` and `_` are LIKE wildcards; typing one should mean itself."""
     for term in ("%", "_", "   "):
         found = client.get("/search", params={"q": term}).json()
-        assert all(items == [] for items in found.values()), term
+        # A fixture campaign id (`chembl:CHEMBL_DOC1`) holds a real underscore, so a hit
+        # is allowed only where the character itself is there to be found.
+        for items in found.values():
+            for hit in items:
+                assert term in f"{hit['id']}{hit['label']}{hit['detail'] or ''}", (term, hit)
     assert client.get("/targets", params={"q": "%"}).json()["total"] == 0
 
 
@@ -232,3 +344,127 @@ def test_only_annotated_screens_reach_the_gene_page(client: TestClient) -> None:
     page = client.get("/targets/Rv3790").json()
     served = {hit["screen_id"] for hit in page["conditions"] + page["interactions"]}
     assert "CC001.Unc_vs_mbio_H37Rv" not in served
+
+
+# --- screens: campaigns, stages, result rows ---------------------------------
+
+
+def test_the_campaign_list_says_what_it_does_not_hold(screens: TestClient) -> None:
+    """A set that was never ingested must read as absent, not as screened-and-empty."""
+    page = screens.get("/screens").json()
+    assert page["total"] == len(store.records("screens", store=store.STORE))
+    assert any("Pathogen Box" in name for name in page["not_ingested"])
+    # Shares over measured stages: a derived ratio has no funnel position to default.
+    measured = [s for s in store.records("screen_stages", store=store.STORE) if not s["derived"]]
+    assert page["stage_labels"]["n_stages"] == len(measured)
+
+
+def test_the_gene_page_and_the_gene_table_count_screens_alike(screens: TestClient) -> None:
+    """`SCREEN_REACH` restates summary's rule per campaign; the two must not drift apart."""
+    disagree = (
+        api._db()
+        .sql(
+            f"WITH reach AS ({api.SCREEN_REACH}), g AS (SELECT rv_id,"
+            " count(*) FILTER (WHERE own) AS own, count(*) FILTER (WHERE via_complex) AS cx"
+            " FROM reach GROUP BY 1)"
+            " SELECT s.rv_id FROM target_summary s LEFT JOIN g USING (rv_id)"
+            " WHERE coalesce(g.own, 0) <> s.n_target_screens"
+            "    OR coalesce(g.cx, 0) <> s.n_complex_screens"
+        )
+        .fetchall()
+    )
+    assert disagree == []
+    assert any(s["own"] for s in screens.get("/targets/Rv3790").json()["screens"])
+
+
+def test_a_complex_screen_is_shown_on_the_subunit_and_not_counted(screens: TestClient) -> None:
+    page = screens.get("/targets/Rv2461c").json()  # clpP1: the ClpP1P2 complex only
+    assert page["screens"] and not any(s["own"] for s in page["screens"])
+    assert any("part of a complex" in a for a in page["absences"])
+    own = screens.get("/screens", params={"rv_id": "Rv2461c", "own": True}).json()
+    assert own["total"] == 0
+    assert screens.get("/screens", params={"rv_id": "Rv2461c", "own": False}).json()["total"]
+
+
+def test_no_call_is_not_inactive(screens: TestClient) -> None:
+    """A deposit with no cutoff stated no call, and a filter for non-hits must not find it."""
+    url = "/screens/pubchem:9000001/results"
+    assert screens.get(url, params={"outcome": "inactive"}).json()["total"] == 0
+    (row,) = screens.get(url, params={"outcome": "no_call"}).json()["items"]
+    assert row["outcome"] is None
+
+
+def test_stage_counts_come_from_the_rows_per_stage(screens: TestClient) -> None:
+    (stage,) = screens.get("/screens/pubchem:9000008").json()["stages"]
+    assert (stage["n_active_rows"], stage["n_inactive_rows"], stage["n_no_call_rows"]) == (1, 1, 0)
+
+
+def test_result_rows_are_paged_and_never_dumped(screens: TestClient) -> None:
+    url = "/screens/pubchem:9000008/results"
+    assert screens.get(url, params={"limit": 5000}).status_code == 422
+    assert screens.get("/screens/pubchem:0/results").status_code == 404
+    assert screens.get("/screens/pubchem:0").status_code == 404
+
+
+def test_a_target_that_reaches_no_locus_stays_on_the_campaign(screens: TestClient) -> None:
+    """The MbtI shape: a deposit names a protein the crosswalk cannot key, so the gene
+    reads zero and the campaign is the only place the screen shows."""
+    found = screens.get("/screens", params={"unplaced": True}).json()
+    assert found["total"] == found["n_unplaced"] >= 1
+    assert all(item["unplaced_targets"] for item in found["items"])
+
+
+def test_hit_profiling_counts_coverage_in_three_buckets(screens: TestClient) -> None:
+    page = screens.get("/hits").json()
+    # The derived-only compound is not "tested": a computed ratio is not a measurement.
+    assert "CHEMBL_DERIVED_ONLY" not in {i["molecule_chembl_id"] for i in page["items"]}
+    population = page["population"]
+    assert (
+        population["compounds"],
+        population["beyond_potency"],  # macozinone (cytotox), the ADME-only compound
+        population["potency_only"],  # whole-cell only, and dprE1's own protein
+        population["elsewhere_only"],  # S. aureus and nothing else
+    ) == (5, 2, 2, 1)
+
+
+def test_an_unmeasured_tier_is_null_not_zero(screens: TestClient) -> None:
+    (row,) = screens.get("/hits", params={"q": "CHEMBL_POTENCY_ONLY"}).json()["items"]
+    assert row["n_mtb_whole_cell"] == 1
+    assert row["n_cytotox"] is None and row["n_adme"] is None and row["n_in_vivo"] is None
+
+
+def test_hit_profiling_filters_on_which_tiers_exist(screens: TestClient) -> None:
+    found = screens.get("/hits", params={"has": "n_cytotox"}).json()["items"]
+    assert [(i["molecule_chembl_id"], i["pref_name"]) for i in found] == [
+        (MACOZINONE, "MACOZINONE")
+    ]
+    assert screens.get("/hits", params={"sort": "score"}).status_code == 400
+
+
+def test_a_compound_known_only_from_a_screen_has_a_page(screens: TestClient) -> None:
+    page = screens.get("/compounds/CHEMBL_POTENCY_ONLY").json()
+    assert page["genes"] == []
+    assert page["tested_in"][0]["screen_id"] == "chembl:CHEMBL_DOC3"
+    assert screens.get("/compounds/CHEMBL_NOWHERE").status_code == 404
+
+
+def test_the_gene_table_carries_screen_columns_with_their_nulls(screens: TestClient) -> None:
+    """ChEMBL states no calls, so a gene screened only there has NULL actives, not 0."""
+    (dpre1,) = screens.get("/targets", params={"q": "Rv3790"}).json()["items"]
+    assert dpre1["n_target_screens"] >= 1
+    assert dpre1["n_screen_actives"] is None
+    flagged = screens.get("/targets", params={"has_target_screen": True}).json()["items"]
+    assert "Rv3790" in {g["rv_id"] for g in flagged}
+
+
+def test_search_and_meta_know_the_campaigns(screens: TestClient) -> None:
+    found = screens.get("/search", params={"q": "9000008"}).json()["screens"]
+    assert "pubchem:9000008" in [hit["id"] for hit in found]
+    counts = screens.get("/meta").json()["counts"]
+    assert counts["screens"] == screens.get("/screens").json()["total"]
+    assert counts["profiled_compounds"] == 2
+
+
+def test_a_store_without_screen_results_says_so(client: TestClient) -> None:
+    assert client.get("/screens").status_code == 503
+    assert "screens" not in client.get("/meta").json()["counts"]

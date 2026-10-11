@@ -43,10 +43,21 @@ LICENCES = {
     # The terms ask for attribution, the processing date (carried in the
     # version) and a statement of modifications (docs/data-sources.md).
     "trials": ("ClinicalTrials.gov", "US Government database; attribution required"),
+    # PubChem's licence is per depositor, so every campaign row carries its own
+    # `licence`; the version on this table is PubChem's (its first row).
+    "screens": ("PubChem BioAssay + ChEMBL literature campaigns", "per depositor / CC BY-SA 3.0"),
 }
 # Store tables with no licence of their own: joins, and a second table from a
 # source already listed above.
-DERIVED = ("crosswalk", "target_summary", "drug_mechanisms", "drug_genes", "trial_drugs")
+DERIVED = (
+    "crosswalk",
+    "target_summary",
+    "drug_mechanisms",
+    "drug_genes",
+    "trial_drugs",
+    "screen_stages",
+    "screen_results",
+)
 # Read off the gene's UniProt entry for the target page.
 PROTEIN_FIELDS = (
     "reviewed",
@@ -94,6 +105,8 @@ SORTABLE = {
     "n_mic",
     "n_protein_assays",
     "max_assay_compounds",
+    "n_target_screens",
+    "max_screen_compounds",
     "best_resolution",
     "n_orthologue_pdb",
     "closest_orthologue_identity",
@@ -252,6 +265,15 @@ class TargetSummary(BaseModel):
     max_assay_compounds: int = 0
     latest_protein_assay_year: int | None = None
     protein_assay_example: str | None = None
+    # Screening campaigns on this protein, from either source. None, not 0, where the
+    # layer is not built. `n_screen_actives` sums only the screens that stated calls,
+    # so it shares no denominator with `n_target_screens` and is never divided by it.
+    # A complex screen is shown in `n_complex_screens` and never counted as own.
+    n_target_screens: int | None = None
+    n_complex_screens: int | None = None
+    max_screen_compounds: int | None = None
+    n_screen_actives: int | None = None
+    latest_screen_year: int | None = None
     chembl_evidence: str | None = None
     in_who_catalogue: bool = False
     n_variants_associated: int = 0
@@ -367,6 +389,9 @@ class TargetDetail(TargetSummary):
     conditions: list[dict[str, Any]] = Field(default_factory=list)
     interactions: list[dict[str, Any]] = Field(default_factory=list)
     tnseq_coverage: dict[str, int] = Field(default_factory=dict)
+    # Campaigns that reach this gene, own protein first; `via_complex` ones are shown
+    # and never counted as the gene's own.
+    screens: list[dict[str, Any]] = Field(default_factory=list)
     absences: list[str] = Field(default_factory=list)
 
 
@@ -384,8 +409,20 @@ def meta() -> Meta:
         sources.append(
             Source(name=label, version=str(version), licence=licence, retrieved=str(retrieved))
         )
+    numbers = counts()
+    # Absent keys, not zeros, when the layer was never built -- the rule counts() keeps.
+    if built("screen_results"):
+        connection = _db()
+        numbers["screens"] = connection.sql("SELECT count(*) FROM screens").fetchone()[0]
+        numbers["genes_with_target_screen"] = connection.sql(
+            "SELECT count(*) FROM target_summary WHERE n_target_screens > 0"
+        ).fetchone()[0]
+        numbers["profiled_compounds"] = connection.sql(
+            f"SELECT count(*) FROM ({PROFILE_SQL})"
+            f" WHERE {' OR '.join(f'{t} IS NOT NULL' for t in TIERS)}"
+        ).fetchone()[0]
     return Meta(
-        counts=counts(),
+        counts=numbers,
         sources=sources,
         caveats=[
             "Essentiality is one in vitro condition (7H9 broth, DeJesus 2017). "
@@ -422,6 +459,10 @@ def meta() -> Meta:
             "'tuberculosis'. A trial links to a drug through ChEMBL's own trial reference "
             "or an exact match of an intervention name; an unlinked trial may still have "
             "tested one.",
+            "Screens are the campaigns the atlas ingested: PubChem deposits of 10,000+ "
+            "substances and the ChEMBL papers reachable from its activities, not every "
+            "campaign ever run. A result with no outcome means the source stated no call, "
+            "which is not 'inactive', and an actives count is never divided by a screen count.",
         ],
     )
 
@@ -455,6 +496,9 @@ def targets(
         bool | None, Query(description="A drug with a TB indication acts on this gene")
     ] = None,
     min_drug_phase: Annotated[float | None, Query(description="Best phase for TB")] = None,
+    has_target_screen: Annotated[
+        bool | None, Query(description="A screening campaign on this gene's own protein")
+    ] = None,
     min_pchembl: float | None = None,
     max_vulnerability_index: Annotated[
         float | None, Query(description="More negative is more vulnerable")
@@ -509,6 +553,9 @@ def targets(
     if min_drug_phase is not None:
         where.append("best_drug_phase >= ?")
         params.append(min_drug_phase)
+    if has_target_screen is not None:
+        where.append("(n_target_screens > 0) = ?")
+        params.append(has_target_screen)
 
     clause = f"WHERE {' AND '.join(where)}" if where else ""
     connection = _db()
@@ -736,6 +783,22 @@ def target(rv_id: str) -> TargetDetail:
     )
     tnseq = dict(coverage[0]) if coverage else {"measured": 0, "unmeasured": 0}
 
+    screening = built("screens") and built("screen_stages")
+    screened_in = (
+        _query(
+            connection,
+            f"WITH reach AS ({SCREEN_REACH})"
+            " SELECT r.own, r.via_complex, sc.screen_id, sc.title, sc.depositor, sc.source,"
+            " sc.year, sc.n_stages, sc.n_tested, sc.library_size_stated, sc.outcome_stated,"
+            " sc.n_active, sc.n_inactive, sc.modalities"
+            " FROM reach r JOIN screens sc USING (screen_id) WHERE r.rv_id = ?"
+            " ORDER BY r.own DESC, sc.n_tested DESC NULLS LAST, sc.screen_id",
+            [rv_id],
+        )
+        if screening
+        else []
+    )
+
     absences = []
     if not structures and not orthologue_structures:
         absences.append("No experimental structure in the PDB for this accession.")
@@ -762,6 +825,25 @@ def target(rv_id: str) -> TargetDetail:
             "No published assay against this protein in ChEMBL, so screening it means "
             "developing the assay first. Orthologue and whole-cell measurements, where "
             "they exist, do not supply one."
+        )
+    if not screening:
+        absences.append(
+            "The screening layer is not built in this store, so nothing is known here "
+            "about screening campaigns."
+        )
+    elif not any(row["own"] for row in screened_in):
+        complex_only = sum(row["via_complex"] for row in screened_in)
+        absences.append(
+            "No screening campaign in the atlas was run on this protein alone"
+            + (
+                f"; {complex_only} reached it only as part of a complex or a multi-protein "
+                "deposit, which is not a screen of this protein."
+                if complex_only
+                else "."
+            )
+            + " The atlas holds the campaigns it ingested (PubChem deposits of 10,000+ "
+            "substances, and ChEMBL papers reachable from its activities), not every one "
+            "ever run."
         )
     if not variants:
         absences.append(
@@ -871,6 +953,7 @@ def target(rv_id: str) -> TargetDetail:
         conditions=conditions,
         interactions=interactions,
         tnseq_coverage=tnseq,
+        screens=screened_in,
         absences=absences,
     )
 
@@ -887,8 +970,30 @@ def compound(molecule_chembl_id: str) -> dict[str, Any]:
     rows = _query(
         connection, "SELECT * FROM compounds WHERE molecule_chembl_id = ?", [molecule_chembl_id]
     )
-    if not rows:
+    # Every campaign stage that tested it, with the outcome as the source gave it:
+    # this is where "tested and inactive" is provable, and NULL stays "no call".
+    tested_in = (
+        _query(
+            connection,
+            "SELECT r.screen_id, sc.title AS screen_title, sc.source AS screen_source, sc.year,"
+            " r.stage_id, st.stage, st.modality, st.description, st.derived, r.outcome,"
+            " r.activity_score, r.endpoint, r.standard_relation, r.standard_value,"
+            " r.standard_units, r.activity_comment, r.pubchem_cid, r.pubchem_sid"
+            " FROM screen_results r JOIN screen_stages st USING (stage_id)"
+            " JOIN screens sc ON sc.screen_id = r.screen_id"
+            " WHERE r.molecule_chembl_id = ?"
+            f" ORDER BY sc.n_tested DESC NULLS LAST, r.screen_id, {STAGE_ORDER}, r.stage_id"
+            " LIMIT 1000",
+            [molecule_chembl_id],
+        )
+        if built("screen_results")
+        else []
+    )
+    if not rows and not tested_in:
         raise HTTPException(404, f"no compound {molecule_chembl_id} in the atlas")
+    # A molecule known only from a screen has no `compounds` row: the page still
+    # answers, with the identifier and what it was tested in, and nothing invented.
+    record = rows[0] if rows else {"molecule_chembl_id": molecule_chembl_id}
     activities = _query(
         connection,
         "SELECT * FROM activities WHERE molecule_chembl_id = ? AND evidence <> 'whole_cell'"
@@ -925,10 +1030,11 @@ def compound(molecule_chembl_id: str) -> dict[str, Any]:
         connection, "SELECT * FROM drugs WHERE molecule_chembl_id = ?", [molecule_chembl_id]
     )
     return {
-        **rows[0],
+        **record,
         "genes": genes,
         "activities": activities,
         "whole_cell": whole_cell,
+        "tested_in": tested_in,
         # The same molecule where it has reached the clinic, or None.
         "drug": drug[0] if drug else None,
     }
@@ -984,6 +1090,16 @@ SEARCHES: dict[str, tuple[str, str, str, str, tuple[str, ...], str]] = {
         ("molecule_chembl_id", "pref_name", "inchi_key"),
         "max_phase DESC NULLS LAST",
     ),
+    # Ingested campaigns only. A set that was never ingested (the Pathogen Box) finds
+    # nothing here, and `/screens` names those sets so the page can say why.
+    "screens": (
+        "screens",
+        "screen_id",
+        "coalesce(title, screen_id)",
+        "depositor",
+        ("screen_id", "aid", "title", "depositor", "document_chembl_id"),
+        "n_tested DESC NULLS LAST",
+    ),
 }
 
 
@@ -992,7 +1108,7 @@ def search(
     q: Annotated[str, Query(min_length=1, description="An id, a name, or part of one")],
     limit: Annotated[int, Query(ge=1, le=50)] = 8,
 ) -> dict[str, list[Hit]]:
-    """One box over genes, drugs, trials and compounds.
+    """One box over genes, drugs, trials, compounds and screening campaigns.
 
     An exact id wins, then a name that starts with the term, then anything that
     mentions it -- so typing `dprE1` opens the gene rather than the list of
@@ -1213,6 +1329,347 @@ def trial(nct_id: str) -> dict[str, Any]:
         [nct_id],
     )
     return {**found[0], "drugs": drugs, "genes": genes}
+
+
+# --- screens: the campaign, its stages, and every result row ---------------------
+
+# Every (gene, campaign) pair, by the two routes the store records targets on, with
+# `own` meaning a screen of the gene's own protein and `via_complex` a screen of a
+# complex or a deposit naming several proteins. This is `summary.screen_reach` per
+# campaign rather than per gene, and a test holds the two to the same counts: if the
+# rule changes there, it changes here, or the gene page and the gene table disagree.
+SCREEN_REACH = """
+WITH gene_target AS (
+    SELECT w.rv_id, t.target_id, t.evidence
+    FROM crosswalk w, UNNEST(w.chembl_targets) AS u(t)
+), reach AS (
+    SELECT gt.rv_id, st.screen_id,
+           st.target_type IS NOT DISTINCT FROM 'SINGLE PROTEIN' AS own
+    FROM gene_target gt JOIN screen_stages st ON st.target_chembl_id = gt.target_id
+    WHERE gt.evidence = 'direct'
+    UNION ALL
+    SELECT r.rv_id, sc.screen_id,
+           len(list_distinct(list_transform(
+               list_filter(sc.targets, t -> len(t.rv_ids) > 0), t -> t.rv_ids
+           ))) = 1
+    FROM screens sc, UNNEST(sc.targets) AS u(tg), UNNEST(tg.rv_ids) AS r(rv_id)
+)
+SELECT r.rv_id, r.screen_id, s.gene_name,
+       bool_or(r.own) AS own, bool_or(NOT r.own) AS via_complex
+FROM reach r JOIN target_summary s USING (rv_id)
+GROUP BY r.rv_id, r.screen_id, s.gene_name
+"""
+# Funnel order for a stage ladder. A derived row (a ratio ChEMBL computed from two
+# other assays) has no funnel position, so it sorts last rather than first.
+STAGE_ORDER = (
+    "CASE stage WHEN 'primary' THEN 0 WHEN 'confirmatory' THEN 1"
+    " WHEN 'counter_screen' THEN 2 WHEN 'profiling' THEN 3 ELSE 4 END"
+)
+SCREEN_SORTS = ("n_tested", "year", "n_stages", "n_active", "screen_id")
+# The targets a deposit names that reach no locus: another strain's accession (MbtI's
+# CDC 1551 P9WFX0), a GenBank protein id, a PDB chain. Strains are not bridged, so the
+# gene reads zero screens and this is the only place the screen shows. It belongs to
+# the campaign and is never attributed to a gene by name.
+UNPLACED = "[t FOR t IN sc.targets IF len(t.rv_ids) = 0]"
+# Sets a reader will look for and will not find, because they were never ingested.
+# Their absence is coverage, not a screen that found nothing (docs/data-sources.md).
+NOT_INGESTED = (
+    "The Pathogen Box (MMV)",
+    "The Malaria Box (MMV)",
+    "GSK's TB set (TCAMS beyond the hit sets ChEMBL already holds)",
+    "One patent campaign",
+)
+
+
+def _require_screens() -> None:
+    if not built("screen_results"):
+        raise HTTPException(
+            503, "The screening layer is not built in this store. Run `atlas build`."
+        )
+
+
+@app.get("/screens")
+def screens(
+    q: Annotated[
+        str | None, Query(description="Title, depositor, campaign id, AID, document or PMID")
+    ] = None,
+    source: Literal["chembl", "pubchem"] | None = None,
+    modality: Annotated[str | None, Query(description="Any stage measured this")] = None,
+    rv_id: Annotated[str | None, Query(description="Reaches this gene")] = None,
+    own: Annotated[
+        bool | None, Query(description="With rv_id: true for its own protein, false for complex")
+    ] = None,
+    outcome_stated: bool | None = None,
+    unplaced: Annotated[
+        bool | None, Query(description="Names a protein the atlas could not key to a locus")
+    ] = None,
+    sort: str = "n_tested",
+    order: Literal["asc", "desc"] = "desc",
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, Any]:
+    """The campaigns the atlas ingested -- not every campaign that exists."""
+    _require_screens()
+    if sort not in SCREEN_SORTS:
+        raise HTTPException(400, f"sort must be one of {list(SCREEN_SORTS)}")
+    where: list[str] = []
+    params: list[Any] = []
+    if q:
+        where.append(
+            "(lower(sc.screen_id) = ? OR sc.aid = ? OR lower(coalesce(sc.document_chembl_id, ''))"
+            " = ? OR sc.pubmed_id = ? OR lower(coalesce(sc.title, '')) LIKE ? ESCAPE '\\'"
+            " OR lower(coalesce(sc.depositor, '')) LIKE ? ESCAPE '\\'"
+            # An AID inside a project is a stage, not a campaign: find its campaign.
+            " OR sc.screen_id IN (SELECT screen_id FROM screen_stages WHERE stage_id = ?))"
+        )
+        params += [q.lower(), q, q.lower(), q, _like(q.lower()), _like(q.lower()), f"pubchem:{q}"]
+    if source:
+        where.append("sc.source = ?")
+        params.append(source)
+    if modality:
+        where.append("sc.screen_id IN (SELECT screen_id FROM screen_stages WHERE modality = ?)")
+        params.append(modality)
+    if rv_id:
+        side = "" if own is None else f" AND {'own' if own else 'via_complex'}"
+        where.append(f"sc.screen_id IN (SELECT screen_id FROM reach WHERE rv_id = ?{side})")
+        params.append(rv_id)
+    if outcome_stated is not None:
+        where.append("sc.outcome_stated = ?")
+        params.append(outcome_stated)
+    if unplaced is not None:
+        where.append(f"(len({UNPLACED}) > 0) = ?")
+        params.append(unplaced)
+    clause = f"WHERE {' AND '.join(where)}" if where else ""
+    connection = _db()
+    connection.sql(f"CREATE TEMP VIEW reach AS {SCREEN_REACH}")
+    total = connection.execute(f"SELECT count(*) FROM screens sc {clause}", params).fetchone()[0]
+    items = _query(
+        connection,
+        f"SELECT sc.*, {UNPLACED} AS unplaced_targets, coalesce(g.genes, []) AS genes"
+        " FROM screens sc"
+        " LEFT JOIN (SELECT screen_id, list({'rv_id': rv_id, 'gene_name': gene_name,"
+        "   'own': own, 'via_complex': via_complex} ORDER BY rv_id) AS genes"
+        "   FROM reach GROUP BY 1) g USING (screen_id)"
+        f" {clause} ORDER BY sc.{sort} {order.upper()} NULLS LAST, sc.screen_id"
+        " LIMIT ? OFFSET ?",
+        [*params, limit, offset],
+    )
+    # The classifier's fallbacks, as shares, so a funnel drawn from these labels can
+    # say how much of it is "nothing said otherwise" (the UniRef-level rule again).
+    # Over measured stages: a derived ratio has no funnel position to default.
+    labels = connection.sql(
+        "SELECT count(*) AS n_stages,"
+        " count(*) FILTER (WHERE stage = 'primary') AS n_primary,"
+        " count(*) FILTER (WHERE modality = 'other') AS n_modality_other,"
+        " count(*) FILTER (WHERE modality IS NULL) AS n_modality_unclassified"
+        " FROM screen_stages WHERE NOT derived"
+    )
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "items": items,
+        "stage_labels": dict(zip(labels.columns, labels.fetchone(), strict=True)),
+        "n_unplaced": connection.sql(
+            f"SELECT count(*) FROM screens sc WHERE len({UNPLACED}) > 0"
+        ).fetchone()[0],
+        "not_ingested": list(NOT_INGESTED),
+    }
+
+
+@app.get("/screens/{screen_id}")
+def screen(screen_id: str) -> dict[str, Any]:
+    """One campaign: its stage ladder with each stage's counts, and the genes it reaches."""
+    _require_screens()
+    connection = _db()
+    found = _query(
+        connection,
+        f"SELECT sc.*, {UNPLACED} AS unplaced_targets FROM screens sc WHERE screen_id = ?",
+        [screen_id],
+    )
+    if not found:
+        raise HTTPException(404, f"no campaign {screen_id} in the atlas")
+    # Counted from the rows, per stage, and never summed across stages: a compound
+    # active in a primary and inactive in its confirmation is one compound twice.
+    stages = _query(
+        connection,
+        "SELECT st.*, r.n_rows, r.n_compounds, r.n_active_rows, r.n_inactive_rows,"
+        " r.n_inconclusive_rows, r.n_no_call_rows, r.endpoints"
+        " FROM screen_stages st LEFT JOIN ("
+        "   SELECT stage_id, count(*) AS n_rows,"
+        "     count(DISTINCT coalesce(molecule_chembl_id, 'cid:' || pubchem_cid)) AS n_compounds,"
+        "     count(*) FILTER (WHERE outcome = 'active') AS n_active_rows,"
+        "     count(*) FILTER (WHERE outcome = 'inactive') AS n_inactive_rows,"
+        "     count(*) FILTER (WHERE outcome = 'inconclusive') AS n_inconclusive_rows,"
+        "     count(*) FILTER (WHERE outcome IS NULL) AS n_no_call_rows,"
+        "     list_sort(list_distinct(list(endpoint))) AS endpoints"
+        "   FROM screen_results WHERE screen_id = ? GROUP BY 1) r USING (stage_id)"
+        f" WHERE st.screen_id = ? ORDER BY {STAGE_ORDER}, st.n_tested DESC NULLS LAST,"
+        " st.stage_id",
+        [screen_id, screen_id],
+    )
+    genes = _query(
+        connection,
+        f"WITH reach AS ({SCREEN_REACH})"
+        " SELECT r.rv_id, r.gene_name, r.own, r.via_complex, s.product, s.essentiality,"
+        " s.vulnerability_index, s.vulnerability_certain, s.shared_accession"
+        " FROM reach r JOIN target_summary s USING (rv_id) WHERE r.screen_id = ?"
+        " ORDER BY r.own DESC, r.rv_id",
+        [screen_id],
+    )
+    return {**found[0], "stages": stages, "genes": genes}
+
+
+@app.get("/screens/{screen_id}/results")
+def screen_results(
+    screen_id: str,
+    stage_id: str | None = None,
+    outcome: Annotated[
+        list[Literal["active", "inactive", "inconclusive", "no_call"]] | None, Query()
+    ] = None,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, Any]:
+    """Result rows of one campaign, a page at a time. Never the whole table.
+
+    A row is a SID (PubChem) or an activity (ChEMBL), not a compound, and none is
+    collapsed: choosing which of a compound's rows wins would be silent.
+    """
+    _require_screens()
+    where = ["r.screen_id = ?"]
+    params: list[Any] = [screen_id]
+    if stage_id:
+        where.append("r.stage_id = ?")
+        params.append(stage_id)
+    if outcome:
+        named = [o for o in outcome if o != "no_call"]
+        either = []
+        if named:
+            either.append(f"r.outcome IN ({','.join('?' * len(named))})")
+            params += named
+        if "no_call" in outcome:
+            either.append("r.outcome IS NULL")
+        where.append(f"({' OR '.join(either)})")
+    clause = " AND ".join(where)
+    connection = _db()
+    if not connection.execute("SELECT 1 FROM screens WHERE screen_id = ?", [screen_id]).fetchone():
+        raise HTTPException(404, f"no campaign {screen_id} in the atlas")
+    total = connection.execute(
+        f"SELECT count(*) FROM screen_results r WHERE {clause}", params
+    ).fetchone()[0]
+    items = _query(
+        connection,
+        "SELECT r.*, st.stage, st.modality, c.pref_name, c.smiles"
+        " FROM screen_results r JOIN screen_stages st USING (stage_id)"
+        " LEFT JOIN compounds c USING (molecule_chembl_id)"
+        f" WHERE {clause}"
+        " ORDER BY CASE r.outcome WHEN 'active' THEN 0 WHEN 'inconclusive' THEN 1"
+        " WHEN 'inactive' THEN 3 ELSE 2 END, r.activity_score DESC NULLS LAST,"
+        " r.stage_id, r.result_tag, r.activity_id LIMIT ? OFFSET ?",
+        [*params, limit, offset],
+    )
+    return {"total": total, "limit": limit, "offset": offset, "items": items}
+
+
+# --- hit profiling: one row per compound, a column per thing measured ------------
+
+# Column -> the stage modality it counts. The last three are the tiers "beyond
+# potency"; an Mtb protein assay is potency at the protein, not a tier.
+PROFILE_COLUMNS = {
+    "n_mtb_whole_cell": "phenotypic_mtb",
+    "n_mtb_protein": "biochemical_mtb",
+    "n_other_pathogen": "other_pathogen",
+    "n_cytotox": "mammalian_cytotox",
+    "n_adme": "adme",
+    "n_in_vivo": "in_vivo_efficacy",
+}
+TIERS = ("n_cytotox", "n_adme", "n_in_vivo")
+PROFILE_SORTS = (*PROFILE_COLUMNS, "n_papers", "first_year", "latest_year", "molecule_chembl_id")
+# ChEMBL only, because no PubChem stage carries a modality, and measured stages only:
+# a derived ratio occupies no funnel position and does not make a compound "tested".
+# Each count is of distinct assays, and NULL where there are none, so an unmeasured
+# tier can never read as a measured zero.
+_PROFILE_COUNTS = ", ".join(
+    f"nullif(count(DISTINCT r.stage_id) FILTER (WHERE st.modality = '{modality}'), 0) AS {column}"
+    for column, modality in PROFILE_COLUMNS.items()
+)
+PROFILE_SQL = f"""
+SELECT r.molecule_chembl_id,
+       count(DISTINCT r.screen_id) AS n_papers,
+       min(sc.year) AS first_year,
+       max(sc.year) AS latest_year,
+       {_PROFILE_COUNTS}
+FROM screen_results r
+JOIN screen_stages st USING (stage_id)
+JOIN screens sc ON sc.screen_id = r.screen_id
+WHERE st.source = 'chembl' AND NOT st.derived AND r.molecule_chembl_id IS NOT NULL
+GROUP BY 1
+"""
+
+
+@app.get("/hits")
+def hits(
+    q: Annotated[str | None, Query(description="ChEMBL id or name")] = None,
+    has: Annotated[
+        list[Literal["n_mtb_whole_cell", "n_mtb_protein", "n_other_pathogen", *TIERS]] | None,
+        Query(description="Measured in every one of these"),
+    ] = None,
+    beyond_potency: Annotated[
+        bool | None, Query(description="Has cytotoxicity, ADME or in-vivo data")
+    ] = None,
+    sort: str = "n_papers",
+    order: Literal["asc", "desc"] = "desc",
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, Any]:
+    """What was measured on each compound in the ingested literature campaigns.
+
+    Coverage, not a verdict: nothing here is ranked, weighted or combined into a
+    score, and a compound with a MIC and nothing else is an answer, not a low one.
+    """
+    _require_screens()
+    if sort not in PROFILE_SORTS:
+        raise HTTPException(400, f"sort must be one of {list(PROFILE_SORTS)}")
+    where: list[str] = []
+    params: list[Any] = []
+    if q:
+        where.append("(lower(p.molecule_chembl_id) = ? OR lower(c.pref_name) LIKE ? ESCAPE '\\')")
+        params += [q.lower(), _like(q.lower())]
+    where += [f"p.{column} IS NOT NULL" for column in has or []]
+    if beyond_potency is not None:
+        where.append(f"({' OR '.join(f'p.{t} IS NOT NULL' for t in TIERS)}) = ?")
+        params.append(beyond_potency)
+    clause = f"WHERE {' AND '.join(where)}" if where else ""
+    connection = _db()
+    connection.sql(f"CREATE TEMP TABLE profile AS {PROFILE_SQL}")
+    base = " FROM profile p LEFT JOIN compounds c USING (molecule_chembl_id)"
+    total = connection.execute(f"SELECT count(*){base} {clause}", params).fetchone()[0]
+    items = _query(
+        connection,
+        f"SELECT p.*, c.pref_name, c.smiles{base} {clause}"
+        f" ORDER BY p.{sort} {order.upper()} NULLS LAST, p.molecule_chembl_id LIMIT ? OFFSET ?",
+        [*params, limit, offset],
+    )
+    # The population, so a page can say "N of M" without a second request. Three
+    # buckets, because two would lose the third: a compound measured only against
+    # another pathogen (or `other`) is neither Mtb potency nor a tier beyond it.
+    # The tier counts overlap -- a compound can carry several -- so they are not a split.
+    tiered = " OR ".join(f"{t} IS NOT NULL" for t in TIERS)
+    potency = "n_mtb_whole_cell IS NOT NULL OR n_mtb_protein IS NOT NULL"
+    population = connection.sql(
+        "SELECT count(*) AS compounds,"
+        f" count(*) FILTER (WHERE {tiered}) AS beyond_potency,"
+        f" count(*) FILTER (WHERE NOT ({tiered}) AND ({potency})) AS potency_only,"
+        f" count(*) FILTER (WHERE NOT ({tiered}) AND NOT ({potency})) AS elsewhere_only,"
+        f" {', '.join(f'count({t}) AS {t}' for t in TIERS)} FROM profile"
+    )
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "items": items,
+        "population": dict(zip(population.columns, population.fetchone(), strict=True)),
+    }
 
 
 def _query(

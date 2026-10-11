@@ -125,14 +125,34 @@ def _rcsb() -> str:
     The entry count is what the ingester records, so it is also the detector:
     a weekly release that adds an Mtb structure moves it.
     """
-    from .sources.pdb import _entity_ids
+    from .sources.pdb import entity_ids
     from .store import read
 
     accessions = sorted(
         {row[0] for row in read("crosswalk").project("uniprot_acc").fetchall() if row[0]}
     )
-    entries = {str(eid).split("_")[0] for eid in _entity_ids(accessions)}
+    entries = {str(eid).split("_")[0] for eid in entity_ids(accessions)}
     return f"RCSB Search + Data API, {len(entries)} entries"
+
+
+def _orthologue_pdb() -> str:
+    """Replay the neighbour search and count, the same detector as `rcsb-pdb`.
+
+    The accession set is read back from the table rather than recomputed,
+    because the bridge itself only moves when UniProt's sequences do and that
+    is what the `uniprot` probe is for. A neighbour that gains its *first*
+    structure arrives as a new sequence in the filtered stream, so it shows up
+    there too, not here.
+    """
+    from .sources.orthologue_structures import version_label
+    from .sources.pdb import entity_ids
+    from .store import read
+
+    accessions = sorted(
+        {row[0] for row in read("orthologue_structures").project("via_acc").fetchall() if row[0]}
+    )
+    entries = {str(eid).split("_")[0] for eid in entity_ids(accessions)}
+    return version_label(len(entries))
 
 
 @dataclass(frozen=True)
@@ -183,6 +203,21 @@ SOURCES: tuple[Source, ...] = (
         "homology",
         "evidence",
         frozen="computed here from UniProt; it moves when UniProt does",
+    ),
+    Source(
+        "phmmer-paralog",
+        "paralogs",
+        "evidence",
+        frozen="computed here from the same UniProt proteome as phmmer-human",
+    ),
+    # Not frozen, unlike its two phmmer siblings: the bridge is computed here,
+    # but the structures on the far end of it come from RCSB and move weekly.
+    Source(
+        "orthologue-pdb",
+        "orthologue_structures",
+        "evidence",
+        _orthologue_pdb,
+        expensive=True,
     ),
 )
 

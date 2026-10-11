@@ -28,6 +28,8 @@ from .sources import (
     homology,
     mtbtndb,
     mycobrowser,
+    orthologue_structures,
+    paralogs,
     pdb,
     resistance,
     string_db,
@@ -113,6 +115,10 @@ def build_evidence(*, force: bool = False) -> list[Path]:
     paths.append(string_db.build(force=force))
     _say("[evidence] human homology (phmmer vs human proteome)")
     paths.append(homology.build(retrieved_at=retrieved_at, force=force))
+    _say("[evidence] paralogs (phmmer vs the Mtb proteome itself)")
+    paths.append(paralogs.build(retrieved_at=retrieved_at, force=force))
+    _say("[evidence] orthologue structures (mycobacterial neighbours with a PDB entry)")
+    paths.append(orthologue_structures.build(retrieved_at=retrieved_at, force=force))
     return paths
 
 

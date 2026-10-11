@@ -71,6 +71,8 @@ def test_every_source_is_registered_with_a_stage() -> None:
         "bosch-2021",
         "string-db",
         "phmmer-human",
+        "phmmer-paralog",
+        "orthologue-pdb",
         "clinicaltrials-gov",
         "mtbtndb",
     }
@@ -215,3 +217,18 @@ def test_staleness_is_detectable_without_reading_the_table() -> None:
     fine = freshness.Report("uniprot", "a", "a", "current", "", "identity", [])
     assert freshness.any_stale([stale, fine]) is True
     assert freshness.any_stale([fine]) is False
+
+
+def test_every_table_the_agent_can_query_has_a_diff_key() -> None:
+    """A table with no key falls back to comparing row counts, which hides a loss.
+
+    `atlas diff` is the gate that makes an unattended refresh safe, and it is
+    only a gate where it can compare key sets: a table that gains ten rows and
+    loses ten has a row-count delta of zero. `conditional_tnseq` and
+    `tnseq_screens` sat unkeyed for exactly that reason -- nothing failed when
+    they were added. The agent's table list is the maintained inventory of what
+    is in the store, so the two have to agree in both directions.
+    """
+    from atlas import agent, storediff
+
+    assert set(agent.TABLES) == set(storediff.KEYS)

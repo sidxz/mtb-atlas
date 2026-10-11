@@ -155,7 +155,25 @@ This is the rule that outranks completeness.
   distinct ChEMBL assays on the gene's own protein (`evidence = 'direct'`), and
   431 essential genes have none. Never read `assay_type = 'F'` as a protein
   assay: ChEMBL files whole-cell MICs that way against the organism, so the
-  genome holds 3,083 of them over two "targets".
+  genome holds 3,083 of them over two "targets". And **an assay count is not a
+  screen**: `max_assay_compounds` is the biggest single campaign, which is why
+  only `recA` and `dnaB` have a public Mtb assay reaching 1,000 compounds while
+  inhA tops out at 52.
+- **Whole-cell potency is `pmic`, not `pchembl_value`.** ChEMBL computes
+  `pchembl_value` for affinity endpoints only, so it is NULL on all 3,870 MIC
+  rows; reading it gave a whole-cell number for 12 genes out of the 71 that
+  have one, from IC50s rather than MICs. `pmic` is `-log10(MIC in mol/L)`,
+  converted in the ingester with `pmic_basis` naming the conversion. **A
+  censored MIC (`>` the top concentration) gets no `pmic`** — it is a measured
+  non-result, counted in `n_mic_censored`, and converting it would invent the
+  number the experiment failed to establish.
+- **Chemistry has conditions too.** `assay_condition` labels each whole-cell
+  row from the depositor's prose, the same question conditional TnSeq answers
+  for genetics. **`unspecified` is not `standard_media`** — it is the commonest
+  value, because most MICs state no medium, and the silence must not become a
+  measurement. **No row matches `caseum`**, and that zero is kept visible
+  rather than filled from something else. `resistant_panel` is a separate flag:
+  strain and medium are different claims and neither may hide the other.
 - Source disagreements are recorded, not resolved silently: `acc_status`,
   `conflict`, and both sources' values side by side.
 - Two of the three reference targets have **no** WHO resistance data, because the
@@ -199,6 +217,28 @@ This is the rule that outranks completeness.
   and can disagree in sign. The *M. smegmatis* sheet is deliberately not
   ingested: an `MSMEG` tag reaches an Rv locus only through an orthologue
   bridge this atlas does not have.
+- **Redundancy and anti-target similarity use different thresholds on purpose.**
+  `close_human_homolog` flags on identity alone, because a shared domain is
+  already a selectivity worry. `close_paralog` needs **30% identity over 70% of
+  the query**, because a backup copy has to be the same protein: identity alone
+  calls 2,009 genes redundant including dprE1 (37% coverage) and mmpL3 (21%),
+  neither of which has a backup. `closest_paralog_gene` is the nearest *backup*
+  and is NULL when there is none; `nearest_relative_gene` is the nearest
+  *relative* and usually is not. Do not read the second as redundancy.
+- **A borrowed structure is never one of the gene's own.** `n_pdb`,
+  `has_structure` and `structural_gap` count entries on the gene's own
+  accession and must keep meaning that; `orthologue_structures` holds the
+  3,146-gene question "is there anything to work from", and 449 of those genes
+  have a mycobacterial neighbour that has been solved. **`relation` carries two
+  claims of different strength.** `same_sequence` means an identical sequence
+  deposited under another accession -- 34 structure-less genes have one, folC
+  among them, and the structure *is* of this protein. `orthologue` means a
+  relative, with identity and coverage on every row, because whether a
+  34%-identical structure is useful is the reader's judgement and this atlas
+  makes no modelling claim. The borrowed entries stay out of the 3D viewer: the
+  numbering is the neighbour's, so a gene's resistance residues would land in
+  the wrong place. A perfect match must also span 80% of the *target*, or
+  `O07717` reads as solved because it sits inside a protein twice its length.
 - **Human homology is computed, not looked up, and always shown with its
   number.** UniRef co-membership was tried and returned zero homologs for all
   3,978 accessions, because UniRef50 clusters above the 25-40% range where
@@ -234,7 +274,7 @@ interesting shapes:
 |---|---|---|
 | DprE1 | `Rv3790` | Essential (`ES`), 31 structures, direct ChEMBL target, **no** WHO entry; macozinone and TBA-7371 (phase 2) by ChEMBL mechanism, while BTZ-043 and quabodepistat have none in ChEMBL and so reach no gene |
 | InhA | `Rv1484` | Essential (`ES`), 135 structures, best-studied chemistry, full WHO entry; isoniazid and ethionamide, approved |
-| MmpL3 | `Rv0206c` | Essential domain (`ESD`), 1 structure, ligands **only** via the *M. smegmatis* orthologue, no WHO entry, most vulnerable of the three (-11.0); SQ109 (phase 2) **only** through Bosch 2021, because ChEMBL records no mechanism for it |
+| MmpL3 | `Rv0206c` | Essential domain (`ESD`), 1 structure at 3.0 Å while the *M. smegmatis* orthologue has 18 (best 2.15 Å, 11 liganded), ligands **only** via that orthologue, no WHO entry, most vulnerable of the three (-11.0); SQ109 (phase 2) **only** through Bosch 2021, because ChEMBL records no mechanism for it |
 
 A fourth is worth keeping to hand: **GroEL2 (`Rv0440`)** is essential and highly
 vulnerable (-11.6) and would look like an excellent target, except that it is

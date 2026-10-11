@@ -65,11 +65,65 @@ gene_compound AS (
     JOIN act a ON a.target_chembl_id = gt.target_id AND a.evidence <> 'whole_cell'
 ),
 cell_act AS (
+    -- `best_whole_cell_pchembl` is kept as it was, but it is NOT the MIC: ChEMBL
+    -- computes pchembl_value for affinity endpoints only, so that column comes
+    -- from the handful of whole-cell IC50/EC50 rows and is NULL for every MIC.
+    -- `best_pmic` is the MIC-derived number, converted in the ingester.
+    -- Censored MICs ('>' at the top concentration) carry no pmic by design and
+    -- are counted separately, so a gene whose chemistry is all non-inhibition
+    -- reads as that rather than as untested.
     SELECT gc.rv_id,
            count(*)             AS n_whole_cell,
-           max(a.pchembl_value) AS best_whole_cell_pchembl
+           max(a.pchembl_value) AS best_whole_cell_pchembl,
+           max(a.pmic)          AS best_pmic,
+           median(a.pmic)       AS median_pmic,
+           count(a.pmic)        AS n_mic,
+           count(*) FILTER (
+               WHERE a.pmic IS NULL AND a.standard_relation IN ('>', '>=')
+           )                    AS n_mic_censored,
+           count(*) FILTER (WHERE a.resistant_panel) AS n_resistant_panel
     FROM gene_compound gc
     JOIN act a ON a.molecule_chembl_id = gc.molecule_chembl_id AND a.evidence = 'whole_cell'
+    GROUP BY 1
+),
+cell_conditions AS (
+    -- The growth conditions this gene's chemistry has actually been measured
+    -- under, as a list rather than a column each: one row per condition with
+    -- its own best potency. `unspecified` is the commonest and means the
+    -- deposit never stated a medium -- not that it was standard.
+    SELECT rv_id,
+           list({
+               'condition': condition,
+               'n': n,
+               'n_with_pmic': n_with_pmic,
+               'best_pmic': best_pmic
+           } ORDER BY n DESC) AS whole_cell_conditions
+    FROM (
+        SELECT gc.rv_id,
+               a.assay_condition AS condition,
+               count(*)          AS n,
+               count(a.pmic)     AS n_with_pmic,
+               max(a.pmic)       AS best_pmic
+        FROM gene_compound gc
+        JOIN act a ON a.molecule_chembl_id = gc.molecule_chembl_id
+                  AND a.evidence = 'whole_cell'
+        GROUP BY 1, 2
+    )
+    GROUP BY 1
+),
+screening AS (
+    -- Has this target been SCREENED, or merely studied? `n_protein_assays`
+    -- counts assays; it cannot tell one 1,880-compound campaign from fourteen
+    -- five-compound follow-ups, and those are opposite answers to "is there a
+    -- tractable screen here". Genome-wide only three public assays reach 1,000
+    -- compounds, so the scarcity is the finding.
+    SELECT rv_id, max(n_cpd) AS max_assay_compounds
+    FROM (
+        SELECT gt.rv_id, a.assay_chembl_id, count(DISTINCT a.molecule_chembl_id) AS n_cpd
+        FROM gene_target gt
+        JOIN act a ON a.target_chembl_id = gt.target_id AND a.evidence = 'direct'
+        GROUP BY 1, 2
+    )
     GROUP BY 1
 ),
 struct AS (
@@ -80,6 +134,27 @@ struct AS (
            list_distinct(flatten(list(s.ligand_ids)))     AS ligand_ids,
            list_distinct(list(s.method))                  AS methods
     FROM structures s
+    GROUP BY 1
+),
+ortho AS (
+    -- A structure to work from that is not of this protein. Deliberately a
+    -- separate block from `struct`: `n_pdb` counts this gene's own entries and
+    -- has to keep meaning that, so nothing here feeds `has_structure` or
+    -- `structural_gap`.
+    SELECT o.uniprot_acc,
+           count(DISTINCT o.pdb_id)                                  AS n_orthologue_pdb,
+           min(o.resolution)                                         AS best_orthologue_resolution,
+           count(DISTINCT o.pdb_id) FILTER (WHERE o.n_ligands > 0)    AS n_orthologue_pdb_ligand,
+           -- Identical sequence, another accession: the structure *is* of this
+           -- protein and was missed only because the key is the Mtb accession.
+           bool_or(o.relation = 'same_sequence')                      AS same_sequence_structure,
+           -- The closest neighbour by bitscore, with its own numbers, the same
+           -- ranking `paralogs` uses for the nearest relative.
+           arg_max(o.via_gene, o.bitscore)      AS closest_orthologue_gene,
+           arg_max(o.via_organism, o.bitscore)  AS closest_orthologue_organism,
+           arg_max(o.identity, o.bitscore)      AS closest_orthologue_identity,
+           arg_max(o.coverage, o.bitscore)      AS closest_orthologue_coverage
+    FROM orthologue_structures o
     GROUP BY 1
 ),
 inter AS (
@@ -165,6 +240,22 @@ SELECT
     h.identity       AS human_homolog_identity,
     h.evalue         AS human_homolog_evalue,
 
+    -- Functional redundancy: could a second copy cover for this target?
+    -- `close_paralog` needs identity AND coverage, unlike close_human_homolog,
+    -- which flags on identity alone -- a shared domain is already a
+    -- selectivity worry, but only a full-length twin is a backup.
+    coalesce(pg.has_paralog, false)    AS has_paralog,
+    coalesce(pg.n_paralogs, 0)         AS n_paralogs,
+    coalesce(pg.close_paralog, false)  AS close_paralog,
+    coalesce(pg.n_close_paralogs, 0)   AS n_close_paralogs,
+    pg.closest_close_gene     AS closest_paralog_gene,
+    pg.closest_close_identity AS closest_paralog_identity,
+    -- The nearest relative even when it is not a backup, so the family-level
+    -- link stays visible rather than reading as "no paralog at all".
+    pg.closest_gene     AS nearest_relative_gene,
+    pg.closest_identity AS nearest_relative_identity,
+    pg.closest_coverage AS nearest_relative_coverage,
+
     coalesce(i.n_partners, 0) AS n_partners,
     i.top_partner_score,
 
@@ -193,6 +284,20 @@ SELECT
     coalesce(st.ligand_ids, [])       AS ligand_ids,
     coalesce(st.methods, [])          AS methods,
 
+    -- Borrowed structures, counted apart from the gene's own. 3,094 accessions
+    -- have no entry of their own, and for 449 of them a mycobacterial
+    -- neighbour does; the identity and coverage that produced the link travel
+    -- with the number, because what a 34%-identical structure is good for is
+    -- the reader's call and not a claim this atlas makes.
+    coalesce(o.n_orthologue_pdb, 0)        AS n_orthologue_pdb,
+    coalesce(o.n_orthologue_pdb_ligand, 0) AS n_orthologue_pdb_with_ligand,
+    o.best_orthologue_resolution,
+    o.closest_orthologue_gene,
+    o.closest_orthologue_organism,
+    o.closest_orthologue_identity,
+    o.closest_orthologue_coverage,
+    coalesce(o.same_sequence_structure, false) AS same_sequence_structure,
+
     (w.alphafold_id IS NOT NULL) AS has_predicted,
     p.plddt_mean, p.plddt_very_low,
 
@@ -202,7 +307,14 @@ SELECT
     pa.best_pchembl,
     coalesce(ca.n_whole_cell, 0) AS n_whole_cell,
     ca.best_whole_cell_pchembl,
+    ca.best_pmic,
+    ca.median_pmic,
+    coalesce(ca.n_mic, 0)              AS n_mic,
+    coalesce(ca.n_mic_censored, 0)     AS n_mic_censored,
+    coalesce(ca.n_resistant_panel, 0)  AS n_resistant_panel,
+    coalesce(cc.whole_cell_conditions, []) AS whole_cell_conditions,
     coalesce(pa.n_protein_assays, 0) AS n_protein_assays,
+    coalesce(sc.max_assay_compounds, 0)   AS max_assay_compounds,
     pa.latest_protein_assay_year,
     ax.protein_assay_example,
 
@@ -228,11 +340,15 @@ LEFT JOIN struct st ON st.uniprot_acc = w.uniprot_acc
 LEFT JOIN pred  p   ON p.uniprot_acc = w.uniprot_acc
 LEFT JOIN protein_act pa ON pa.rv_id = w.rv_id
 LEFT JOIN cell_act    ca ON ca.rv_id = w.rv_id
+LEFT JOIN cell_conditions cc ON cc.rv_id = w.rv_id
+LEFT JOIN screening   sc ON sc.rv_id = w.rv_id
 LEFT JOIN assay_example ax ON ax.rv_id = w.rv_id
 LEFT JOIN res ON res.gene = coalesce(w.gene_name, w.rv_id)
 LEFT JOIN vuln v ON v.rv_id = w.rv_id
 LEFT JOIN strain_vuln sv ON sv.rv_id = w.rv_id
 LEFT JOIN hom  h ON h.uniprot_acc = w.uniprot_acc
+LEFT JOIN para pg ON pg.uniprot_acc = w.uniprot_acc
+LEFT JOIN ortho o ON o.uniprot_acc = w.uniprot_acc
 LEFT JOIN inter i ON i.rv_id = w.rv_id
 LEFT JOIN prot pr ON pr.uniprot_acc = w.uniprot_acc
 LEFT JOIN drug_link    dl ON dl.rv_id = w.rv_id
@@ -277,6 +393,10 @@ CLINICAL_COUNTS = ("with_clinical_drug", "drugs", "trials")
 # and `make summary` on it should report absence rather than fail. The columns
 # are nullable either way, so an empty view is the whole stand-in.
 EMPTY_OPTIONAL: dict[str, str] = {
+    "orthologue_structures": "SELECT NULL::VARCHAR AS uniprot_acc, NULL::VARCHAR AS via_acc,"
+    " NULL::VARCHAR AS via_gene, NULL::VARCHAR AS via_organism, NULL::VARCHAR AS relation,"
+    " NULL::DOUBLE AS identity, NULL::DOUBLE AS coverage, NULL::DOUBLE AS bitscore,"
+    " NULL::VARCHAR AS pdb_id, NULL::DOUBLE AS resolution, NULL::BIGINT AS n_ligands WHERE false",
     "strain_vulnerability": "SELECT NULL::VARCHAR AS rv_id, NULL::DOUBLE AS vulnerability_index,"
     " NULL::BOOLEAN AS certain, NULL::DOUBLE AS delta_vi, NULL::DOUBLE AS delta_vi_norm,"
     " NULL::BOOLEAN AS differential_reported WHERE false",
@@ -292,6 +412,8 @@ TABLES = {
     "vuln": "vulnerability",
     "strain_vuln": "strain_vulnerability",
     "hom": "homology",
+    "para": "paralogs",
+    "orthologue_structures": "orthologue_structures",
     "interactions": "interactions",
     "cond": "conditional_fitness",
     "prot": "proteins",

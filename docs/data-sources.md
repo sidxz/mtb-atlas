@@ -22,6 +22,8 @@ All sources are public. No consortium data, ever.
 | [MtbTnDB](#conditional-tnseq-mtbtndb) | Zenodo 10.5281/zenodo.15284946 (2025-04-20) | CC BY 4.0 | Conditional TnSeq, 136 screens |
 | [STRING](#string) | v12.5, taxon 83332 | CC BY 4.0 | Interaction partners |
 | [phmmer vs human proteome](#human-homology) | UniProt UP000005640, reviewed | CC BY 4.0 | Human anti-target check |
+| [phmmer vs the Mtb proteome](#paralogs-functional-redundancy) | UniProt UP000001584 | CC BY 4.0 | Paralogs: is there a backup copy? |
+| [phmmer vs Mycobacteriaceae + RCSB](#orthologue-structures-a-structure-to-work-from) | UniProt taxon 1762 with a PDB entry, live RCSB | CC BY 4.0 / CC0 1.0 | A structure to work from that is not of this protein |
 | [ChEMBL drugs](#chembl-tb-drugs-and-mechanisms) | ChEMBL_37 | CC BY-SA 3.0 | TB drugs, phases, mechanisms (M6) |
 | [ClinicalTrials.gov](#clinicaltrialsgov) | API 2.0.5, data 2026-10-09 | US Government database; terms below | Interventional TB trials (M6) |
 
@@ -198,6 +200,85 @@ Orthologue assays are excluded. An assay on *M. smegmatis* MmpL3 is a real
 assay, but not one for the Mtb protein, so mmpL3 reads 0 here while still
 showing its orthologue chemistry — which is the honest answer to "what would
 it take to screen this".
+
+### Whole-cell potency: the MICs `pchembl_value` cannot see
+
+ChEMBL computes `pchembl_value` for affinity endpoints only. It is **NULL on
+every one of the 3,870 MIC rows** in the store, because an MIC is a growth
+endpoint rather than a binding constant. So the original roll-up, which read
+`max(pchembl_value)` over whole-cell rows, answered from **78 IC50/EC50
+measurements and silently ignored every MIC** — reporting a whole-cell number
+for 12 genes when 71 have one, and reporting the wrong kind of number for
+those 12. For a TB atlas that is the wrong way round: the MIC *is* the
+whole-cell number.
+
+`activities.pmic` is `-log10(MIC in mol/L)`, converted in the ingester from the
+value and units ChEMBL reports, with `pmic_basis` recording which conversion
+produced it (including the molecular weight, when a mass unit needed one).
+3,941 of 6,752 whole-cell rows now carry one. The distribution is sane —
+median 5.6, 1st percentile 3.44, 99th 8.44 — and the two rows above pMIC 10
+are faithful conversions of ChEMBL's own deposited `1.6e-05 ug.mL-1`, not
+conversion errors. `best_whole_cell_pchembl` is kept beside it, because a
+whole-cell IC50 is a real measurement; it is simply a different endpoint, and
+no row has both.
+
+Three rules keep it honest:
+
+- **A censored MIC gets no `pmic`.** `MIC > 64 ug/mL` means the compound did
+  not inhibit at the highest concentration tested. That is a measured result,
+  not a potency of 64, and converting it would invent the one thing the
+  experiment failed to establish. A fifth of the MICs are censored this way,
+  so including them would drag every aggregate toward a potency nobody
+  observed. They are counted in `n_mic_censored` instead, because a gene whose
+  chemistry is all non-inhibition has to read differently from one nobody
+  tested.
+- **The MIC family only.** `MBC` is bactericidal rather than inhibitory and is
+  a different endpoint; `pMIC` and `-logMIC` are already logs and would be
+  double-logged. Thresholded names like `MIC>90` *are* exact values at a stated
+  inhibition level and do convert.
+- **A mass unit without a molecular weight converts to nothing**, rather than
+  to a guess.
+
+### Under which conditions, for chemistry as well as genetics
+
+The atlas answers "under which conditions is this gene required" from
+conditional TnSeq, and could not answer the same question of its chemistry:
+every MIC was pooled into one number. ChEMBL has no condition field, so
+`activities.assay_condition` reads the depositor's own prose —
+`caseum | intracellular | non_replicating | alt_carbon | nutrient_stress |
+standard_media | unspecified` — with the most demanding condition named
+winning, since an assay run in 7H9 under hypoxia is a hypoxia result.
+
+**`unspecified` is not `standard_media`**, and it is the commonest answer
+(6,118 of 6,752 rows). Most ChEMBL MICs never state a medium, and asserting
+the default would turn silence into a measurement. A gene whose every MIC is
+`unspecified` has a real answer: nobody has published its chemistry outside
+ordinary aerobic growth.
+
+**Nothing in the current release matches `caseum`.** The label is kept
+deliberately: caseum penetration is among the most decisive questions in TB
+target assessment, and a visible zero is the honest way to say the public
+chemistry does not cover it. It will not be filled by relabelling something
+else.
+
+`resistant_panel` is a **separate boolean**, not a value of the enum, because
+strain and medium are different claims: "tested on MDR clinical isolates"
+(1,121 rows) and "tested under hypoxia" must not hide each other, and a row
+can be both. Folding them into one column was tried and rejected — it let the
+resistance panels swallow a thousand rows whose medium was simply unstated.
+
+### Screened, or merely studied?
+
+`target_summary.max_assay_compounds` is the largest single published assay on
+the gene's own protein, by distinct compounds. `n_protein_assays` cannot
+separate one 1,875-compound campaign from fourteen five-compound follow-ups,
+and those are opposite answers to "is there a tractable screen here".
+
+Genome-wide the answer is stark: **two genes have a public assay reaching
+1,000 compounds** — `recA` (1,875) and `dnaB` (1,642), both PubChem
+deposits — and five reach 100. inhA, the best-studied target in TB, tops out
+at 52 compounds in any single assay. The scarcity is the finding, not a gap in
+the ingest.
 
 ### The orthologue bridge
 
@@ -569,6 +650,146 @@ coverage and a percent identity computed from the aligned columns. A hit at
 ≥ 30% identity is flagged `close_human_homolog`; that line is this atlas's
 convention, which is why the identity is always shown beside the flag. GroEL2
 comes back 48% identical to HSPD1. Both proteomes are UniProt, CC BY 4.0.
+
+## Paralogs: functional redundancy
+
+No download, no new source: the same `phmmer` machinery pointed at the Mtb
+proteome instead of the human one, reusing the cached FASTA. 15.8 s for
+3,997 x 3,997.
+
+An essential, vulnerable, structurally tractable gene with a close paralog is a
+different proposition from the same gene standing alone. Inhibit one copy and
+the other may cover for it — and the compound then looks inactive for a reason
+that has nothing to do with the chemistry. It was the first thing after
+essentiality that the store could not answer.
+
+**The flag is deliberately stricter than the human one, and that is the whole
+design.** `close_human_homolog` fires on identity alone, because a shared
+domain is already a selectivity worry for an off-target. A *backup copy* has to
+be the same protein, not share a piece of it, so `close_paralog` requires
+**≥ 30% identity over ≥ 70% of the query**. The difference is not cosmetic:
+
+| rule | genes flagged | dprE1 | mmpL3 | groEL2 |
+|---|---|---|---|---|
+| identity ≥ 30% alone | 2,009 | yes (30.8% / 37% cov) | yes (31.7% / 21% cov) | yes |
+| identity **and** coverage | 1,346 | no | no | yes (62% / 98% cov) |
+
+dprE1 and mmpL3 both have family members and neither has a backup; groEL2 has
+groEL1 at 62% over 98% of the protein, which is real redundancy. Median
+coverage among 30%-identity best hits is 0.68, so the threshold discriminates
+rather than rubber-stamps. This is the UniRef50 lesson in another costume: a
+family-level link is not evidence that two proteins do the same job.
+
+**Two different "closest" columns, and conflating them is the trap.**
+`closest_paralog_gene` is the nearest *backup* and is NULL when there is none,
+even though relatives exist. `nearest_relative_gene` is the nearest *relative*
+and is usually populated anyway — mmpL3 reads `mmpL13b` at 31.5% over 47%. It
+is ranked by bit score rather than identity, because ranking by identity
+crowns a short exact fragment over a full-length near-copy: mmpL3's answer
+under identity ranking was mmpL1 over a fifth of the protein.
+
+Three things are dropped, each for a reason:
+
+- **Self-hits.** A protein's best hit against its own proteome is itself at
+  100%.
+- **Identical sequences under two accessions.** Those are annotation artefacts
+  — the `shared_accession` case the crosswalk already records, 55 loci
+  including the IS6110 transposase across 16. Left in, each would be the
+  other's perfect full-length "backup" and the flag would fire on every one.
+- **Hits weaker than E ≤ 1e-5**, phmmer's own reporting threshold.
+
+What it immediately buys: 489 essential genes, of which **87 have a
+full-length backup copy and 402 do not**. The 87 are worth knowing about —
+kasA/kasB at 66%, nrdF2/nrdF1 at 71%, glyA1/glyA2 at 68%, groEL2/groEL1 at
+62%. And the atlas can now answer a question it could not form before:
+**129 genes are essential, have no backup copy, have no close human homolog,
+and have a structure.**
+
+## Orthologue structures: a structure to work from
+
+**3,146 CDS genes have no experimental structure under their own accession, and
+that is reported as the absence it is. But "no structure" and "nothing to work
+from" are different claims**, and MmpL3 is the standing example: one Mtb entry
+at 3.0 Å with one ligand, against 18 *M. smegmatis* MmpL3 entries whose best is
+2.15 Å and eleven of which were solved with something bound. The ChEMBL
+orthologue bridge already reaches that protein for its *ligands*
+([above](#the-orthologue-bridge), via `UniRef50_A0QP27`); its *structures* were
+invisible, because `structures` is keyed on the Mtb accession and nothing
+mapped the neighbour back.
+
+One download (the 895 Mycobacteriaceae proteins, excluding H37Rv, that have a
+PDB cross-reference), 5.8 s of phmmer, and the entries themselves from RCSB
+through the same code path `structures` uses — so a borrowed entry gets the
+same chain-level ligand attribution, and a ligand on a neighbouring chain is
+not counted for it either.
+
+### Two findings, different strengths, not flattened
+
+`relation` says which claim a row makes.
+
+| relation | genes | means |
+|---|---|---|
+| `same_sequence` | 124 | the deposited sequence is **identical** to the Mtb one, filed under another accession |
+| `orthologue` | 721 | a related mycobacterial protein, with the identity and coverage on the row |
+
+**The `same_sequence` case is a key artefact, not a modelling exercise.** 34
+genes the atlas called structure-less have a 100%-identical structure deposited
+against a CDC 1551, H37Ra or *M. bovis* accession. folC (`Rv2447c`, `I6Y0R5`)
+has none of its own and two under `O53174` — 2VOR at 2.3 Å with ACP bound, 2VOS
+at 2.0 Å. The structure *is* of this protein; only the key hid it.
+
+**The `orthologue` case makes no claim beyond the numbers.** Whether a
+34%-identical structure is worth opening is the reader's judgement, so identity
+and coverage sit on every row and in the UI, and nothing here is described as a
+model, a template or a druggability signal.
+
+### Thresholds, and the one false positive worth a rule
+
+The floor is **≥ 30% identity over ≥ 70% of the query**, the same pair as
+[`close_paralog`](#paralogs-functional-redundancy) and for the same reason: a
+structure is only worth borrowing if it is of the same protein rather than of
+something that shares a domain. 30% is also the conventional floor for a usable
+homology model. Both numbers are on every row, so a stricter line can be drawn
+downstream.
+
+`same_sequence` needs no threshold — identity and coverage are exactly 1.0, and
+nothing in the data sits between 0.999 and 1.0. It does need one guard:
+`O07717` (398 aa) matches at 100% identity over its whole length *inside*
+`Q8VJU4` (766 aa), which is a different, longer protein that contains it. 3 of
+165 perfect pairs look like this, so a perfect match also has to span ≥ 80% of
+the *target*. When query coverage is already 1.0 that is the query/target
+length ratio, so it is the same measurement from the other end rather than a
+new rule.
+
+### What it does not touch
+
+**Nothing here feeds `n_pdb`, `has_structure` or `structural_gap`.** Those
+count structures of the gene's own protein and have to keep meaning that, or a
+zero in the column the atlas exists to answer stops meaning zero. The borrowed
+entries are also deliberately kept out of the 3D viewer: the residue numbering
+is the neighbour's, so overlaying a gene's WHO-graded residues on one would
+place them wrongly.
+
+### What it buys
+
+Of 3,146 genes with no structure of their own, **449 have a mycobacterial
+neighbour that does and 227 of those neighbours were solved with a ligand
+bound**. Among the 489 essential genes: 234 have no structure of their own, 44
+have a borrowed one, 22 of those with a ligand, and 6 are `same_sequence`
+rescues (folC, glgE, trpE, murC, ribA2, `Rv0543c`). trpE is the shape this was
+built for — essential, vulnerability −6.36, no structure under its own
+accession, and two entries at 1.7 Å with ligands under an identical sequence.
+
+### Freshness
+
+`orthologue-pdb` is **not** frozen, unlike the two phmmer siblings: the bridge
+is computed here, but the structures on the far end come from RCSB and move
+weekly. The probe replays the neighbour search and counts entries, the same
+detector as `rcsb-pdb`, and compares against `version_label()` — the single
+function that also stamps the table, so the probe cannot drift from the
+statement it is checking. A neighbour gaining its *first* structure arrives as
+a new sequence in the filtered UniProt stream, so the `uniprot` probe is what
+notices that.
 
 ## ChEMBL: TB drugs and mechanisms
 

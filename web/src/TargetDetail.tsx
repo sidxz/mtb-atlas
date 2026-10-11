@@ -30,6 +30,9 @@ const SOURCES = {
   vulnerability: "Bosch et al. 2021, Cell · Table S3 · CC BY 4.0",
   string: "STRING v12.5 · CC BY 4.0",
   homology: "phmmer vs reviewed human proteome (UniProt) · CC BY 4.0",
+  paralogs: "phmmer vs the Mtb proteome itself (UniProt) · CC BY 4.0",
+  orthologueStructures:
+    "phmmer vs Mycobacteriaceae with a PDB entry (UniProt · CC BY 4.0) · RCSB PDB · CC0 1.0",
   identity: "Mycobrowser release 5 (licence not stated) · UniProt · CC BY 4.0",
   clinical: "ChEMBL TB indications and mechanisms · Bosch 2021 · ClinicalTrials.gov",
   uniprot: "UniProt · CC BY 4.0",
@@ -234,9 +237,12 @@ export function TargetDetailPanel({
         {tab === "structure" && (
           <>
             {sources.length === 0 ? (
-              <p className="absent">
-                No experimental structure and no AlphaFold model for this accession.
-              </p>
+              <>
+                <p className="absent">
+                  No experimental structure and no AlphaFold model for this accession.
+                </p>
+                <OrthologueStructureTable detail={detail} />
+              </>
             ) : (
               <>
                 <div className="viewerbar">
@@ -295,6 +301,7 @@ export function TargetDetailPanel({
                 </div>
                 <BoundLigands detail={detail} />
                 <StructureTable detail={detail} />
+                <OrthologueStructureTable detail={detail} />
               </>
             )}
           </>
@@ -522,6 +529,54 @@ function Evidence({ detail }: { detail: Detail }) {
         )}
       </Row>
 
+      <Row label="Redundancy" source={SOURCES.paralogs}>
+        {detail.close_paralog ? (
+          <>
+            <span className="chip warn">{detail.closest_paralog_gene}</span>{" "}
+            <span className="mono">
+              {Math.round((detail.closest_paralog_identity ?? 0) * 100)}% identity
+            </span>
+            {detail.n_close_paralogs > 1 && (
+              <span className="dim"> · {detail.n_close_paralogs} full-length copies</span>
+            )}
+            <div className="note">
+              A second copy spans this protein, so inhibiting one may be covered by the
+              other — a compound can look inactive for a reason that is nothing to do with
+              the chemistry.
+            </div>
+          </>
+        ) : detail.has_paralog ? (
+          <>
+            <span className="chip ok">no backup copy</span>{" "}
+            <span className="dim">
+              nearest relative {detail.nearest_relative_gene} at{" "}
+              <span className="mono">
+                {Math.round((detail.nearest_relative_identity ?? 0) * 100)}%
+              </span>{" "}
+              over{" "}
+              <span className="mono">
+                {Math.round((detail.nearest_relative_coverage ?? 0) * 100)}%
+              </span>{" "}
+              of the protein
+            </span>
+            <div className="note">
+              {detail.n_paralogs} relative{detail.n_paralogs === 1 ? "" : "s"} in the genome,
+              none of them a full-length copy. A shared domain is not a backup: the line here
+              is 30% identity over 70% of the protein, which is this atlas's convention and
+              stricter than the one used for the human homolog above.
+            </div>
+          </>
+        ) : (
+          <>
+            <span className="chip ok">none detected</span>
+            <div className="note">
+              No other Mtb protein matches at E ≤ 1e-5, so nothing in the genome is placed to
+              cover for this one.
+            </div>
+          </>
+        )}
+      </Row>
+
       <Row label="Experimental structure" source={SOURCES.pdb}>
         {detail.n_pdb ? (
           <>
@@ -538,8 +593,9 @@ function Evidence({ detail }: { detail: Detail }) {
             </div>
           </>
         ) : (
-          <span className="absent">none</span>
+          <span className="absent">none of its own</span>
         )}
+        <Borrowed detail={detail} />
       </Row>
 
       <Row label="Predicted structure" source={SOURCES.alphafold}>
@@ -563,10 +619,30 @@ function Evidence({ detail }: { detail: Detail }) {
             <span className="dim">activities, {detail.n_compounds} compounds</span>
             <div className="note" style={{ color: "var(--fg)" }}>
               best pChEMBL <b className="mono">{number(detail.best_pchembl)}</b>
+              {detail.best_pmic !== null && (
+                <>
+                  {" "}
+                  · best pMIC <b className="mono">{number(detail.best_pmic)}</b>
+                  <span className="dim">
+                    {" "}
+                    (median {number(detail.median_pmic)} over {detail.n_mic} MIC
+                    {detail.n_mic === 1 ? "" : "s"})
+                  </span>
+                </>
+              )}
               {detail.best_whole_cell_pchembl !== null && (
-                <> · best whole-cell pChEMBL <b className="mono">{number(detail.best_whole_cell_pchembl)}</b></>
+                <> · whole-cell pChEMBL <b className="mono">{number(detail.best_whole_cell_pchembl)}</b></>
               )}
             </div>
+            {detail.n_mic_censored > 0 && (
+              <p className="note dim" style={{ marginTop: 2 }}>
+                {detail.n_mic_censored} further MIC
+                {detail.n_mic_censored === 1 ? " is" : "s are"} censored — the compound did not
+                inhibit at the highest concentration tested, which is a measured result and not a
+                potency, so it carries no pMIC.
+              </p>
+            )}
+            <WholeCellConditions detail={detail} />
             {detail.chembl_targets.map((t) => (
               <div className="note" key={t.target_id}>
                 <span className="mono">{t.target_id}</span> {t.pref_name}{" "}
@@ -807,6 +883,119 @@ function Construct({ structure }: { structure: Record<string, any> }) {
   );
 }
 
+/** "No structure" and "nothing to work from" are different claims.
+ *
+ * 3,146 genes have no entry under their own accession; 449 of them have a
+ * mycobacterial neighbour that does, and for 34 the deposited sequence is
+ * *identical* and was filed under a CDC 1551, H37Ra or M. bovis accession --
+ * the structure is of this protein, and only the key hid it. The two cases are
+ * worded differently on purpose, and the identity is always shown, because
+ * what a 34%-identical structure is good for is the reader's judgement.
+ */
+function Borrowed({ detail }: { detail: Detail }) {
+  if (!detail.n_orthologue_pdb) return null;
+  const identity = detail.closest_orthologue_identity;
+  const liganded = detail.n_orthologue_pdb_with_ligand;
+  return (
+    <div className="note" style={{ marginTop: detail.n_pdb ? 6 : 5 }}>
+      {detail.same_sequence_structure ? (
+        <>
+          <span className="chip ok">same sequence elsewhere</span> {detail.n_orthologue_pdb} entr
+          {detail.n_orthologue_pdb === 1 ? "y" : "ies"} of an{" "}
+          <b>identical</b> sequence filed under another accession
+          {detail.closest_orthologue_organism ? ` (${detail.closest_orthologue_organism})` : ""}.
+        </>
+      ) : (
+        <>
+          {detail.n_pdb ? "Also " : ""}
+          {detail.n_orthologue_pdb} entr{detail.n_orthologue_pdb === 1 ? "y" : "ies"} for{" "}
+          <b>{detail.closest_orthologue_gene ?? "a relative"}</b>
+          {detail.closest_orthologue_organism ? ` of ${detail.closest_orthologue_organism}` : ""}
+          {identity !== null && (
+            <>
+              , <b className="mono">{(identity * 100).toFixed(0)}%</b> identical over{" "}
+              <span className="mono">
+                {((detail.closest_orthologue_coverage ?? 0) * 100).toFixed(0)}%
+              </span>{" "}
+              of this protein
+            </>
+          )}
+          .
+        </>
+      )}
+      {detail.best_orthologue_resolution !== null && (
+        <>
+          {" "}
+          Best {number(detail.best_orthologue_resolution)} Å
+          {liganded > 0 && `, ${liganded} with a ligand bound`}.
+        </>
+      )}{" "}
+      <span className="faint">Not counted in the structure count above.</span>
+    </div>
+  );
+}
+
+function OrthologueStructureTable({ detail }: { detail: Detail }) {
+  const rows = detail.orthologue_structures ?? [];
+  if (rows.length === 0) return null;
+  return (
+    <>
+      <h4 style={{ margin: "18px 0 0" }}>
+        Structures of a relative{" "}
+        <span className="faint" style={{ fontWeight: 400 }}>
+          · not of this protein
+        </span>
+      </h4>
+      <p className="note" style={{ margin: "4px 0 0" }}>
+        Reached by homology to the mycobacterial proteins that have a PDB entry. These are
+        deliberately kept out of the viewer above: the residue numbering is the neighbour's, so
+        overlaying this gene&apos;s resistance residues on one would place them wrongly.
+      </p>
+      <div className="scroller" style={{ marginTop: 10 }}>
+        <table>
+          <thead>
+            <tr>
+              <th>PDB</th>
+              <th>Protein</th>
+              <th>Organism</th>
+              <th className="n" title="Identity to the Mtb protein over the aligned region">
+                Id
+              </th>
+              <th className="n" title="Fraction of the Mtb protein the alignment covers">
+                Cov
+              </th>
+              <th className="n">Å</th>
+              <th>Ligands</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((s) => (
+              <tr key={`${s.via_acc}-${s.pdb_id}`}>
+                <td className="id">{s.pdb_id}</td>
+                <td>
+                  {s.via_gene ?? s.via_acc}
+                  {s.relation === "same_sequence" && (
+                    <span className="chip ok" style={{ marginLeft: 6 }}>
+                      identical
+                    </span>
+                  )}
+                </td>
+                <td className="dim">{s.via_organism}</td>
+                <td className="n mono">{(s.identity * 100).toFixed(0)}%</td>
+                <td className="n mono faint">{(s.coverage * 100).toFixed(0)}%</td>
+                <td className="n">{s.resolution ? number(s.resolution, 2) : "—"}</td>
+                <td className="mono">
+                  {s.ligand_ids.length ? s.ligand_ids.join(" ") : <span className="absent">—</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
 function StructureTable({ detail }: { detail: Detail }) {
   return (
     <div className="scroller" style={{ marginTop: 12 }}>
@@ -840,6 +1029,66 @@ function StructureTable({ detail }: { detail: Detail }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/** Under which conditions has this gene's chemistry actually been measured?
+ *
+ * The genetics side of the atlas answers this already (conditional TnSeq), and
+ * the chemistry side could not: every MIC was pooled into one number. ChEMBL
+ * has no condition field, so these labels are read from the depositor's prose,
+ * which is why `unspecified` is both the commonest answer and shown as its own
+ * row rather than assumed to be standard media.
+ */
+const CONDITION_LABELS: Record<string, string> = {
+  caseum: "caseum",
+  intracellular: "intracellular (macrophage)",
+  non_replicating: "non-replicating / hypoxic",
+  alt_carbon: "alternative carbon source",
+  nutrient_stress: "nutrient or oxidative stress",
+  standard_media: "standard media (named)",
+  unspecified: "medium not stated",
+};
+
+function WholeCellConditions({ detail }: { detail: Detail }) {
+  const rows = (detail.whole_cell_conditions ?? []).filter((c) => c.n > 0);
+  if (rows.length === 0) return null;
+  const named = rows.filter((c) => c.condition !== "unspecified");
+  return (
+    <div style={{ marginTop: 6 }}>
+      <table className="cond-table">
+        <thead>
+          <tr>
+            <th>Whole-cell condition</th>
+            <th className="n">Measurements</th>
+            <th className="n">Best pMIC</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((c) => (
+            <tr key={c.condition}>
+              <td>{CONDITION_LABELS[c.condition] ?? c.condition}</td>
+              <td className="n">{c.n.toLocaleString()}</td>
+              <td className="n">
+                {c.best_pmic !== null ? (
+                  number(c.best_pmic)
+                ) : (
+                  <span className="absent" title={`${c.n} measurement(s), none convertible to a pMIC`}>
+                    —
+                  </span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {named.length === 0 && (
+        <p className="caveat" style={{ marginTop: 4 }}>
+          No published MIC for this gene's compounds states a growth condition, so nothing is
+          known here about activity outside ordinary aerobic culture.
+        </p>
+      )}
     </div>
   );
 }
@@ -879,11 +1128,15 @@ function Chemistry({ detail, onOpen }: { detail: Detail; onOpen: (focus: Focus) 
   const byCompound = useMemo(() => {
     const index = new Map<string, Compound>();
     for (const c of detail.compounds) index.set(c.molecule_chembl_id, c);
+    // Rank the cell measurement by pMIC, not pchembl_value. ChEMBL leaves
+    // pchembl_value null on every MIC, so ranking by it picked a blank row and
+    // the column read "—" for compounds that have a perfectly good MIC.
     const cell = new Map<string, Activity>();
     for (const a of detail.whole_cell) {
       const id = a.molecule_chembl_id ?? "";
       const best = cell.get(id);
-      if (!best || (a.pchembl_value ?? 0) > (best.pchembl_value ?? 0)) cell.set(id, a);
+      const score = (x: Activity) => x.pmic ?? x.pchembl_value ?? 0;
+      if (!best || score(a) > score(best)) cell.set(id, a);
     }
     const best = new Map<string, Activity>();
     for (const a of detail.activities) {
@@ -973,7 +1226,16 @@ function Chemistry({ detail, onOpen }: { detail: Detail; onOpen: (focus: Focus) 
                 </td>
                 <td className="n">{number(activity.pchembl_value)}</td>
                 <td className="dim">{activity.standard_type}</td>
-                <td className="n">{cell ? number(cell.pchembl_value) : "—"}</td>
+                {/* pMIC where there is one, else the whole-cell pChEMBL. The
+                    title says which, because they are different endpoints. */}
+                <td className="n" title={cell ? (cell.pmic !== null ? `pMIC from ${cell.standard_type} ${cell.standard_value} ${cell.standard_units} (${cell.pmic_basis})` : "whole-cell pChEMBL") : undefined}>
+                  {cell ? number(cell.pmic ?? cell.pchembl_value) : "—"}
+                  {cell?.resistant_panel && (
+                    <span className="chip" style={{ marginLeft: 4 }} title="measured on a resistant or clinical isolate">
+                      res
+                    </span>
+                  )}
+                </td>
                 <td className="n">{number(compound?.mw ?? null, 0)}</td>
                 <td className="n">{number(compound?.alogp ?? null, 1)}</td>
                 <td className="dim">{phaseLabel(compound?.max_phase ?? null)}</td>

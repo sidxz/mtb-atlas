@@ -98,7 +98,7 @@ def evidence_store(store: Path) -> Path:
     bioactivity = json.loads((FIXTURES / "chembl_bioactivity.json").read_text())
     write_parquet(
         "activities",
-        bioactivity["activities"],
+        chembl.annotate_activities(bioactivity["activities"], bioactivity["compounds"]),
         source=chembl.SOURCE,
         source_version="chembl_37",
         retrieved_at="2026-10-09",
@@ -170,6 +170,12 @@ def evidence_store(store: Path) -> Path:
         ("vulnerability", "bosch-2021", "Bosch 2021 Table S3"),
         ("interactions", "string-db", "STRING v12.5"),
         ("homology", "phmmer-human", "phmmer vs reviewed human proteome"),
+        ("paralogs", "phmmer-paralog", "phmmer vs the Mtb proteome itself"),
+        (
+            "orthologue_structures",
+            "orthologue-pdb",
+            "phmmer vs Mycobacteriaceae with a PDB entry; structures from RCSB",
+        ),
     ):
         write_parquet(
             name,

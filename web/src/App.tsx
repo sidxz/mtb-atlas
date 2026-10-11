@@ -81,11 +81,14 @@ const COLUMNS: [string, string, boolean][] = [
   ["essentiality", "Essentiality", false],
   ["vulnerability_index", "Vulnerability", true],
   ["n_pdb", "PDB", true],
+  ["n_orthologue_pdb", "Relative's PDB", true],
   ["plddt_mean", "pLDDT", true],
   ["n_compounds", "Compounds", true],
   ["n_protein_assays", "Assays", true],
   ["best_pchembl", "Best pChEMBL", true],
-  ["best_whole_cell_pchembl", "Cell", true],
+  ["best_pmic", "Best pMIC", true],
+  ["best_whole_cell_pchembl", "Cell IC50", true],
+  ["n_close_paralogs", "Paralogs", true],
   ["n_variants_associated", "WHO", true],
   ["best_drug_phase", "TB phase", true],
   ["n_partners", "Partners", true],
@@ -95,9 +98,18 @@ const COLUMNS: [string, string, boolean][] = [
 
 const COLUMN_GROUPS = [
   { label: "Gene identity", keys: ["rv_id", "gene_name"] },
-  { label: "Target biology", keys: ["essentiality", "vulnerability_index"] },
-  { label: "Structures", keys: ["n_pdb", "plddt_mean"] },
-  { label: "Chemical evidence", keys: ["n_compounds", "n_protein_assays", "best_pchembl", "best_whole_cell_pchembl"] },
+  { label: "Target biology", keys: ["essentiality", "vulnerability_index", "n_close_paralogs"] },
+  { label: "Structures", keys: ["n_pdb", "n_orthologue_pdb", "plddt_mean"] },
+  {
+    label: "Chemical evidence",
+    keys: [
+      "n_compounds",
+      "n_protein_assays",
+      "best_pchembl",
+      "best_pmic",
+      "best_whole_cell_pchembl",
+    ],
+  },
   { label: "Clinical evidence", keys: ["n_variants_associated", "best_drug_phase"] },
   { label: "Context", keys: ["n_partners", "n_references"] },
   { label: "Annotation", keys: ["product"] },
@@ -204,6 +216,30 @@ function cell(gene: TargetSummary, key: string): React.ReactNode {
       );
     case "n_pdb":
       return gene.n_pdb ?? "—";
+    // A structure to work from that is not of this protein. Separate from PDB
+    // on purpose: 3,146 genes have no entry of their own, and reading a
+    // borrowed one into that column would make the zero mean nothing.
+    case "n_orthologue_pdb":
+      return gene.n_orthologue_pdb ? (
+        <span
+          title={
+            gene.same_sequence_structure
+              ? `identical sequence deposited under another accession (${gene.closest_orthologue_organism})`
+              : `closest: ${gene.closest_orthologue_gene} of ${gene.closest_orthologue_organism}, ` +
+                `${Math.round((gene.closest_orthologue_identity ?? 0) * 100)}% identity over ` +
+                `${Math.round((gene.closest_orthologue_coverage ?? 0) * 100)}% of the protein`
+          }
+        >
+          {gene.n_orthologue_pdb}
+          {gene.same_sequence_structure && (
+            <span className="chip ok" style={{ marginLeft: 4 }}>
+              =
+            </span>
+          )}
+        </span>
+      ) : (
+        "—"
+      );
     case "plddt_mean":
       return gene.plddt_mean?.toFixed(0) ?? "—";
     case "n_compounds":
@@ -221,8 +257,22 @@ function cell(gene: TargetSummary, key: string): React.ReactNode {
           )}
         </>
       );
+    // The MIC-derived number. ChEMBL leaves pchembl_value null on every MIC,
+    // so "Cell IC50" beside it is a different endpoint on far fewer genes.
+    case "best_pmic":
+      return gene.best_pmic?.toFixed(2) ?? "—";
     case "best_whole_cell_pchembl":
       return gene.best_whole_cell_pchembl?.toFixed(2) ?? "—";
+    // Full-length backup copies, not family members: a shared domain is not
+    // redundancy, so this is the stricter count.
+    case "n_close_paralogs":
+      return gene.n_close_paralogs ? (
+        <span title={`closest: ${gene.closest_paralog_gene} at ${Math.round((gene.closest_paralog_identity ?? 0) * 100)}% identity`}>
+          {gene.n_close_paralogs}
+        </span>
+      ) : (
+        "—"
+      );
     case "n_variants_associated":
       return gene.n_variants_associated ?? "—";
     case "best_drug_phase":

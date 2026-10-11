@@ -67,6 +67,27 @@ def _accession(name: str | bytes) -> str:
     return parts[1] if len(parts) > 2 else text
 
 
+def alignment_stats(query_length: int, hit: Any) -> tuple[float, float]:
+    """Percent identity and query coverage for a phmmer hit.
+
+    phmmer reports an alignment, not an identity, so this computes it from the
+    aligned columns -- the number a chemist expects when they ask "how similar".
+    Shared with `paralogs.py` so the two columns mean the same thing.
+
+    Coverage is clamped to 1.0. pyhmmer's alignment can report marginally more
+    aligned columns than the query has residues, which left 45 human hits at up
+    to 1.07; a protein cannot be more than fully covered, and the number now
+    gates a flag rather than only being displayed.
+    """
+    alignment = hit.best_domain.alignment
+    pairs = list(zip(alignment.target_sequence, alignment.hmm_sequence, strict=False))
+    matched = sum(1 for t, q in pairs if t.upper() == q.upper() and t != "-")
+    aligned = sum(1 for t, q in pairs if t != "-" and q != "-")
+    identity = matched / aligned if aligned else 0.0
+    coverage = min(aligned / query_length, 1.0) if query_length else 0.0
+    return identity, coverage
+
+
 def _descriptions(path: Path) -> dict[str, str]:
     """Accession -> the protein name in the FASTA header, for naming the hit."""
     out: dict[str, str] = {}
@@ -106,16 +127,7 @@ def normalize(mtb_path: Path, human_path: Path, *, cpus: int = 0) -> Iterator[di
         for hit in hits:
             if hit.evalue > E_VALUE:
                 continue
-            domain = hit.best_domain
-            alignment = domain.alignment
-            # phmmer reports the alignment, not an identity; compute it from the
-            # aligned columns so the number means what a chemist expects.
-            pairs = list(zip(alignment.target_sequence, alignment.hmm_sequence, strict=False))
-            matched = sum(1 for t, q in pairs if t.upper() == q.upper() and t != "-")
-            aligned = sum(1 for t, q in pairs if t != "-" and q != "-")
-            identity = matched / aligned if aligned else 0.0
-            query_length = len(hits.query)
-            coverage = aligned / query_length if query_length else 0.0
+            identity, coverage = alignment_stats(len(hits.query), hit)
             current = best.get(query)
             if current is None or hit.evalue < current["evalue"]:
                 accession = _accession(hit.name)

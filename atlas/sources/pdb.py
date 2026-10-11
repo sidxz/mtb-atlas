@@ -155,8 +155,13 @@ COFACTORS = frozenset(
 )
 
 
-def _entity_ids(accessions: Sequence[str]) -> list[str]:
-    """Polymer entity IDs (e.g. `7NVH_1`) for every accession we know."""
+def entity_ids(accessions: Sequence[str]) -> list[str]:
+    """Polymer entity IDs (e.g. `7NVH_1`) for every accession we know.
+
+    Public because `freshness.py` replays the search to count entries and
+    `orthologue_structures.py` runs the same search over mycobacterial
+    neighbours. Accession is the only reliable key either way.
+    """
     found: list[str] = []
     for start in range(0, len(accessions), SEARCH_BATCH):
         batch = list(accessions[start : start + SEARCH_BATCH])
@@ -174,7 +179,7 @@ def _entity_ids(accessions: Sequence[str]) -> list[str]:
     return found
 
 
-def _entries(entry_ids: Sequence[str]) -> Iterator[dict[str, Any]]:
+def entries(entry_ids: Sequence[str]) -> Iterator[dict[str, Any]]:
     for start in range(0, len(entry_ids), ENTRY_BATCH):
         batch = list(entry_ids[start : start + ENTRY_BATCH])
         payload = {"query": ENTRY_QUERY, "variables": {"ids": batch}}
@@ -392,9 +397,9 @@ def build_ligands(comp_ids: Sequence[str], *, retrieved_at: str) -> Any:
 def build(accessions: Sequence[str], *, retrieved_at: str, force: bool = False) -> Any:
     """`accessions` comes from the crosswalk: PDB is keyed on accession, not Rv tag."""
     del force  # Nothing is cached on disk; the API batches are cheap to repeat.
-    entity_ids = _entity_ids(accessions)
-    entry_ids = sorted({str(eid).split("_")[0] for eid in entity_ids})
-    rows = list(normalize(_entries(entry_ids), set(accessions)))
+    ids = entity_ids(accessions)
+    entry_ids = sorted({str(eid).split("_")[0] for eid in ids})
+    rows = list(normalize(entries(entry_ids), set(accessions)))
     return write_parquet(
         "structures",
         rows,

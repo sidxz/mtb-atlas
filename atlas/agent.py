@@ -51,6 +51,8 @@ TABLES = (
     "strain_vulnerability",
     "interactions",
     "homology",
+    "paralogs",
+    "orthologue_structures",
     "chembl_targets",
     "ligands",
     "drugs",
@@ -66,8 +68,27 @@ TABLE_NOTES = {
     "Scalar columns for filtering and sorting. `n_protein_assays` is how many published "
     "ChEMBL assays run against this gene's own protein -- whether the target can be "
     "screened at all, which is a different question from `n_compounds` (whether anyone "
-    "has hit it). `hn878_*` compares vulnerability against a clinical isolate; see "
-    "strain_vulnerability for the sign convention.",
+    "has hit it). `max_assay_compounds` is the largest single published assay by distinct "
+    "compounds, which separates one real screening campaign from a dozen small follow-ups: "
+    "genome-wide only two genes reach 1,000. `hn878_*` compares vulnerability against a "
+    "clinical isolate; see strain_vulnerability for the sign convention. "
+    "**`n_pdb` counts structures of this gene's OWN protein; a borrowed one is in "
+    "`n_orthologue_pdb` and does NOT make `has_structure` or `structural_gap` true.** "
+    "3,146 CDS genes have no structure of their own and 449 of those have a mycobacterial "
+    "neighbour that does. `same_sequence_structure` is the stronger case: an identical "
+    "sequence deposited under another accession, true for 34 of them. "
+    "`close_paralog` is whether a full-length second copy exists -- see the paralogs table "
+    "for why it is stricter than `close_human_homolog`. `closest_paralog_gene` is NULL when "
+    "there is no backup, while `nearest_relative_gene` is usually populated anyway, so "
+    "reading the latter as redundancy is the trap. "
+    "**For whole-cell potency use `best_pmic` / `median_pmic`, not "
+    "`best_whole_cell_pchembl`** -- the latter is ChEMBL's pchembl_value, which exists for "
+    "only 12 genes because it is NULL on every MIC; the pmic columns cover 71. `n_mic` "
+    "counts exact MICs and `n_mic_censored` the '>' non-results, which are evidence of "
+    "no activity rather than absence of testing. `whole_cell_conditions` is a list of "
+    "structs (condition, n, n_with_pmic, best_pmic) -- UNNEST it to ask what conditions a "
+    "gene's chemistry was measured under, remembering that `unspecified` means the deposit "
+    "did not say, not standard media.",
     "crosswalk": "Identity only: Rv tag to accession, with source disagreements and "
     "the loci that share an accession.",
     "proteins": "One UniProt entry per accession, keyed on uniprot_acc: cross-references "
@@ -95,7 +116,22 @@ TABLE_NOTES = {
     "assays against the organism. A published assay for a gene's own protein means "
     "`evidence = 'direct'`; count DISTINCT assay_chembl_id, since one assay can carry "
     "hundreds of measurements. `target_summary.n_protein_assays` is that count already "
-    "done.",
+    "done. **Potency lives in two different columns and they do not overlap.** "
+    "`pchembl_value` is ChEMBL's own and is NULL on every one of the 3,870 MIC rows, "
+    "because ChEMBL computes it for affinity endpoints only -- so `max(pchembl_value)` "
+    "over whole_cell rows answers from 78 IC50/EC50 measurements and silently ignores "
+    "every MIC. `pmic` is -log10(MIC in mol/L), computed in the ingester, and is the "
+    "number to use for whole-cell potency; `pmic_basis` says which unit conversion "
+    "produced it. No row has both. **A censored MIC gets no pmic**: `standard_relation` "
+    "'>' means the compound did not inhibit at the highest concentration tested, so "
+    "those rows are NULL on purpose and counting them as untested is wrong -- they are "
+    "a measured non-result. `assay_condition` (whole_cell rows only) is the growth "
+    "condition read from the assay prose: caseum | intracellular | non_replicating | "
+    "alt_carbon | nutrient_stress | standard_media | unspecified. **`unspecified` is not "
+    "`standard_media`** -- it means the deposit never stated a medium, which is most of "
+    "them, and no condition matches `caseum` in this release at all. `resistant_panel` "
+    "is a separate flag for strain, not medium (MDR or clinical isolates), so a row can "
+    "be both.",
     "compounds": "One row per compound, with properties. Keyed on molecule_chembl_id.",
     "essentiality": "TnSeq calls, one in vitro condition. `essential` is ES or ESD; "
     "`fitness_cost` also includes growth-defect.",
@@ -153,6 +189,36 @@ TABLE_NOTES = {
     "homology": "Human anti-target check: phmmer of each Mtb protein against the reviewed "
     "human proteome, keyed on uniprot_acc. `identity` is a FRACTION (0.48 = 48%); "
     "`close_human_homolog` means identity >= 0.30, a convention of this atlas.",
+    "paralogs": "Functional redundancy: phmmer of each Mtb protein against the Mtb "
+    "proteome itself, keyed on uniprot_acc. Answers 'could a second copy cover for this "
+    "target', which no other table does. **The `close_paralog` flag needs identity >= 0.30 "
+    "AND coverage >= 0.70, deliberately stricter than `close_human_homolog`, which flags "
+    "on identity alone.** The questions differ: a shared domain is already a selectivity "
+    "worry for an off-target, but a backup copy has to be the same protein, not share a "
+    "piece of it. Identity alone would call 2,009 genes redundant including dprE1 (30.8% "
+    "over 37% of the protein) and mmpL3 (31.7% over 21%), neither of which has a backup. "
+    "**Two different 'closest' columns.** `closest_close_gene` is the nearest BACKUP and is "
+    "NULL when there is none, even though relatives exist; `closest_gene` is the nearest "
+    "RELATIVE, ranked by bitscore rather than identity so that a short exact fragment does "
+    "not outrank a full-length near-copy. Self-hits are dropped, and so are pairs of loci "
+    "filing the identical sequence under two accessions -- those are in "
+    "crosswalk.shared_accession and are identity collapse, not paralogy. `identity` and "
+    "`coverage` are FRACTIONS.",
+    "orthologue_structures": "A structure to work from that is NOT of this protein: phmmer "
+    "of each Mtb protein against the 895 Mycobacteriaceae proteins (excluding H37Rv) that "
+    "have a PDB entry, joined to those entries. **Keyed on uniprot_acc for the Mtb side and "
+    "via_acc for the neighbour; one row per (Mtb protein, neighbour's PDB entry), so count "
+    "DISTINCT pdb_id, not rows.** These entries are NOT in the `structures` table and must "
+    "never be added to `n_pdb`: that column answers 'has this protein been solved' and a "
+    "borrowed structure does not make it true. **`relation` carries two claims of very "
+    "different strength.** `same_sequence` means the deposited sequence is identical to the "
+    "Mtb one and merely filed under another accession (CDC 1551, H37Ra, M. bovis) -- the "
+    "structure IS of this protein, and 34 genes the atlas calls structure-less have one. "
+    "`orthologue` means a related mycobacterial protein, mostly M. smegmatis, down to the "
+    "floor of 30% identity over 70% of the query. `identity` and `coverage` are FRACTIONS "
+    "and belong in any answer: whether a 34%-identical structure is useful is the reader's "
+    "judgement, and this table makes no modelling claim. `n_ligands` counts only ligands on "
+    "the neighbour's own chains, the same chain-level rule as `structures`.",
     "drugs": "One row per ChEMBL parent molecule with a TUBERCULOSIS indication. "
     "`pref_name` is UPPER CASE ('ISONIAZID'), so match case-insensitively. "
     "`max_phase_tb` is the highest phase for TB; `max_phase` is for ANY indication, so an "

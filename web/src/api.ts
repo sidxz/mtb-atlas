@@ -36,18 +36,72 @@ export interface TargetSummary {
   required_in_vivo: boolean | null;
   n_pdb: number;
   best_resolution: number | null;
+  /**
+   * A structure to work from that is not of this protein: a mycobacterial
+   * neighbour's entry, reached by homology. Counted apart from `n_pdb`, which
+   * stays the number of entries on this gene's own accession, so a zero there
+   * still means "none of its own".
+   *
+   * `same_sequence_structure` is the stronger claim: an identical sequence
+   * deposited under another accession (CDC 1551, H37Ra, M. bovis), which the
+   * atlas missed only because the key is the H37Rv one.
+   */
+  n_orthologue_pdb: number;
+  n_orthologue_pdb_with_ligand: number;
+  best_orthologue_resolution: number | null;
+  closest_orthologue_gene: string | null;
+  closest_orthologue_organism: string | null;
+  closest_orthologue_identity: number | null;
+  closest_orthologue_coverage: number | null;
+  same_sequence_structure: boolean;
   has_predicted: boolean;
   plddt_mean: number | null;
   n_activities: number;
   n_compounds: number;
   best_pchembl: number | null;
   n_whole_cell: number;
+  /**
+   * ChEMBL's own pchembl_value, which it computes for affinity endpoints only.
+   * It is null on every MIC row, so this covers far fewer genes than
+   * `best_pmic` and is NOT the MIC. Kept because a whole-cell IC50 is real.
+   */
   best_whole_cell_pchembl: number | null;
+  /**
+   * -log10(MIC in mol/L). The whole-cell number a chemist means. Censored
+   * MICs (`> top concentration`) are excluded and counted in `n_mic_censored`,
+   * because "did not inhibit at 128 uM" is not a potency of 128 uM.
+   */
+  best_pmic: number | null;
+  median_pmic: number | null;
+  n_mic: number;
+  n_mic_censored: number;
+  n_resistant_panel: number;
+  whole_cell_conditions: WholeCellCondition[];
+  /** Largest single published assay by distinct compounds. */
+  max_assay_compounds: number;
   chembl_evidence: "direct" | "orthologue" | null;
   in_who_catalogue: boolean;
   n_variants_associated: number;
   n_variants_mappable: number;
   resistance_drugs: string[];
+  /**
+   * Functional redundancy: could a second copy cover for this target?
+   * `close_paralog` is stricter than `close_human_homolog` on purpose — it
+   * needs coverage as well as identity, because a backup has to be the same
+   * protein rather than merely share a domain with it.
+   */
+  has_paralog: boolean;
+  n_paralogs: number;
+  close_paralog: boolean;
+  n_close_paralogs: number;
+  /** The nearest *backup*. Null when relatives exist but none is full-length. */
+  closest_paralog_gene: string | null;
+  closest_paralog_identity: number | null;
+  /** The nearest *relative*, by bitscore. Usually populated even with no backup. */
+  nearest_relative_gene: string | null;
+  nearest_relative_identity: number | null;
+  nearest_relative_coverage: number | null;
+
   /** CRISPRi knockdown. More negative is more vulnerable. */
   vulnerability_index: number | null;
   vi_lower: number | null;
@@ -130,6 +184,28 @@ export interface Structure {
   ligand_ids_elsewhere: string[];
 }
 
+/** One mycobacterial neighbour's PDB entry, with the homology that reached it. */
+export interface OrthologueStructure {
+  via_acc: string;
+  via_gene: string | null;
+  via_organism: string | null;
+  via_taxon: string | null;
+  /** `same_sequence` is the protein itself under another accession; `orthologue` is a relative. */
+  relation: "same_sequence" | "orthologue";
+  identity: number;
+  coverage: number;
+  evalue: number | null;
+  bitscore: number | null;
+  pdb_id: string;
+  title: string | null;
+  method: string | null;
+  resolution: number | null;
+  released: string | null;
+  entity_description: string | null;
+  ligand_ids: string[];
+  n_ligands: number;
+}
+
 export interface ChemblTarget {
   target_id: string;
   target_type: string | null;
@@ -143,6 +219,24 @@ export interface ChemblTarget {
   cluster_size: number | null;
 }
 
+/** The growth condition an MIC was measured under, read from the assay prose. */
+export type AssayCondition =
+  | "caseum"
+  | "intracellular"
+  | "non_replicating"
+  | "alt_carbon"
+  | "nutrient_stress"
+  | "standard_media"
+  /** The deposit named no medium. NOT the same as standard media. */
+  | "unspecified";
+
+export interface WholeCellCondition {
+  condition: AssayCondition;
+  n: number;
+  n_with_pmic: number;
+  best_pmic: number | null;
+}
+
 export interface Activity {
   activity_id: number | null;
   molecule_chembl_id: string | null;
@@ -154,6 +248,14 @@ export interface Activity {
   standard_value: number | null;
   standard_units: string | null;
   pchembl_value: number | null;
+  /** -log10(MIC in mol/L); null for a censored or non-MIC row. */
+  pmic: number | null;
+  /** Which unit conversion produced `pmic`, including the MW if one was used. */
+  pmic_basis: string | null;
+  /** Null on protein assays: a biochemical assay has no growth medium. */
+  assay_condition: AssayCondition | null;
+  /** Strain, not medium: an MDR or clinical-isolate panel. */
+  resistant_panel: boolean;
   assay_chembl_id: string | null;
   assay_description: string | null;
   document_chembl_id: string | null;
@@ -216,6 +318,7 @@ export interface TargetDetail extends TargetSummary {
   is_pseudogene: boolean;
   alphafold: PredictedStructure | null;
   structures: Structure[];
+  orthologue_structures: OrthologueStructure[];
   chembl_targets: ChemblTarget[];
   activities: Activity[];
   whole_cell: Activity[];

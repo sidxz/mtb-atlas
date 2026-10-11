@@ -183,9 +183,7 @@ def census_rows(target_id: str, *, force: bool = False) -> list[dict[str, Any]]:
     )
 
 
-def aggregate_sizes(
-    target_id: str, rows: Iterable[Mapping[str, Any]]
-) -> Iterator[dict[str, Any]]:
+def aggregate_sizes(target_id: str, rows: Iterable[Mapping[str, Any]]) -> Iterator[dict[str, Any]]:
     """One row per assay: distinct compounds, measurements, endpoints, latest year.
 
     Distinct compounds is the number that answers "is there a tractable screen
@@ -596,7 +594,9 @@ def test_whole_cell_mtb_is_phenotypic_and_a_purified_protein_is_biochemical():
         == "biochemical_mtb"
     )
     assert (
-        classify_modality("in vitro assay for ClpP1P2", "PROTEIN COMPLEX", "Mycobacterium tuberculosis")
+        classify_modality(
+            "in vitro assay for ClpP1P2", "PROTEIN COMPLEX", "Mycobacterium tuberculosis"
+        )
         == "biochemical_mtb"
     )
 
@@ -604,7 +604,10 @@ def test_whole_cell_mtb_is_phenotypic_and_a_purified_protein_is_biochemical():
 def test_cytotoxicity_is_read_from_the_target_as_well_as_the_prose():
     assert classify_modality("Cytotoxicity against HepG2 cells", None, None) == "mammalian_cytotox"
     # A cell line target is a mammalian reading whatever the prose says.
-    assert classify_modality("Antiproliferative activity", "CELL-LINE", "Homo sapiens") == "mammalian_cytotox"
+    assert (
+        classify_modality("Antiproliferative activity", "CELL-LINE", "Homo sapiens")
+        == "mammalian_cytotox"
+    )
 
 
 def test_adme_does_not_match_an_antibacterial_assay():
@@ -612,8 +615,15 @@ def test_adme_does_not_match_an_antibacterial_assay():
     HEK viability assay as ADME, which inflated the count from 405 to 1,021."""
     assert classify_modality("Clearance in human liver microsomes", "ADMET", None) == "adme"
     assert classify_modality("Metabolic stability in mouse hepatocytes", None, None) == "adme"
-    assert classify_modality("Growth inhibition of Staphylococcus aureus Newman", "ORGANISM", "Staphylococcus aureus") == "other_pathogen"
-    assert classify_modality("Hemolytic activity against human RBC after 1 hr", None, None) != "adme"
+    assert (
+        classify_modality(
+            "Growth inhibition of Staphylococcus aureus Newman", "ORGANISM", "Staphylococcus aureus"
+        )
+        == "other_pathogen"
+    )
+    assert (
+        classify_modality("Hemolytic activity against human RBC after 1 hr", None, None) != "adme"
+    )
 
 
 def test_in_vivo_efficacy_needs_an_animal_a_readout_and_the_organism():
@@ -636,10 +646,19 @@ def test_stage_prefers_what_the_depositor_stated():
     """PubChem names the stage; ChEMBL leaves it in the prose."""
     assert classify_stage("anything at all", pubchem_type="Confirmatory") == "confirmatory"
     assert classify_stage("anything at all", pubchem_type="Screening") == "primary"
-    assert classify_stage("Counterscreen for inhibitors of the fructose-bisphosphate aldolase") == "counter_screen"
-    assert classify_stage("Fluorescence-based biochemical high throughput confirmation assay") == "confirmatory"
+    assert (
+        classify_stage("Counterscreen for inhibitors of the fructose-bisphosphate aldolase")
+        == "counter_screen"
+    )
+    assert (
+        classify_stage("Fluorescence-based biochemical high throughput confirmation assay")
+        == "confirmatory"
+    )
     assert classify_stage("Cytotoxicity against HepG2 cells") == "profiling"
-    assert classify_stage("Fluorescence-based biochemical primary high throughput screening assay") == "primary"
+    assert (
+        classify_stage("Fluorescence-based biochemical primary high throughput screening assay")
+        == "primary"
+    )
 ```
 
 - [ ] **Step 2: Run it to verify it fails**
@@ -980,9 +999,7 @@ def normalize_campaign_assays(
         organism = target.get("organism")
         target_type = target.get("target_type")
         derived = is_derived(description)
-        modality = (
-            "other" if derived else classify_modality(description, target_type, organism)
-        )
+        modality = "other" if derived else classify_modality(description, target_type, organism)
         rows.append(
             {
                 "stage_id": f"chembl:{assay['assay_chembl_id']}",
@@ -1507,9 +1524,7 @@ def test_results_skip_the_metadata_rows_and_keep_every_outcome():
 
 def test_an_unspecified_outcome_is_null_and_keeps_its_value():
     """No threshold was deposited, so there is no call -- but the number is real."""
-    rows = list(
-        pubchem.normalize_results(FIXTURES / "pubchem_aid_unspecified.csv", "1671170", {})
-    )
+    rows = list(pubchem.normalize_results(FIXTURES / "pubchem_aid_unspecified.csv", "1671170", {}))
     assert [row["outcome"] for row in rows] == [None, None]
     assert rows[0]["endpoint"] == "Percent Effect"
     assert rows[0]["standard_value"] == 4.2
@@ -2401,15 +2416,17 @@ def _pubchem() -> str:
 and register both sources in `SOURCES`:
 
 ```python
-    Source("pubchem", "screens", "evidence", _pubchem),
-    # UniChem ships inside ChEMBL's distribution and moves with it, so the
-    # ChEMBL probe already says when to re-download the mapping.
+(Source("pubchem", "screens", "evidence", _pubchem),)
+# UniChem ships inside ChEMBL's distribution and moves with it, so the
+# ChEMBL probe already says when to re-download the mapping.
+(
     Source(
         "unichem",
         "screen_results",
         "evidence",
         frozen="published with ChEMBL; it moves when chembl does",
     ),
+)
 ```
 
 Add `from .sources import pubchem` to the imports.

@@ -35,10 +35,21 @@ def fetch_raw(*, force: bool = False) -> Fetched:
     return fetch(URL, "src1src22.txt.gz", source=SOURCE, min_interval=0.5, force=force)
 
 
+HEADER = "From src:'1'\tTo src:'22'"
+
+
 def _lines(path: Path) -> Iterator[str]:
     opener = gzip.open if path.suffix == ".gz" else open
     with opener(path, "rt", encoding="utf-8") as handle:
-        next(handle, None)  # the "From src:'1'  To src:'22'" header
+        # The first line is skipped as a header, so a file that lacks one would
+        # lose its first pair silently. Both columns are checked, so a swapped
+        # src order is refused here rather than caught later as a collision.
+        header = next(handle, "").rstrip("\n")
+        if header != HEADER:
+            raise ValueError(
+                f"UniChem header is {header!r}, not {HEADER!r}. Refusing to read a file "
+                "whose first line is not the header, since that line would be dropped."
+            )
         yield from handle
 
 

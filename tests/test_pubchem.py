@@ -55,6 +55,25 @@ def test_unichem_raises_when_a_cid_maps_to_two_chembl_ids(tmp_path):
         unichem.chembl_by_cid(path)
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "CHEMBL6329\t12846578\n",
+        "From src:'22'\tTo src:'1'\nCHEMBL6329\t12846578\n",
+    ],
+    ids=["no header", "swapped header"],
+)
+def test_unichem_refuses_a_file_without_its_header(tmp_path, text):
+    """The first line is skipped as a header. A file that lacks one would lose its
+    first real pair silently, and a swapped column order would surface only by
+    accident, as a collision.
+    """
+    path = tmp_path / "no_header.txt"
+    path.write_text(text, encoding="utf-8")
+    with pytest.raises(ValueError, match="header"):
+        unichem.chembl_by_cid(path)
+
+
 def test_unichem_identical_repeat_is_not_a_collision(tmp_path):
     """The same pair twice changes no attribution, so it is kept rather than raised on."""
     path = tmp_path / "repeat.txt"

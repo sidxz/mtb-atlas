@@ -145,12 +145,15 @@ assay_scale AS (
     GROUP BY 1
 ),
 screen_reach AS (
-    -- Every (gene, campaign) pair where a stage was run on one of the gene's
-    -- direct ChEMBL targets, and whether that is a screen of the gene's *own*
-    -- protein. `own` is NULL-safe on purpose: a stage whose target type is
-    -- unknown is not a confirmed single protein, so it falls on the
-    -- shown-not-counted side. `= 'SINGLE PROTEIN'` and `<> 'SINGLE PROTEIN'` are
-    -- both NULL for it, which drops the stage from both columns without an error.
+    -- Every (gene, campaign) pair, and whether it is a screen of the gene's
+    -- *own* protein. A campaign reaches a gene by one of two routes, because the
+    -- two sources record the target in different places.
+    --
+    -- ChEMBL: a stage run on one of the gene's direct targets. `own` is
+    -- NULL-safe on purpose: a stage whose target type is unknown is not a
+    -- confirmed single protein, so it falls on the shown-not-counted side.
+    -- `= 'SINGLE PROTEIN'` and `<> 'SINGLE PROTEIN'` are both NULL for it, which
+    -- drops the stage from both columns without an error.
     --
     -- `n_active` is cast because a column that is NULL in every row is stored as
     -- JSON, which `sum` refuses, and ChEMBL states no calls: a store with no
@@ -161,6 +164,23 @@ screen_reach AS (
     JOIN screen_stages st ON st.target_chembl_id = gt.target_id
     LEFT JOIN screens sc ON sc.screen_id = st.screen_id
     WHERE gt.evidence = 'direct'
+    UNION ALL
+    -- PubChem: the deposit's own target record, on the campaign. Its stages carry
+    -- no ChEMBL target, so the route above never sees them -- and they are where
+    -- the largest public screens are (ChEMBL files its deposited datasets under
+    -- DATASET documents, which the campaign builder leaves to PubChem). The loci
+    -- were resolved through the crosswalk when the table was built; a shared
+    -- accession reaches every locus that owns it, and `shared_accession` on the
+    -- gene says so, as it does for structures.
+    --
+    -- PubChem has no target type, so the nearest thing to the complex rule is the
+    -- count of targets the deposit names: AID 1671185 lists ClpP1 and ClpP2, which
+    -- is ChEMBL's one PROTEIN COMPLEX. A campaign of several assays names the union
+    -- of theirs, so it errs toward not-own. `n_tested` is the deposit's SID count,
+    -- and a sample is not always a compound (AID 1626: 215,397 SIDs, 215,098 CIDs).
+    SELECT r.rv_id, sc.screen_id, sc.n_tested, sc.n_active::BIGINT, sc.year,
+           len(sc.targets) = 1
+    FROM screens sc, UNNEST(sc.targets) AS u(tg), UNNEST(tg.rv_ids) AS r(rv_id)
 ),
 screen_scale AS (
     -- Whether anyone has screened this protein, which `assay_scale` cannot say
@@ -584,7 +604,9 @@ EMPTY_OPTIONAL: dict[str, str] = {
     " NULL::BOOLEAN AS differential_reported WHERE false",
     # Only the columns `screen_reach` reads: a stand-in that lacks one breaks a store
     # without the table instead of reporting its absence.
-    "screens": "SELECT NULL::VARCHAR AS screen_id, NULL::BIGINT AS year WHERE false",
+    "screens": "SELECT NULL::VARCHAR AS screen_id, NULL::BIGINT AS year,"
+    " NULL::BIGINT AS n_tested, NULL::BIGINT AS n_active,"
+    " CAST([] AS STRUCT(rv_ids VARCHAR[])[]) AS targets WHERE false",
     "screen_stages": "SELECT NULL::VARCHAR AS screen_id, NULL::VARCHAR AS target_chembl_id,"
     " NULL::VARCHAR AS target_type, NULL::BIGINT AS n_tested, NULL::BIGINT AS n_active"
     " WHERE false",

@@ -74,6 +74,19 @@ documents are **synthetic**; the targets are the fixture genes' own:
 | `CHEMBL9100004` | A computed selectivity index: `derived`, `stage = NULL`, modality `other` by assignment. The unclassified-share counters leave it out |
 | `CHEMBL9100005` | Prose no pattern has seen: modality `other`, stage the default `primary`. Reaches no gene |
 
+Five PubChem deposits join them, built through `pubchem.normalize_screens`, `link_targets`
+and `stage_row` from records in PUG-REST's shape. The AIDs (`9000001-9000005`) are
+**synthetic**, and so are their SID counts; the accessions are the fixture genes' own. PubChem
+names its target on the campaign, and its stages carry no ChEMBL target:
+
+| AID | Exercises |
+|---|---|
+| `9000001` | One protein (`P9WIL3`, panD), 12,000 SIDs, every one `Unspecified`: the TrpRS shape. A screen that reaches the gene, with `n_screen_actives` NULL |
+| `9000002` | One UniProt entry two loci share (`A0A089QRB9`: pks3, pks4), with 7 stated actives: both loci carry the screen and the actives, and `shared_accession` says why |
+| `9000003` | Two targets (`P9WPC3`, `P9WPC5`), as AID 1671185 lists ClpP1 and ClpP2: PubChem has no target type, so a deposit naming two proteins is the complex |
+| `9000004` | No `Target` key, as the 12 whole-cell AIDs: reaches no gene. Its stage has no modality, which the unclassified-share counters must not read as `other` |
+| `9000005` | A second deposit on the same protein as `9000001`: two deposits are two screens, so a gene's count is not collapsed to one |
+
 `extra_evidence.json` carries nine real `orthologue_structures` rows, chosen to
 be the three shapes rather than a sample: folC's two `same_sequence` entries
 (the rescue — no structure of its own), mmpL3's three *M. smegmatis* entries

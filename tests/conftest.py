@@ -17,6 +17,7 @@ from atlas.sources import (
     mtbtndb,
     mycobrowser,
     pdb,
+    pubchem,
     resistance,
     uniprot,
     vulnerability,
@@ -283,13 +284,65 @@ def evidence_store(store: Path) -> Path:
         for document, year in (("CHEMBL_DOC1", 2021), ("CHEMBL_DOC2", 2019))
     }
     chembl_screens = chembl.campaign_screens(chembl_stages, stage_activities, documents)
-    chembl_label = {
-        "source": chembl.SOURCE,
-        "source_version": "ChEMBL_37 (2026-05-01)",
-        "retrieved_at": "2026-10-09",
+    # PubChem deposits, in the shape PUG-REST sends. They name their target on the campaign and
+    # not on a stage, and the AIDs are synthetic. Calls are "stated" when any count is above
+    # zero and not every SID is Unspecified, so 9000001 is the TrpRS shape (no cutoff).
+    deposits = [
+        {
+            "AID": aid,
+            "Name": name,
+            "SourceName": "A fixture depositor",
+            "SIDCountAll": 12_000,
+            "SIDCountActive": active,
+            "SIDCountInactive": inactive,
+            "SIDCountInconclusive": 0,
+            "SIDCountUnspecified": 12_000 - active - inactive,
+            **(
+                {"Target": [{"Accession": acc, "Name": acc} for acc in accessions]}
+                if accessions
+                else {}
+            ),
+        }
+        for aid, name, accessions, active, inactive in (
+            # One protein, no cutoff deposited.
+            (9000001, "A biochemical screen of PanD", ["P9WIL3"], 0, 0),
+            # One UniProt entry that two loci share (pks3, pks4), with calls.
+            (9000002, "A biochemical screen of a shared entry", ["A0A089QRB9"], 7, 9_000),
+            # Two proteins, as AID 1671185 lists ClpP1 and ClpP2: the complex.
+            (9000003, "A biochemical screen of a pair", ["P9WPC3", "P9WPC5"], 0, 0),
+            # A whole-cell deposit has no Target key at all.
+            (9000004, "A whole-cell screen", [], 100, 11_000),
+            # A second, separate deposit on the same protein as 9000001.
+            (9000005, "Another biochemical screen of PanD", ["P9WIL3"], 0, 0),
+        )
+    ]
+    rv_by_acc: dict[str, list[str]] = {}
+    for accession, rv_id in read("crosswalk", store=store).project("uniprot_acc, rv_id").fetchall():
+        if accession:
+            rv_by_acc.setdefault(accession, []).append(rv_id)
+    pubchem_screens = pubchem.normalize_screens(deposits)
+    for deposit in pubchem_screens:
+        deposit["targets"] = pubchem.link_targets(deposit["targets"], rv_by_acc)
+    pubchem_stages = [
+        pubchem.stage_row(deposit, deposit["screen_id"]) for deposit in pubchem_screens
+    ]
+    labels = {
+        chembl.SOURCE: {"source_version": "ChEMBL_37 (2026-05-01)", "retrieved_at": "2026-10-09"},
+        pubchem.SOURCE: {"source_version": "E-utilities fixture", "retrieved_at": "2026-10-09"},
     }
-    write_stamped("screens", stamp(chembl_screens, **chembl_label), store=store)
-    write_stamped("screen_stages", stamp(chembl_stages, **chembl_label), store=store)
+    # PubChem's rows first, as in the pipeline: `provenance()` reads the first row.
+    for name, own, extra in (
+        ("screens", pubchem_screens, chembl_screens),
+        ("screen_stages", pubchem_stages, chembl_stages),
+    ):
+        write_stamped(
+            name,
+            [
+                *stamp(own, source=pubchem.SOURCE, **labels[pubchem.SOURCE]),
+                *stamp(extra, source=chembl.SOURCE, **labels[chembl.SOURCE]),
+            ],
+            store=store,
+        )
     write_parquet(
         "essentiality",
         essentiality.normalize(FIXTURES / "dejesus_supplement.zip"),

@@ -241,7 +241,7 @@ def test_a_complex_stage_is_counted_apart_from_the_genes_own_screens(rows: dict)
     paper, and credited to a subunit that would move every one of the gene's own columns."""
     for rv_id in ("Rv2460c", "Rv2461c"):
         assert rows[rv_id]["n_target_screens"] == 0
-        assert rows[rv_id]["n_complex_screens"] == 1
+        assert rows[rv_id]["n_complex_screens"] == 2  # ChEMBL's stage, PubChem's deposit
         assert rows[rv_id]["max_screen_compounds"] is None
         assert rows[rv_id]["latest_screen_year"] is None
 
@@ -267,6 +267,40 @@ def test_a_gene_never_screened_reads_zero_screens_not_null(rows: dict) -> None:
     assert row["max_screen_compounds"] is None
     assert row["n_screen_actives"] is None
     assert row["latest_screen_year"] is None
+
+
+def test_a_pubchem_deposit_names_its_target_on_the_campaign(rows: dict) -> None:
+    """A PubChem stage has no ChEMBL target; the deposit's own target record reaches the gene.
+    Without this route the largest public screens (Pks13, TrpRS, CoaBC: 65,000+ compounds
+    each, all PubChem deposits) would read zero screens. Two deposits on one protein are two
+    screens."""
+    assert rows["Rv3601c"]["n_target_screens"] == 2
+    assert rows["Rv3601c"]["max_screen_compounds"] == 12000
+    assert rows["Rv3601c"]["n_complex_screens"] == 0
+
+
+def test_a_pubchem_deposit_that_stated_no_call_has_null_actives(rows: dict) -> None:
+    """The TrpRS shape: 0 actives beside every SID `Unspecified`. Not a screen that found
+    nothing, and PubChem has no deposit year to give."""
+    assert rows["Rv3601c"]["n_target_screens"] == 2
+    assert rows["Rv3601c"]["n_screen_actives"] is None
+    assert rows["Rv3601c"]["latest_screen_year"] is None
+
+
+def test_stated_actives_reach_every_locus_of_a_shared_accession(rows: dict) -> None:
+    """pks3 and pks4 are one UniProt entry. Both carry the screen, as both carry its structures,
+    and `shared_accession` on the same row says so rather than letting either claim it alone."""
+    for rv_id in ("Rv1180", "Rv1181"):
+        assert rows[rv_id]["n_target_screens"] == 1
+        assert rows[rv_id]["n_screen_actives"] == 7
+        assert rows[rv_id]["shared_accession"] is True
+
+
+def test_a_pubchem_deposit_naming_two_proteins_is_a_complex_screen(rows: dict) -> None:
+    """AID 1671185 lists ClpP1 and ClpP2 as two targets, which is ChEMBL's one PROTEIN COMPLEX.
+    PubChem has no target type, so the number of targets is all there is to tell by."""
+    assert rows["Rv2461c"]["n_target_screens"] == 0
+    assert rows["Rv2460c"]["n_target_screens"] == 0
 
 
 def test_a_screen_of_an_orthologue_is_not_a_screen_of_this_protein(

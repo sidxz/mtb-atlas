@@ -972,8 +972,11 @@ def test_a_download_with_fewer_or_more_sids_than_the_summary_counts_raises(expec
 
 
 def test_a_row_with_no_sid_is_not_counted_as_a_compound():
-    rows = [{**row, "pubchem_sid": None} for row in _unspecified()]
-    with pytest.raises(ValueError, match="AID 1671170"):
+    """Three SIDs are expected; one row has lost its SID, so two are there. Counting the
+    missing one as a SID of its own would make three."""
+    rows = _unspecified()
+    rows[-1] = {**rows[-1], "pubchem_sid": None}
+    with pytest.raises(ValueError, match="AID 1671170.*2.*3"):
         pubchem.check_complete("1671170", rows, 3)
 
 

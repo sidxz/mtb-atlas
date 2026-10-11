@@ -225,9 +225,12 @@ def normalize_screens(summaries: Iterable[Mapping[str, Any]]) -> list[dict[str, 
                 "title": summary.get("Name"),
                 # Stored as given: AID 2060911's is the bare string "11908".
                 "depositor": _required(summary, "SourceName"),
+                # A restatement of `source`, kept because the table is shared. Not ChEMBL's
+                # DATASET document type, which `build_campaigns` excludes. A follow-up removes it.
                 "deposit_kind": "dataset",
                 # The depositor names the library in prose or not at all;
                 # PubChem has no field for it.
+                # Never populated: no source states it. A follow-up removes the column.
                 "library_name": None,
                 "library_size_stated": _library_size(summary),
                 # `LastDataChange` is a revision date, not a deposit year.
@@ -330,8 +333,8 @@ def normalize_results(
 ) -> Iterator[dict[str, Any]]:
     """One row per result row PubChem deposits: a SID, not a compound.
 
-    A CID can appear under several SIDs that disagree (11 CIDs in AID 1626 are
-    `Active` as one SID and `Inconclusive` as another), and a SID can appear
+    A CID can appear under several SIDs that disagree (11 CIDs in AID 1626 do: 8 `Inactive`
+    beside `Inconclusive`, 3 `Active` beside `Inconclusive`), and a SID can appear
     twice (AID 1671170: 65,646 rows over 65,366 SIDs, mostly an `IC50` beside the
     single-point `Percent Effect`). Neither is collapsed here, because the choice
     of which row wins would be silent.

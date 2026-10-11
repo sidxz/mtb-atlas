@@ -208,6 +208,9 @@ def test_the_schema_warns_about_every_screens_trap() -> None:
             "outcome_method",  # PubChem's Method is not a stage
             "project_declared",  # false is not "had no follow-up"
             "licence is per depositor",
+            "`library_name` is NULL on every row",  # dead by construction
+            "NOT ChEMBL's DATASET",  # `deposit_kind` 'dataset' is a PubChem deposit
+            "27,954",  # the 218 Active rows are confined to six campaigns
             "count of ingested campaigns",  # the table is not the universe of campaigns ...
             "1,932 documents",  # ... ChEMBL has this many whole-cell Mtb documents ...
             "977 are candidates",  # ... the build takes this many ...
@@ -220,6 +223,10 @@ def test_the_schema_warns_about_every_screens_trap() -> None:
             "screens.targets",  # PubChem stages have no ChEMBL target: the other route
             "derived",  # an index ChEMBL computed has no funnel position
             "defaults to `primary`",  # `stage`'s fallback, for a description matching nothing
+            "so it has three states",  # `assay_condition` NULL is not 'unspecified'
+            "`unspecified` is not `standard_media`",  # ... and the silence must not become a medium
+            "`strain` mixes organisms",  # H37Rv spellings, host animals and S. aureus in one column
+            "THIS ATLAS",  # a derived row: a ratio the atlas did not make
             "falls back to `other`",  # `modality`'s, and it reads the target record too
         ),
         "screen_results": (
@@ -227,11 +234,15 @@ def test_the_schema_warns_about_every_screens_trap() -> None:
             "outcome IS NULL",  # ... and the filter that is not them
             "not a compound",  # a row is a SID or an activity
             "unmapped",  # NULL molecule_chembl_id is not untested
+            "AID 1626 do: 8",  # the 11 disagreeing CIDs: never active against inactive
+            "depositor-defined",  # `activity_score` has a scale per deposit ...
+            "never order or filter it across `screen_id`s",  # ... so no 'strongest hits'
             "potency flag",  # Active IC50 in an outcome_stated=false campaign: not a hit rate
             "does not read as an `outcome`",  # ChEMBL's free-text calls are kept, not read
             "Not Determined",  # ChEMBL's failed measurement
         ),
         "target_summary": (
+            "genome-wide six genes reach 1,000",  # `max_assay_compounds`: six, not two
             "n_screen_actives",  # a sum over the screens that stated calls
             "n_complex_screens",  # shown, never counted
             "latest_screen_year",  # undated deposits do not count

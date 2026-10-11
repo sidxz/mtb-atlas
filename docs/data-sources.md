@@ -13,6 +13,7 @@ All sources are public. No consortium data, ever.
 | [Mycobrowser](#mycobrowser) | Release 5 (2024-07-11) | **none stated** | Gene universe, annotation |
 | [UniProt](#uniprot) | 2026_03 (2026-09-02) | CC BY 4.0 | Accessions, cross-references |
 | [ChEMBL](#chembl) | ChEMBL_37 (2026-05-01) | CC BY-SA 3.0 | Targets, bioactivity (M1) |
+| [UniChem](#unichem-the-chembl-to-pubchem-bridge) | `unknown`: no release stated, fetched 2026-10-11 | CC BY-SA 3.0, inherited from ChEMBL | ChEMBL to PubChem compound bridge |
 | [RCSB PDB](#rcsb-pdb) | live | CC0 1.0 | Experimental structures (M1) |
 | [AlphaFold DB](#alphafold-db) | v6 (2025-08-24) | CC BY 4.0 | Predicted structures (M1) |
 | [DeJesus 2017](#essentiality-dejesus-2017) | mBio, Table S3 | CC BY 4.0 | Essentiality (M1) |
@@ -337,6 +338,34 @@ site. Every orthologue link therefore records its `identity_level`,
 `evidence = "orthologue"`, never `"direct"`. A direct target always wins: the
 crosswalk attaches orthologue targets only to genes with no Mtb target of their
 own.
+
+## UniChem: the ChEMBL to PubChem bridge
+
+Checked on **2026-10-11** at
+`https://ftp.ebi.ac.uk/pub/databases/chembl/UniChem/data/wholeSourceMapping/src_id1/src1src22.txt.gz`:
+HTTP 200, 22.8 MB gzipped (`Content-Length 22816479`). One header line, then one
+ChEMBL id and one PubChem CID per tab-separated line.
+
+**Licence: CC BY-SA 3.0, inherited.** The file sits in ChEMBL's FTP distribution,
+and ChEMBL's release README states CC BY-SA 3.0. UniChem's own README and `data/`
+directory state no licence, so the licence recorded here is ChEMBL's, not one
+UniChem states itself.
+
+**Why one file.** PubChem keys a screen on CID; ChEMBL keys a compound on
+`molecule_chembl_id`. Without a mapping, a 215,397-compound PubChem screen cannot
+reach a ChEMBL compound. The alternative is a PubChem lookup per compound. This
+file is fetched once and covers the whole mapping. Nothing reads it yet; the
+PubChem ingester will be its first consumer.
+
+**Fan-out, measured on the full file** (2,832,793 pairs, 2,800,246 distinct ChEMBL ids):
+
+- 25,938 ChEMBL ids (0.9%) map to more than one CID. The most is 32 (`CHEMBL1981887`).
+- No CID appears twice. The bridge is keyed on CID for that reason, and
+  `chembl_by_cid` raises if a CID ever maps to two ChEMBL ids, rather than keeping one.
+- Every line has exactly two non-empty fields. The live file has no malformed lines.
+
+The file states no release, so its `source_version` is recorded as `unknown`,
+with its retrieval date.
 
 ## RCSB PDB
 

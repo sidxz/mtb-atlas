@@ -148,11 +148,12 @@ TABLE_NOTES = {
     "is a separate flag for strain, not medium (MDR or clinical isolates), so a row can "
     "be both.",
     "compounds": "One row per compound, with properties. Keyed on molecule_chembl_id.",
-    "assay_sizes": "Per-assay census, every endpoint, unfiltered. Keyed on (target_chembl_id, "
-    "assay_chembl_id). Reach a gene through crosswalk.chembl_targets (unnest it and match "
-    "target_id), never rv_id. `n_compounds` is distinct compounds and `n_measurements` is rows, "
-    "so a re-run is not a second assay. It answers how big an assay was, never how potent a "
-    "hit was: `activities` is the potency table.",
+    "assay_sizes": "Per-assay census keyed on (target_chembl_id, assay_chembl_id): reach a gene "
+    "by unnesting `crosswalk.chembl_targets` and matching `target_id`, never rv_id, and keep "
+    "only entries with `evidence` = `direct`, since an `orthologue` entry is a relative's "
+    "protein. `n_compounds` counts distinct compounds and `n_measurements` counts rows, so a "
+    "re-run is not a second assay. It sizes an assay and never measures potency: `activities` "
+    "is the potency table.",
     "essentiality": "TnSeq calls, one in vitro condition. `essential` is ES or ESD; "
     "`fitness_cost` also includes growth-defect.",
     "conditional_fitness": "Griffin 2011 TnSeq, cholesterol vs glycerol, one row per gene. "

@@ -9,7 +9,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from atlas.sources.chembl import aggregate_sizes
+import pytest
+
+from atlas.sources import chembl
+from atlas.sources.chembl import aggregate_sizes, census_rows
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -37,9 +40,38 @@ def test_aggregate_sizes_stamps_the_target_and_skips_rows_without_an_assay():
 def test_aggregate_sizes_keeps_every_endpoint_the_assay_reported():
     """A screen's percent-effect rows and its IC50 follow-ups are both its own."""
     mixed = [
-        {"assay_chembl_id": "A", "molecule_chembl_id": "M1", "standard_type": "Percent Effect"},
-        {"assay_chembl_id": "A", "molecule_chembl_id": "M2", "standard_type": "IC50"},
+        {
+            "assay_chembl_id": "A",
+            "molecule_chembl_id": "M1",
+            "standard_type": "Percent Effect",
+            "document_year": 2019,
+        },
+        {
+            "assay_chembl_id": "A",
+            "molecule_chembl_id": "M2",
+            "standard_type": "IC50",
+            "document_year": 2023,
+        },
+        {"assay_chembl_id": "B", "molecule_chembl_id": "M1", "standard_type": "IC50"},
     ]
-    row = next(iter(aggregate_sizes("T", mixed)))
-    assert row["endpoint_types"] == ["IC50", "Percent Effect"]
-    assert row["latest_year"] is None
+    rows = {row["assay_chembl_id"]: row for row in aggregate_sizes("T", mixed)}
+    assert rows["A"]["endpoint_types"] == ["IC50", "Percent Effect"]
+    # 2019 comes first, so first-seen or a `<` comparison would answer 2019.
+    assert rows["A"]["latest_year"] == 2023
+    assert rows["B"]["latest_year"] is None
+
+
+def test_census_query_is_unfiltered_and_cached_per_target(monkeypatch: pytest.MonkeyPatch):
+    """The potency filter is the bug the census exists to fix, so it must not come back."""
+    seen: dict = {}
+
+    def fake_pages(endpoint, query, key, dest, *, force):
+        seen.update(query=query, dest=dest, force=force)
+        return []
+
+    monkeypatch.setattr(chembl, "pages", fake_pages)
+    assert census_rows("CHEMBL_T", force=True) == []
+    assert f"only={chembl.CENSUS_FIELDS}" in seen["query"]
+    assert "pchembl_value__isnull" not in seen["query"]
+    assert seen["dest"] == "census/CHEMBL_T"
+    assert seen["force"] is True

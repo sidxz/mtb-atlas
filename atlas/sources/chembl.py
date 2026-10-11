@@ -419,13 +419,21 @@ def classify_modality(
 ) -> str:
     """What this assay measured, from its own target record and its prose.
 
-    The target record is checked before the prose wherever it is decisive: a
-    `CELL-LINE` target is a mammalian reading whatever the sentence says, and
-    an `ORGANISM` target that is not Mtb is another pathogen even when the
-    sentence contains the word "inhibition".
+    The target record is checked before the prose only where it is the more specific
+    claim: a `CELL-LINE` target with no ADME or in-vivo language is a mammalian reading,
+    while an ADME endpoint wins over the cell line it ran in, because a Caco-2
+    permeability assay is ADME. An `ORGANISM` target on a mycobacterium other than
+    *M. tuberculosis* is `other_pathogen` before any prose is read, since "cytotoxicity"
+    or "antitubercular" there describes an NTM study.
     """
     text = description or ""
     organism = organism or ""
+    if (
+        target_type == "ORGANISM"
+        and organism.startswith("Myco")
+        and not organism.startswith("Mycobacterium tuberculosis")
+    ):
+        return "other_pathogen"
     if _ANIMAL.search(text) and _BACTERIAL_READOUT.search(text) and _MTB.search(text):
         return "in_vivo_efficacy"
     if target_type == "ADMET" or _ADME.search(text):
@@ -457,7 +465,8 @@ _PROFILING = re.compile(
 def classify_stage(description: str | None, *, pubchem_type: str | None = None) -> str:
     """Where in the funnel this assay sits.
 
-    `pubchem_type` is the depositor's own word and wins outright when present.
+    `pubchem_type` wins when it is `Confirmatory` or `Screening`, the two values PubChem
+    uses for a stage. Any other value, such as `Summary` or `Other`, falls through to the prose.
     """
     if pubchem_type:
         stated = pubchem_type.strip().lower()

@@ -173,3 +173,35 @@ def test_stage_prefers_what_the_depositor_stated():
         classify_stage("Fluorescence-based biochemical primary high throughput screening assay")
         == "primary"
     )
+
+
+def test_a_non_tuberculosis_mycobacterium_is_other_pathogen_whatever_the_prose():
+    """An NTM study is not a TB study. The depositor's word "antitubercular" does not
+    make a M. avium infection a tuberculosis result, and CLAUDE.md is explicit that
+    nontuberculous mycobacteria are not TB."""
+    assert (
+        classify_modality(
+            "In vitro cytotoxicity against Mycobacterium avium (CIP 103317) was determined",
+            "ORGANISM",
+            "Mycobacterium avium",
+        )
+        == "other_pathogen"
+    )
+    assert (
+        classify_modality(
+            "Antitubercular activity against Mycobacterium avium infected in C57BL/6J mouse "
+            "assessed as reduction in CFU count in lung",
+            "ORGANISM",
+            "Mycobacterium avium",
+        )
+        == "other_pathogen"
+    )
+    # Renamed: M. smegmatis is Mycolicibacterium, which has no "Mycobact" substring.
+    assert (
+        classify_modality(
+            "In vitro cytotoxicity against Mycolicibacterium smegmatis",
+            "ORGANISM",
+            "Mycolicibacterium smegmatis",
+        )
+        == "other_pathogen"
+    )

@@ -108,7 +108,7 @@ def build_evidence(*, force: bool = False) -> list[Path]:
     _say("[evidence] predicted structures (AlphaFold)")
     paths.append(alphafold.build(predicted, retrieved_at=retrieved_at, force=force))
     _say("[evidence] bioactivity (ChEMBL)")
-    paths += chembl.build_bioactivity(targets, retrieved_at=retrieved_at)
+    paths += chembl.build_bioactivity(targets, retrieved_at=retrieved_at, force=force)
     _say("[evidence] essentiality (DeJesus 2017)")
     paths.append(essentiality.build(force=force))
     _say("[evidence] resistance (WHO catalogue)")

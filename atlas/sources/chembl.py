@@ -12,7 +12,7 @@ import json
 import math
 import re
 import sys
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -413,8 +413,10 @@ def annotate_activities(
     return out
 
 
-def build_bioactivity(targets: Iterable[tuple[str, str]], *, retrieved_at: str) -> list[Path]:
-    """Activities and compounds for the targets the crosswalk resolved."""
+def build_bioactivity(
+    targets: Iterable[tuple[str, str]], *, retrieved_at: str, force: bool = False
+) -> list[Path]:
+    """Activities, compounds, and the unfiltered assay census."""
     targets = sorted(set(targets))
     version = release_from_api()
 
@@ -424,6 +426,10 @@ def build_bioactivity(targets: Iterable[tuple[str, str]], *, retrieved_at: str) 
     compounds = molecules(molecule_ids)
     rows = annotate_activities(rows, compounds)
 
+    sizes: list[dict[str, Any]] = []
+    for target_id, _ in targets:
+        sizes += aggregate_sizes(target_id, census_rows(target_id, force=force))
+
     return [
         write_parquet(
             "activities", rows, source=SOURCE, source_version=version, retrieved_at=retrieved_at
@@ -431,7 +437,67 @@ def build_bioactivity(targets: Iterable[tuple[str, str]], *, retrieved_at: str) 
         write_parquet(
             "compounds", compounds, source=SOURCE, source_version=version, retrieved_at=retrieved_at
         ),
+        write_parquet(
+            "assay_sizes", sizes, source=SOURCE, source_version=version, retrieved_at=retrieved_at
+        ),
     ]
+
+
+# --- the assay census: how big was the assay, not how potent was the hit -----
+
+# `activities` carries only rows with a pchembl_value, because that is the
+# potency evidence. A primary screen reports percent inhibition and gets no
+# pchembl, so counting assays or their compounds from that table measures the
+# follow-ups and misses the campaign. ChEMBL files 276,472 of the 296,225
+# activity rows on Mtb protein targets as `Percent Effect`, which carries no
+# pchembl value. The census is the same query without the filter and with only
+# the fields a count needs.
+CENSUS_FIELDS = "assay_chembl_id,molecule_chembl_id,standard_type,document_year"
+
+
+def census_rows(target_id: str, *, force: bool = False) -> list[dict[str, Any]]:
+    """Every activity on one target, unfiltered, cached page by page."""
+    return pages(
+        "activity",
+        f"target_chembl_id={target_id}&only={CENSUS_FIELDS}",
+        "activities",
+        f"census/{target_id}",
+        force=force,
+    )
+
+
+def aggregate_sizes(target_id: str, rows: Iterable[Mapping[str, Any]]) -> Iterator[dict[str, Any]]:
+    """One row per assay: distinct compounds, measurements, endpoints, latest year.
+
+    Distinct compounds is the number that answers "is there a tractable screen
+    here"; measurements is kept beside it because the two differing is normal
+    and their ratio is the only hint that an assay was re-run.
+    """
+    by_assay: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        assay = row.get("assay_chembl_id")
+        if not assay:
+            continue
+        entry = by_assay.setdefault(
+            assay, {"compounds": set(), "types": set(), "measurements": 0, "year": None}
+        )
+        entry["measurements"] += 1
+        if molecule := row.get("molecule_chembl_id"):
+            entry["compounds"].add(molecule)
+        if endpoint := row.get("standard_type"):
+            entry["types"].add(endpoint)
+        year = row.get("document_year")
+        if year is not None and (entry["year"] is None or year > entry["year"]):
+            entry["year"] = year
+    for assay, entry in sorted(by_assay.items()):
+        yield {
+            "target_chembl_id": target_id,
+            "assay_chembl_id": assay,
+            "n_compounds": len(entry["compounds"]),
+            "n_measurements": entry["measurements"],
+            "endpoint_types": sorted(entry["types"]),
+            "latest_year": entry["year"],
+        }
 
 
 # --- TB drugs and clinical candidates ----------------------------------------

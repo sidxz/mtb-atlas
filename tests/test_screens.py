@@ -1,0 +1,45 @@
+"""Campaign-level screening evidence: the census, the classifiers, the tables.
+
+The classifiers read the depositor's own prose, the same standing as
+`classify_condition`, so every case here is a shape seen in the live store.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from atlas.sources.chembl import aggregate_sizes
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def _census() -> list[dict]:
+    return json.loads((FIXTURES / "chembl_assay_census.json").read_text())["activities"]
+
+
+def test_aggregate_sizes_counts_compounds_not_measurements():
+    """One assay run against 400 compounds is one assay; a repeat is not a compound."""
+    sizes = {row["assay_chembl_id"]: row for row in aggregate_sizes("CHEMBL4105939", _census())}
+    assert sizes["CHEMBL4649965"]["n_compounds"] == 4
+    assert sizes["CHEMBL4649965"]["n_measurements"] == 5
+    assert sizes["CHEMBL4649965"]["endpoint_types"] == ["Percent Effect"]
+    assert sizes["CHEMBL4649965"]["latest_year"] == 2021
+
+
+def test_aggregate_sizes_stamps_the_target_and_skips_rows_without_an_assay():
+    rows = list(aggregate_sizes("CHEMBL4105939", _census()))
+    assert {row["target_chembl_id"] for row in rows} == {"CHEMBL4105939"}
+    # A row with no assay id cannot be attributed to an assay, so it is not one.
+    assert len(rows) == 2
+
+
+def test_aggregate_sizes_keeps_every_endpoint_the_assay_reported():
+    """A screen's percent-effect rows and its IC50 follow-ups are both its own."""
+    mixed = [
+        {"assay_chembl_id": "A", "molecule_chembl_id": "M1", "standard_type": "Percent Effect"},
+        {"assay_chembl_id": "A", "molecule_chembl_id": "M2", "standard_type": "IC50"},
+    ]
+    row = next(iter(aggregate_sizes("T", mixed)))
+    assert row["endpoint_types"] == ["IC50", "Percent Effect"]
+    assert row["latest_year"] is None

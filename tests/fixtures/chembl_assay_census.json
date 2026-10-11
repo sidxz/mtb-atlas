@@ -1,0 +1,13 @@
+{
+  "activities": [
+    {"assay_chembl_id": "CHEMBL4649965", "molecule_chembl_id": "CHEMBL1", "standard_type": "Percent Effect", "document_year": 2021},
+    {"assay_chembl_id": "CHEMBL4649965", "molecule_chembl_id": "CHEMBL2", "standard_type": "Percent Effect", "document_year": 2021},
+    {"assay_chembl_id": "CHEMBL4649965", "molecule_chembl_id": "CHEMBL3", "standard_type": "Percent Effect", "document_year": 2021},
+    {"assay_chembl_id": "CHEMBL4649965", "molecule_chembl_id": "CHEMBL4", "standard_type": "Percent Effect", "document_year": 2021},
+    {"assay_chembl_id": "CHEMBL4649965", "molecule_chembl_id": "CHEMBL4", "standard_type": "Percent Effect", "document_year": 2021},
+    {"assay_chembl_id": "CHEMBL9001", "molecule_chembl_id": "CHEMBL1", "standard_type": "IC50", "document_year": 2022},
+    {"assay_chembl_id": "CHEMBL9001", "molecule_chembl_id": "CHEMBL2", "standard_type": "IC50", "document_year": 2022},
+    {"assay_chembl_id": null, "molecule_chembl_id": "CHEMBL5", "standard_type": "IC50", "document_year": 2022}
+  ],
+  "page_meta": {"total_count": 8}
+}

@@ -558,7 +558,7 @@ Modality, funnel stage and the derived-index exclusion. Pure functions, no netwo
 - Test: `tests/test_screens.py`
 
 **Interfaces:**
-- Produces: `MODALITIES: tuple[str, ...]`, `is_derived(description: str | None) -> bool`, `classify_modality(description: str | None, target_type: str | None, organism: str | None) -> str`, `classify_stage(description: str | None, *, pubchem_type: str | None = None) -> str`.
+- Produces: `MODALITIES: tuple[str, ...]`, `is_derived(description: str | None) -> bool`, `classify_modality(description: str | None, target_type: str | None, organism: str | None) -> str`, `classify_stage(description: str | None, *, pubchem_type: str | None = None, modality: str | None = None) -> str`. **Every caller passes `modality`** where it has one: `classify_stage` derives the `profiling` stage from it, which is what stops the two axes drifting apart. With no modality it reads one from the description itself.
 - Vocabulary, fixed here and relied on by Tasks 5–9. `modality`: `phenotypic_mtb`, `biochemical_mtb`, `mammalian_cytotox`, `adme`, `in_vivo_efficacy`, `other_pathogen`, `other`. `stage`: `primary`, `confirmatory`, `counter_screen`, `profiling`.
 
 - [ ] **Step 1: Write the failing test**
@@ -1006,7 +1006,10 @@ def normalize_campaign_assays(
                 "screen_id": f"chembl:{assay['document_chembl_id']}",
                 "assay_chembl_id": assay["assay_chembl_id"],
                 "document_chembl_id": assay["document_chembl_id"],
-                "stage": classify_stage(description),
+                # modality travels with it: `classify_stage` derives `profiling`
+                # from it, so that the two axes cannot drift apart. Passing the
+                # description alone reintroduces the disagreement Task 3 fixed.
+                "stage": classify_stage(description, modality=modality),
                 "modality": modality,
                 "description": description,
                 "target_chembl_id": assay.get("target_chembl_id"),
@@ -1981,7 +1984,12 @@ def build(
                 "screen_id": campaign_of[aid],
                 "assay_chembl_id": None,
                 "document_chembl_id": None,
+                # No modality: a PubChem campaign title names no measurement, so
+                # `classify_stage` reads what it can from the title alone.
                 "stage": classify_stage(screen["title"]),
+                # Left NULL deliberately: the stage rows PubChem gives are
+                # campaign-level, and inventing a modality from a title would be
+                # a label this pipeline made up rather than one it read.
                 "modality": None,
                 "description": screen["title"],
                 "target_chembl_id": None,

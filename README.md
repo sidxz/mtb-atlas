@@ -14,6 +14,8 @@ The questions it exists to answer:
 - Is there an experimental structure? A predicted one? A druggable pocket?
 - What chemical matter hits it, at what potency?
 - Is there a published assay for the protein, or does screening start by building one?
+- Has this protein ever been screened, against how many compounds, and what did those
+  compounds do — including the ones that did nothing?
 - Which resistance mutations are known?
 - What does the protein do, where does it sit, how many papers is it in?
 - Which drugs and clinical candidates act on it, at what phase for TB, and in
@@ -24,18 +26,18 @@ The questions it exists to answer:
 
 ## Status
 
-Eleven milestones are in. Eleven public sources, one store, one app.
+Twelve milestones are in. Fourteen public sources, one store, one app.
 
 ```
 make install      # uv venv + dependencies
-make build        # whole pipeline -> data/store/*.parquet  (~15 min cold)
+make build        # whole pipeline -> data/store/*.parquet  (~15 min cold, and the screens block adds ~24)
 uv run atlas clinical   # the clinical stage alone, then the roll-up
 make api          # FastAPI on :8099
 make web          # the app on :5173
-make check        # has anything released upstream? six requests, seconds
+make check        # has anything released upstream? nine requests, seconds
 make refresh SOURCE=chembl   # re-download one source, rebuild only what it feeds
 make diff         # what that did to the numbers
-make test         # 249 tests against committed fixtures, no network
+make test         # 588 tests against committed fixtures, no network
 ```
 
 | Milestone | Scope | |
@@ -51,6 +53,7 @@ make test         # 249 tests against committed fixtures, no network
 | M8 | Target enablement: vulnerability in a clinical isolate, whether a protein assay exists, and how the protein was produced | ✅ |
 | M9 | The workspace: browse wide or read wide, compound depictions, every number linked to its assay | ✅ |
 | M10 | Upkeep: `check` what released, `refresh` one source, `diff` what it did — scriptable, no LLM | ✅ |
+| M11 | The screening record (store only): campaigns, their stages and every compound tested, inactives included, from ChEMBL's literature and 28 PubChem deposits. Reachable through `/ask`; the API and views are a separate plan | ✅ |
 | — | Beyond the brief: CRISPRi vulnerability, STRING partners, human anti-target, domains | ✅ |
 
 ## What it answers
@@ -79,6 +82,24 @@ Enablement — what it would take to work on one:
 
 accD6 is the case that earns the strain column: −11.45 in H37Rv and −2.27 in
 HN878, confident in both. It would have read as an excellent target.
+
+The screening record, from the first build (2026-10-11):
+
+```
+999 campaigns · 17,530 stages · 5,422,604 compound results
+    27 PubChem campaigns (28 AIDs) · 972 ChEMBL papers
+4,620,129 results are "tested, inactive" · 28,172 active · 37,197 inconclusive
+    737,106 carry no call because the source states none
+71 genes have been screened · 34 of the 489 essential genes among them
+    pks13, CoaBC and TrpRS each read a 65,000-compound screen, through PubChem only
+```
+
+A screen can read zero for a good reason, and the atlas says which. `aspS` has an 8,841-compound
+assay and reads no screen, because that deposit is below the 10,000-substance floor; `pks13`
+reads nine screens and a NULL count of actives, because none of the nine states a call. A
+zero is a count and a NULL is "nobody said". ChEMBL's half covers 972 of the 1,926
+publications that have a whole-cell Mtb assay: it holds the papers in which a compound that
+hits an Mtb protein was also tested on cells, and says so in `docs/data-sources.md`.
 
 From the clinical end:
 
@@ -124,6 +145,9 @@ downloads are cached on disk and gitignored. Every record carries `source`,
 | `trials.parquet` | 1,137 | `nct_id` | ClinicalTrials.gov |
 | `drug_genes.parquet` | 250 | molecule, `rv_id`, link | joined |
 | `trial_drugs.parquet` | 1,183 | `nct_id`, molecule | joined |
+| `screens.parquet` | 999 | `screen_id` | ChEMBL literature, PubChem BioAssay |
+| `screen_stages.parquet` | 17,530 | `stage_id` | ChEMBL literature, PubChem BioAssay |
+| `screen_results.parquet` | 5,422,604 | `stage_id`, `result_tag`, `activity_id` | ChEMBL literature, PubChem BioAssay, UniChem bridge |
 | `target_summary.parquet` | 4,173 | `rv_id` | rolled up |
 
 See [`docs/data-sources.md`](docs/data-sources.md) for every endpoint, format,

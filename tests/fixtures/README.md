@@ -162,6 +162,37 @@ deliberately **absent** from it, because the authors' table names host-panel
 screens differently — that is what proves `annotated = false` and a NULL
 `condition_class` rather than a guessed match.
 
+## `chembl_assay_census.json` and `chembl_campaign_assays.json`
+
+Hand-written in ChEMBL's response shapes, with synthetic ids (`CHEMBL1`...`CHEMBL5`,
+`CHEMBL_DOC1`, `CHEMBL_VERO`). Nothing in either is a real record except the two assay ids
+`CHEMBL4649965` (Pks13) and `CHEMBL4105939` (its target), borrowed so that the first can
+be recognised.
+
+`chembl_assay_census.json` is eight activity rows, as `census_rows` pulls them:
+
+| Assay | Exercises |
+|---|---|
+| `CHEMBL4649965` | Five `Percent Effect` rows over four compounds (`CHEMBL4` twice), so `n_measurements` is 5 and `n_compounds` is 4: assay size counts compounds, not rows |
+| `CHEMBL9001` | Two `IC50` rows, a second assay of a different type beside the first |
+| *(no assay id)* | One row with `assay_chembl_id` null: it belongs to no assay and is not counted into one |
+
+`chembl_campaign_assays.json` is one document (`CHEMBL_DOC1`) carrying the whole ladder as
+seven assays, with the four target records they name (`targets`):
+
+| Assay | Exercises |
+|---|---|
+| `CHEMBL100` | A MABA MIC on the Mtb organism target: `phenotypic_mtb`, strain H37Rv, condition `unspecified`: a method (MABA) is not a medium |
+| `CHEMBL101` | A thioesterase assay on a `SINGLE PROTEIN` Mtb target: `biochemical_mtb` |
+| `CHEMBL102` | Vero cytotoxicity on a `CELL-LINE` target: `mammalian_cytotox`, a `profiling` stage that a target-keyed query cannot see |
+| `CHEMBL103` | Microsomal stability with no target at all: `adme` |
+| `CHEMBL104` | A BALB/c mouse CFU assay with no target: `in_vivo_efficacy`, a `profiling` stage |
+| `CHEMBL105` | *S. aureus* growth inhibition: `other_pathogen`, kept apart from an Mtb MIC |
+| `CHEMBL106` | "Selectivity index, ratio of CC50 ... to MIC": `derived`, `stage` NULL, `modality` `other` by assignment. It is a number and not a measurement |
+
+The first proves assay size counts compounds. The second proves each modality is kept apart
+and that the computed index is flagged rather than read as a seventh measurement.
+
 ## `unichem_src1src22.txt`
 
 The header and the mapped pairs are real rows of UniChem's `src1src22` file,

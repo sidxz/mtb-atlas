@@ -68,9 +68,10 @@ TABLES = (
     "screens",
     "screen_stages",
     # The one big table: millions of rows once built, and `connection()` copies every name
-    # here into the in-memory DuckDB. Its resident size is unmeasured until the first full
-    # build has a table to measure, so it stays in; a pre-aggregated table for the agent, or
-    # another sandbox, is the API plan's decision if the measurement says so. The copy is
+    # here into the in-memory DuckDB. Measured on the first build (2026-10-11, 5,422,604 rows):
+    # the process goes from 0.5 GB to 1.9 GB resident with this table in, and `connection()`
+    # takes 0.4 s. It stays in; a pre-aggregated table for the agent, or another sandbox,
+    # is the API plan's decision if that cost is too much for a long-lived worker. The copy is
     # deliberate and a view cannot replace it: `CREATE VIEW ... AS SELECT * FROM '<parquet>'`
     # reads its file at query time, after `enable_external_access` is off and the
     # configuration locked, and DuckDB 1.5.6 refuses it ("file system operations are

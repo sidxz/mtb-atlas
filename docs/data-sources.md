@@ -314,6 +314,106 @@ seven ATP synthase subunits, `clpP1`, `clpP2` and `rmlC`) had an assay before
 and read zero now, which is why "essential genes with no protein assay" moved
 from 431 to 434 while the census gave eight others their first.
 
+**The screening layer, read back (first build, 2026-10-11).** `max_screen_compounds` is the
+largest screen the gene's own protein was in, from `screens` and `screen_stages`, and 71
+genes read at least one own screen. It sits beside `max_assay_compounds` and the two
+disagree for 18 genes in both directions, because they see different sources. PubChem
+campaigns are not in the ChEMBL census: recA's `max_assay_compounds` is 2,118 and its
+`max_screen_compounds` 293,466 (AID 2221), and five genes (`fba`, `glf`, `recA`, `glmU`,
+`menB`) read 100,000 to 359,484 compounds against 18 to 2,118 in the census. The largest is `fba`
+(Rv0363c), 359,484. The other direction is the layer's own scope: `fadD28` reads 47 against
+369 in the census, because the census counts every assay against the protein and the
+screens layer only the campaigns of publications that also tested whole-cell.
+
+Four of the six genes with a 1,000-compound assay read a screen of that size or more: `dfp`
+(66,942), `pks13` (66,592), `trpS` (65,366) and `recA` (293,466), all reachable **only through
+PubChem**. `aspS` (Rv2572c) and `dnaB` read **zero** screens while the census says 8,841
+and 2,123, and that is correct. AspRS is AID 1671160, 8,841 substances against a
+10,000-substance floor; `dnaB`'s deposit is smaller still. The floor is this atlas's choice
+and 8,841 is close enough to it to look like an oversight, so it is stated here: a deposit
+below it is not in the layer, and `n_target_screens = 0` beside a non-zero
+`max_assay_compounds` means exactly that. 50 genes have a protein assay and no screen, 22 of
+them essential; 2 (`Rv3671c`, `pstP`) have a screen and no protein assay, both PubChem-only.
+Of 489 essential genes, 34 read at least one own screen.
+
+`n_screen_actives` reads NULL on all of `dfp`, `pks13` and `trpS`, and it must not be read as
+zero. **pks13 has nine screens over 66,592 compounds and the actives column reads NULL**:
+none of the nine states an outcome call. Eight are ChEMBL papers, which state none, and the
+ninth is AID 1671178, a deposit whose 66,592 substances are all `Unspecified`. Only 6 genes
+carry a count, and `inhA` (41 screens) and `dprE1` (16) are not among them. `screens.n_active` is
+NULL for two different reasons and the column cannot say which: "no source stated a call"
+(these) and "a campaign of several assays, whose per-stage counts overlap" (`fba`'s project,
+whose stages are on `screen_stages`). Of the
+pks13 deposit's rows, 29 `IC50` rows are `Active` in `screen_results` while the campaign
+reports no outcome (below).
+
+### Screens and hit profiling
+
+A screening campaign is a **document**, not a target, and the unit of the fetch is the
+document: `assay?document_chembl_id__in=…` and `activity?document_chembl_id__in=…`, ten
+documents a request. A target query cannot see a paper's cytotoxicity, microsome and
+animal assays, because ChEMBL files them against `CELL-LINE`, `ADMET` and non-molecular
+targets. Measured 2026-10-11, ChEMBL_37:
+
+| | count |
+|---|---|
+| documents with a whole-cell assay on `CHEMBL360` or `CHEMBL2111188` | 1,932 (954 of the 955 outside the build are publications) |
+| assays in those documents, whatever they were run against | 37,988 |
+| documents the build takes (`activities`' whole-cell documents) | 977 |
+| assays in those 977 | 17,633 |
+| of the 977: publications / datasets and a patent | 972 / 5 |
+| `screens` / `screen_stages` / `screen_results` rows from ChEMBL | 972 / 17,502 / 144,826 |
+
+**The ChEMBL half is a subset, and the subset is set by an upstream choice.** The
+candidate documents are read from `activities`, whose whole-cell half is pulled
+compound-first, for compounds that already have a protein-level pChEMBL value
+(`whole_cell_activities`: a whole-cell number belongs on a gene only through such a
+compound). So a paper that measured MICs on compounds nobody ever assayed against a
+protein is not a candidate: 955 documents, 954 of them publications with 3,990 whole-cell
+assays, are in no campaign. Nor is a paper with biochemical assays and no MIC. Reading it
+the wrong way round — "every ChEMBL screening campaign is here" — is the mistake to avoid.
+The 38,335 assays (on 1,949 documents) the design spec quotes are this wider universe;
+37,988 over 1,932 today. They are not what the build holds, and the 11,686 assays on Mtb
+targets are not reproducible against the 977 either (6,822 of the 17,502 stages name an
+*M. tuberculosis* target).
+
+**Five candidates are not publications, and only one of them reaches PubChem.**
+
+| Document | Type | Activities in ChEMBL | In the store |
+|---|---|---|---|
+| `CHEMBL3988442` Dundee Small-Polar-MMV library | DATASET | 1,413,047 | via PubChem: of AIDs 1671154 to 1671185, 8 are tagged Mtb and reach the floor |
+| `CHEMBL3832761` MMV Pathogen Box | DATASET | 3,857 | no |
+| `CHEMBL2095176` GSK Tuberculosis Screening Data | DATASET | 1,406 | no |
+| `CHEMBL2094260` Malaria Box Tuberculosis Screening Data | DATASET | 966 | no |
+| `CHEMBL3714722` an antimicrobial patent | PATENT | 47 | no |
+
+The campaign builder keeps publications only, so the four small ones are skipped, and none is
+among the 28 AIDs that would bring it in through PubChem (all 8 ChEMBL-deposited AIDs among
+them are Dundee's). The code's old log line called all five "left to PubChem". They are
+absent, not zero.
+
+**Two caveats travel with every row.** `screens.stages_source` is `from_prose` on all 999
+campaigns: ChEMBL files the funnel position in the assay description, so `stage` and
+`modality` are this atlas's reading of prose, not a ChEMBL field. And `derived` marks 986
+stages that are a computed ratio (a selectivity index) of two other assays: a number, not a
+measurement, with `stage` NULL and `modality` `other` by assignment. `atlas summary` prints
+how much the classifiers fall back: 1,266 of 16,516 non-derived stages with a modality are
+`other` (7.7%) and 12,719 of 16,544 sit at the default stage `primary` (76.9%). The second
+starts high because genuine primaries are most of the base; it is a signal only as a change
+between builds.
+
+ChEMBL states **no outcome call**, on any of the 144,826 result rows, so `screen_results.outcome`
+is NULL on all of them and `screens.outcome_stated` is false on all 972. `activity_comment` is
+kept (6,265 rows) and is not read as one. Every ChEMBL campaign's `depositor` is the string
+`Scientific Literature`, which is ChEMBL's own label and not a licence.
+
+**Hit profiling is coverage, not a score.** Of the 23,730 compounds in these campaigns,
+9,602 have a tier beyond potency (mammalian cytotoxicity, ADME or an animal model) and 12,449
+have potency only, 10,695 of them a whole-cell MIC and nothing else. 199 publications report
+both a protein assay and a whole-cell MIC (171 with the protein stage on a `SINGLE PROTEIN`
+target), 141 of those also a profiling tier. Having reported both is not target
+deconvolution, and nothing here ranks, weights or combines a tier.
+
 ### The orthologue bridge
 
 MmpL3 is among the most-pursued targets in TB drug discovery and has **no Mtb
@@ -373,6 +473,20 @@ reads it, keeping only the CIDs the screens contain rather than all 2.8M pairs.
 The file states no release, so its `source_version` is recorded as `unknown`,
 with its retrieval date.
 
+**Coverage, measured on the first build.** 4,705,197 of the 5,277,778 PubChem result rows
+(89.2%) carry a `molecule_chembl_id`, and 456,662 of the 818,532 distinct CIDs (55.8%) map. It
+depends on the deposit: 96.6% of AID 1626's rows (208,082 of 215,397) against 27.8% of AID
+1949's and 9.6% of AID 2060911's (9,621 of 100,628), whose compounds are not in ChEMBL. A row
+with no mapping is still a result and is still a tested compound; it cannot be reached from a
+ChEMBL compound page.
+
+**`atlas check` reports UniChem as `unknown`, and will for ever until a small follow-up is
+done. That is not neglect.** It is not `frozen`, because it moves independently of ChEMBL
+(`Last-Modified` 2026-10-10 against ChEMBL 37's 2026-05-01), and no table stores its
+version to probe against: `screen_results` carries PubChem's label. The real fix is to
+compare the live `Last-Modified` with the one `fetch.py` already keeps in the `.meta.json`
+sidecar, roughly 50 lines, because `check` reads a stored version from a table only.
+
 ## PubChem BioAssay
 
 The only public source that states an outcome per compound at screening scale.
@@ -408,8 +522,10 @@ screens. The taxonomy tag is the only Mtb test, since the summary carries no tax
   about 2,000 rows.
 
 All of this was checked on 2026-10-11, before PubChem began refusing requests from
-the build machine that day. The first full build is pending, and `data/raw/pubchem/`
-is empty until it runs.
+the build machine that day, and it was then built end to end the same day. The 28 downloads
+are 591 MB in `data/raw/pubchem/results/` (the largest, AID 434955, 47 MB); the whole PubChem
+half of the build is 59 requests plus 8 RefSeq lookups at UniProt, and PubChem answered none
+with a 429. See *What the first build found* below for the numbers.
 
 **`SIDCountActive: 0` is not a finding.** PubChem's summary reports 0 actives for
 AID 1671170 (Mt-TrpRS, 65,366 SIDs), which read literally is a screen that found
@@ -445,22 +561,106 @@ campaigns declare one, and the other 10 declare nothing, which is not the same a
 having had no follow-up. A project is one `screens` row named for its lowest member
 AID. On 2026-10-11, AIDs 588335 and 588726 both reach 10,000 SIDs and share one.
 Its `n_tested` is the distinct SIDs across its assays, not the sum, which would count a
-library screened twice as two libraries; its call counts (`n_active` and the rest) are
+library screened twice as two libraries; its call counts (`n_active`, `n_inactive`, `n_inconclusive`) are
 NULL, because a SID called active in one assay and inactive in the next belongs to
-both counts or to a rule this pipeline would have to invent. Each assay's own figures
-are on `screen_stages`.
+both counts or to a rule this pipeline would have to invent. `n_unspecified` is NULL too,
+with one exception: where every stage reports all its own SIDs `Unspecified`, the campaign's
+`n_unspecified` equals its `n_tested` with no rule needed, as for a campaign of one assay.
+Each assay's own figures are on `screen_stages`. In the first build the only project of
+several assays is 588335 (stages 588726, the primary, and 588335, the counter-screen); its
+distinct SIDs are 359,484, the same as its larger stage's, because the counter-screen's
+356,407 are a subset.
 PubChem does not state the funnel stage: its `Method` is how the outcome was called
 (AID 1626, the 215,397-SID primary screen, says `confirmatory`), so the stage is read
 from the title and `stages_source` is `from_prose`.
 
 **Where a campaign comes from.** One campaign has exactly one source. A ChEMBL
 document that is a publication is ingested from ChEMBL; a deposited dataset (ChEMBL
-files Dundee's 1,413,047-row library as a `DATASET`) is ingested from PubChem as
-AIDs 1671154 to 1671185. Each row carries its own `source`, `source_version` and
+files Dundee's 1,413,047-row library as a `DATASET`) is ingested from PubChem, where 8
+of its AIDs 1671154 to 1671185 are tagged Mtb and reach the floor. AspRS, AID 1671160, is
+an Mtb target left out, at 8,841 substances. Each row carries its own `source`, `source_version` and
 `retrieved_at`, because `screens` is fed by both. ChEMBL's `activity_comment` is kept
 on its `screen_results` rows (NULL on PubChem's) and is not read as an outcome: in a
 30-document sample of whole-cell publications, 122 of 4,286 activities had one
 (`Not Determined` 116, `Non-toxic` 6), and every one had no value.
+
+### What the first build found
+
+Built 2026-10-11 against live ChEMBL_37, PubChem, UniProt and EBI; every figure below is
+read back from the store.
+
+| | |
+|---|---|
+| `screens` | 999 campaigns: 27 PubChem (the 28 AIDs, 588335 and 588726 being one declared project) and 972 ChEMBL papers |
+| `screen_stages` | 17,530: 28 PubChem, 17,502 ChEMBL |
+| `screen_results` | 5,422,604 rows: 5,277,778 PubChem, 144,826 ChEMBL, 5,422,604 distinct `(stage_id, result_tag, activity_id)` keys |
+| compounds | 479,023 distinct ChEMBL ids; 818,532 distinct CIDs on the PubChem rows |
+| campaigns that state an outcome | 19 of 27 PubChem; **none** of the 972 ChEMBL papers |
+| substances in the PubChem deposits | 4,883,972 summed over the 27 campaigns' `n_tested` |
+
+The outcome split, over all 5,422,604 rows: **4,620,129 `inactive`** (85.2%), 737,106 with no
+call stated (13.6%: 592,280 PubChem and all 144,826 ChEMBL), 37,197 `inconclusive` and 28,172
+`active`. AID 1626 is as the summary says: 209,843 inactive, 2,044 active, 3,510 inconclusive.
+
+**`outcome` can be non-NULL inside a campaign that states no outcome.** The eight
+ChEMBL-deposited AIDs report every substance `Unspecified` at the summary level
+(`outcome_stated` false, `n_active` NULL), yet 218 of their `IC50` rows are `Active` in
+PubChem's own table. Row level is faithful to what PubChem states for that row and campaign
+level is the veto the summary's `SIDCountUnspecified` gives; the two are not reconciled.
+`count(*) WHERE outcome = 'active'` therefore returns 28,172, of which 27,954 are in campaigns
+that state their calls. The other 592,280 rows of those eight are `Percent Effect` (584,494)
+and `IC50` (7,786) rows with no call.
+
+**Every check held on the real data.** The completeness check (distinct SIDs equal
+`SIDCountAll`) passed for all 28 AIDs, not only the two verified before; both key assertions
+passed (`screen_results` on `(stage_id, result_tag, activity_id)`, and the `screens` and
+`screen_stages` ids); no stage, result or campaign is orphaned; every `n_stages` matches. A
+rebuild on a warm cache is byte-identical for `screens` and `screen_stages`.
+
+**Targets: 14 of the 18 reached a locus.** The 18 target accessions across 16 AIDs are 7
+UniProt, 8 RefSeq `NP_` and 3 other (2 EMBL, 1 PDB chain). All 8 RefSeq resolved through
+UniProt, 6 of the 7 UniProt ones joined the crosswalk directly, and the 3 others reach
+nothing, as expected. The seventh UniProt one is a finding: AID 493033 (salicylate synthase
+MbtI, 104,781 SIDs) names `P9WFX0`, UniProt's CDC 1551 entry, while the crosswalk holds
+`P9WFX1` for Rv2386c. It reaches no locus and is recorded unmatched with its accession and
+name; `mbtI` reads no PubChem screen, and the sibling accession is not guessed. The four
+unmatched are CCE37082 (`bioA`), CAB06100 (`fadD28`), `2A88_A` (a PDB chain of pantothenate
+synthetase) and `P9WFX0`.
+
+**One campaign, one source.** No ChEMBL publication is also a PubChem AID: the eight
+ChEMBL-deposited AIDs all belong to the one DATASET document the builder skips
+(`CHEMBL3988442`), no ChEMBL stage description names an AID or PubChem, none equals a PubChem
+title, and no stage with 20 or more compounds has 90% of them in one PubChem AID. The last is
+a heuristic, not a proof, for the 20 AIDs not deposited by ChEMBL; 7,138 of the 17,502
+ChEMBL stages share some compound with a PubChem AID, which is expected of follow-ups of a
+screen.
+
+**What the roll-up reads.** 71 genes read an own screen (11 of them a PubChem one), 14 read a
+complex screen and 12 of those read nothing else (`gyrA` and `rmlD` read both); the largest
+`max_screen_compounds` is 359,484. `Rv3800c` (pks13), `Rv3336c` (trpS) and `Rv1391` (dfp) read
+9, 1 and 1 own screens, all three of the large ones reachable only through PubChem.
+`Rv2572c` (aspS) reads 0, below the floor (see *Screened, or merely studied?*). The ClpP
+pair, `Rv2461c` and `Rv2460c`, read 0 own screens and 2 complex ones, with
+`latest_screen_year` and `n_screen_actives` NULL. The reference genes: dprE1 16 own screens
+(largest 71 compounds), inhA 41 (76), mmpL3 and groEL2 none.
+
+`max_screen_compounds` **mixes units**: the PubChem branch takes the campaign's `n_tested`
+(distinct SIDs) and the ChEMBL branch the stage's (distinct compounds in the assay). For a
+project of several PubChem assays the two are different quantities. In the first build the
+one such project (`fba`) has both equal to 359,484, so no number moves, but a later one
+could. `latest_screen_year` is NULL for a gene whose only screens are PubChem's: the summary
+carries no deposit year.
+
+**Cost.** 1,430 s cold (ChEMBL's campaign fetch 1,272 s, PubChem 158 s); 60 s warm. The raw cache
+grew by 669 MB (PubChem 591, ChEMBL campaigns 56, UniChem 22) to 1.1 GB, and the store from 19
+MB to 136 MB, of which `screen_results.parquet` is 122 MB. Peak resident size is 3.45 GB
+cold (2.8 GB at the end of the PubChem write, 412 MB for the ChEMBL fetch) and 3.15 GB
+warm. Parsing all 28 CSVs in Python peaks at 278 MB, so the rest is DuckDB typing the
+spooled newline-delimited JSON as it writes the Parquet (one row is 470 bytes, so about 2.5
+GB on disk for 5.4M rows, estimated and not measured): streaming per AID would not lower it. The `/ask` sandbox copies every table into memory:
+with `screen_results` its resident size is 1.9 GB (+1.87 GB over the process), without it 0.5 GB,
+and `connection()` takes 0.4 s. Whether that is acceptable for a long-lived API worker is the
+API plan's decision.
 
 ### Licence
 
@@ -479,8 +679,12 @@ public domain and then carves PubChem out by name:
 `screens.depositor` is recorded on every campaign and no blanket licence is claimed.
 The pipeline fetches at build time and the raw downloads (`data/raw`) are gitignored,
 so none is committed. The normalized per-SID outcomes are another matter: the store
-holds them and the API and UI serve them, with the depositor recorded on every campaign
-and no blanket licence claimed. `depositor` is stored as PubChem gives it and is not
+holds them, with the depositor recorded on every campaign and no blanket licence claimed.
+Today they are reachable through `/ask` only: `screen_results` and `screen_stages` are in
+`atlas/agent.py` and the ingesters, not in `atlas/api.py` or `web/src`, and the API
+endpoints and the Screens and Hit profiling views are a separate plan. Whether serving
+them to a browser is compatible with every depositor's terms is a question to answer then,
+not one this note settles. `depositor` is stored as PubChem gives it and is not
 resolved to a licence: AID 2060911's is the bare string `11908`.
 
 ## RCSB PDB

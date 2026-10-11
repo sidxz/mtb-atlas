@@ -544,8 +544,10 @@ def classify_stage(
 #
 # A campaign's cytotoxicity, microsome and animal assays are filed against
 # CELL-LINE, ADMET and non-molecular targets, so a target-keyed query cannot
-# see them: these documents hold 11,686 assays on Mtb targets and 38,335 in
-# total. The document is therefore the unit of the second fetch.
+# see them: the documents with whole-cell Mtb data hold 11,686 assays on Mtb targets and
+# 38,335 in total (1,949 documents when the spec was written, 37,988 over 1,932 now). The
+# build takes the 977 that `activities` holds, with 17,633 assays. The document is
+# therefore the unit of the second fetch.
 #
 # Only publications are campaigns here. ChEMBL also files whole-cell activity
 # under DATASET documents, which are deposited screening libraries rather than

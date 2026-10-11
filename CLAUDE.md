@@ -12,7 +12,7 @@ not go in the pipeline.
 
 ```bash
 make install          # uv venv + dependencies (also: uv pip install -e '.[dev]')
-make build            # run the pipeline -> data/store/*.parquet  (~75 s cold, seconds warm)
+make build            # run the pipeline -> data/store/*.parquet  (~75 s cold before the screens block, seconds warm)
 make build-force      # ignore the raw cache and re-download (picks up upstream releases)
 make summary          # row counts and conflict counts from the crosswalk
 make test             # pytest, fixtures only, no network
@@ -21,7 +21,7 @@ make fmt              # ruff format
 make api / make web   # FastAPI on :8099, the app on :5173
 uv run atlas clinical # rebuild just the clinical stage (drugs, trials, links) and the roll-up
 
-make check                    # has anything released upstream? six requests, seconds
+make check                    # has anything released upstream? nine requests, seconds
 make refresh SOURCE=chembl    # re-download one source, rebuild only what it feeds
 make diff                     # what that did to the numbers
 ```
@@ -285,6 +285,65 @@ This is the rule that outranks completeness.
   match of a cleaned intervention name. Other names are a fallback only,
   because sponsors list drug classes there, and a name two molecules share
   links neither. Studies of nontuberculous mycobacteria are not TB trials.
+- **A screen has a denominator, and the denominator is what makes a zero
+  provable.** `screen_results` holds the compounds that did nothing --
+  4,620,129 `inactive` rows, 209,843 of them AID 1626's -- so "tested and
+  inactive" is a real answer. Measured on the first build (2026-10-11), three
+  rules keep it honest. **An outcome call is recorded only where the source
+  states one**: ChEMBL files values and no calls (none of its 144,826 rows
+  carries an outcome), and the eight Dundee/GHDDI AIDs file 584,494
+  percent-effect rows and 7,786 IC50 rows with no cutoff, so `outcome` is NULL
+  there and a threshold this pipeline picked would be this pipeline's finding.
+  Row level can still say more than campaign level: 218 IC50 rows in those AIDs
+  are `Active` in PubChem's own table while the campaign states no outcome.
+  That is what PubChem states of those rows, and the two are not reconciled.
+  **`n_active = 0` is never written where no call was stated** -- PubChem's own
+  summary endpoint reports 0 actives for AID 1671170, a 65,366-compound screen
+  that simply has no threshold, which reads as a screen that found nothing.
+  **`n_tested` is the deposited set, not the screened library**: AID 1533
+  states 200,000 screened and deposits 158,970, AID 2060911 states 100,639 and
+  deposits 93,270; the prose figure lives in `library_size_stated` and the two
+  are never summed.
+- **`n_screen_actives` NULL is not zero, and it is the most misreadable number
+  in the layer.** pks13 has nine screens over 66,592 compounds and the actives
+  column reads NULL: none of the nine states a call (eight are ChEMBL papers,
+  the ninth is AID 1671178 with every substance `Unspecified`). Only six genes
+  carry a count; inhA, with 41 screens, does not. `screens.n_active` is NULL
+  for a second reason as well, a campaign of several assays whose per-stage
+  counts overlap (`fba`), so the column cannot say which NULL it is.
+- **The layer has a floor and a scope, and a zero screen can be either.** PubChem
+  deposits enter at 10,000 substances, this atlas's choice. `aspS` has an
+  8,841-compound assay (AID 1671160) and reads `n_target_screens = 0` beside a
+  non-zero `max_assay_compounds`: the deposit is below the floor, so it is not
+  here, and 8,841 is close enough to look like an oversight. The ChEMBL half is
+  a subset by construction: its candidate documents come from `activities`,
+  whose whole-cell rows are pulled only for compounds with a protein-level pChEMBL
+  value, so 972 publications are in and 954 publications with a whole-cell Mtb
+  assay are not. Four of the five non-publication candidates (GSK's TB set, the
+  Malaria and Pathogen Boxes, a patent) reach neither source. 50 genes have a
+  protein assay and no screen. An absent campaign is not a campaign that found
+  nothing.
+- **A campaign reaches a gene through a stage on that gene's own protein, and
+  nothing else.** `SINGLE PROTEIN` only, the rule `n_complex_drugs` already
+  follows: the ClpP1P2 target maps to both `clpP1` and `clpP2`, so counting
+  complexes hands each subunit a 68,611-compound screen of the pair; both read
+  0 own screens and 2 complex ones. For PubChem, which has no target type, a
+  deposit naming two proteins is the complex. A target accession must reach a
+  locus or be recorded unmatched, never guessed: 14 of the 18 across 16 AIDs
+  did, and AID 493033 names `P9WFX0`, the CDC 1551 entry, where the crosswalk has
+  `P9WFX1`, so mbtI reads no PubChem screen. The 199 publications that report
+  both a protein assay and a whole-cell MIC have reported both -- that is not
+  target deconvolution, and calling it that would invent the resistant-mutant
+  experiment nobody deposited.
+- **Hit profiling is coverage, not a score.** Of 23,730 compounds in the ChEMBL
+  campaigns, 9,602 have a tier beyond potency (cytotoxicity, ADME, animal) and
+  12,449 have potency only, 10,695 of them a MIC and nothing else, which is the
+  answer and not a low grade. No column is ranked, weighted or combined with
+  another. A derived selectivity index is labelled `derived`: ChEMBL computes
+  it from two other rows, so it is a number but not a measurement.
+- **The bridge is incomplete, and a gap is recorded rather than patched.**
+  UniChem gives 89.2% of PubChem rows a ChEMBL id (96.6% for AID 1626, 9.6% for
+  AID 2060911). A compound with no mapping was still tested.
 
 ## Validation targets
 
@@ -331,12 +390,22 @@ negative; `max_phase_tb` is not `max_phase`; a `who_resistance` link is not a
 target), because a model that writes a plausible wrong join gets silent
 nonsense rather than an error.
 
+The sandbox copies every table into memory, and `screen_results` (5.4M rows,
+122 MB of Parquet) is the one that matters: the process goes from 0.5 GB to
+1.9 GB resident with it, and `connection()` takes 0.4 s. A pre-aggregated
+table for the agent, or a different sandbox, is the API plan's call; a view
+cannot replace the copy, because the lock lands before it would be resolved.
+
 ## Querying it
 
 Four ways in, and they all read the same store: the genome canvas, the drugs
 and trials view, `/search` over every object at once, and the agent. A new kind
 of evidence is not finished until the agent's schema carries its trap, because
 that is the only surface where a wrong join is silent.
+
+The screening tables are reachable through the agent today and nowhere else:
+`screen_results` and `screen_stages` are not in `atlas/api.py` or `web/src`.
+The Screens and Hit profiling views are a separate plan.
 
 **The genome view has two states, and the point is that they are different.**
 With nothing selected the gene table takes the whole width — 15 columns,

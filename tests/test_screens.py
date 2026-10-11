@@ -205,3 +205,33 @@ def test_a_non_tuberculosis_mycobacterium_is_other_pathogen_whatever_the_prose()
         )
         == "other_pathogen"
     )
+
+
+def test_bcg_is_phenotypic_mtb_because_it_is_in_the_complex():
+    """BCG is *M. bovis*, a member of the M. tuberculosis complex and not a nontuberculous
+    mycobacterium, so the NTM guard must not catch it. The 396 BCG and bovis-variant
+    phenotypic assays keep their label; `target_organism` is what separates BCG from
+    H37Rv downstream."""
+    assert (
+        classify_modality(
+            "In vitro minimum inhibitory concentration against Mycobacterium tuberculosis",
+            "ORGANISM",
+            "Mycobacterium tuberculosis variant bovis BCG",
+        )
+        == "phenotypic_mtb"
+    )
+
+
+def test_a_mouse_host_target_is_efficacy_not_other_pathogen():
+    """ChEMBL files a mouse infection study against the mouse, so the target record is
+    Mus musculus and not Mtb. An organism-first rule would relabel every such study
+    other_pathogen. The prose names the animal, the CFU readout and the organism."""
+    assert (
+        classify_modality(
+            "Reduction in body weight of C3H mouse infected with 10^6 CFU of Mycobacterium "
+            "tuberculosis H37Rv assessed as CFU count in lung",
+            "ORGANISM",
+            "Mus musculus",
+        )
+        == "in_vivo_efficacy"
+    )

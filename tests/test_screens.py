@@ -1350,6 +1350,28 @@ def test_a_download_short_of_its_sids_stops_the_build_and_writes_nothing(monkeyp
     assert not env["store"].exists()
 
 
+def test_a_pubchem_row_listed_twice_stops_the_build_and_writes_nothing(monkeypatch, tmp_path):
+    """The last row of AID 1626's file appears twice: the same tag, so the same row, and
+    the same SID, so the completeness check cannot see it. Only the key can."""
+    from atlas.sources import pubchem
+
+    env = _fake_pubchem(monkeypatch, tmp_path)
+    lines = (FIXTURES / "pubchem_aid_results.csv").read_text().splitlines()
+    doubled = tmp_path / "doubled.csv"
+    doubled.write_text("\n".join([*lines, lines[-1]]) + "\n")
+    real = pubchem.fetch_results
+    monkeypatch.setattr(
+        pubchem,
+        "fetch_results",
+        lambda aid, *, force=False: _Downloaded(doubled) if aid == "1626" else real(aid),
+    )
+    with pytest.raises(ValueError, match=r"repeats 1 time.*pubchem:1626"):
+        pubchem.build(
+            retrieved_at="2026-10-11", bridge=env["bridge"], rv_by_acc={}, store=env["store"]
+        )
+    assert not env["store"].exists()
+
+
 def test_a_chembl_activity_listed_twice_stops_the_build(monkeypatch, tmp_path):
     from atlas.sources import pubchem
 

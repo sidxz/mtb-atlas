@@ -22,3 +22,6 @@ poc/data/
 web/node_modules/
 web/dist/
 *.tsbuildinfo
+
+# Worktrees for isolated feature work (see docs/superpowers/)
+.claude/worktrees/

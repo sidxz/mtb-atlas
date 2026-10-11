@@ -1,7 +1,7 @@
 """Has anything moved upstream, and what has to be rebuilt if it has.
 
 `make build` on a warm cache is a no-op and `make build-force` re-downloads
-everything -- including four paper supplements and a WHO catalogue that cannot
+everything -- including the paper supplements and the WHO catalogue that cannot
 have changed. Neither answers the question actually worth asking, which is
 whether any source has released since the store was built.
 
@@ -15,13 +15,15 @@ that would be actively misleading.
 
 Sources that cannot move are marked frozen rather than left unknown: a paper's
 supplementary table is the same file forever, so a permanent question mark
-beside four of them would be noise that trains you to ignore the report.
+beside each of them would be noise that trains you to ignore the report.
 
 There is one deliberate permanent `unknown`, UniChem. It can move, so it cannot
 be frozen, and no table stores a version of it, so it cannot be probed; it is
 registered so that `refresh unichem` works, shows no stored version (the table's
-belongs to PubChem), and says why on its row. Every other `unknown` is a probe
-that failed, which is a reason to look.
+belongs to PubChem), and says why on its row. Every other `unknown` is either a
+probe that failed, which is a reason to look, or a probe that was not run: RCSB
+and the orthologue structures replay a whole search, so they wait for
+`--expensive`.
 """
 
 from __future__ import annotations

@@ -190,8 +190,9 @@ def test_the_schema_warns_about_every_screens_trap() -> None:
             "n_stages > 1",  # ... and a campaign of several assays is the second NULL
             "0 for AID 1626",  # n_unspecified is PubChem's own count, not n_tested
             "lowest member",  # a declared project is ONE row, named for it
-            "`aid` is NULL on a project row",  # so `WHERE aid = ...` misses a declared project ...
-            "stage_id = 'pubchem:<AID>'",  # ... and an AID reaches its campaign this way
+            "`aid` is NULL on every ChEMBL row and on a campaign of several assays",
+            "keeps its `aid`",  # a project with one ingested assay does (see campaign_row)
+            "stage_id = 'pubchem:<AID>'",  # and any AID reaches its campaign this way
             "library_size_stated",  # the depositor's figure is not n_tested
             "outcome_method",  # PubChem's Method is not a stage
             "project_declared",  # false is not "had no follow-up"

@@ -135,9 +135,11 @@ def fetch_aids(*, force: bool = False) -> list[str]:
         json_body=True,
     )
     result = json.loads(page.text)["esearchresult"]
-    aids = [str(aid) for aid in result["idlist"]]
     cached = f"The response is cached already, so a re-run reads it back: {_REMEDY}"
+    # Before `idlist` is read: an error reply may not have one, and the KeyError would
+    # hide the reason and the way out.
     count = esearch_count(result, cached)
+    aids = [str(aid) for aid in result["idlist"]]
     # esearch returns at most `retmax` ids and says how many matched; a shorter
     # list would silently drop campaigns.
     if count != len(aids):

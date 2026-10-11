@@ -49,7 +49,7 @@ def _check(expensive: bool, only: str | None, as_json: bool, exit_code: bool) ->
         unconfirmed = [r.source for r in reports if r.state in ("unknown", "unbuilt")]
         if unconfirmed:
             names = ", ".join(unconfirmed)
-            print(f"Nothing that was asked has moved. Not confirmed current: {names}.")
+            print(f"Nothing that answered has moved. Not confirmed current: {names}.")
         else:
             print("Everything in the store is the current release.")
     return 1 if exit_code and stale_found else 0

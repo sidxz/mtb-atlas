@@ -390,6 +390,15 @@ def test_a_search_the_server_could_not_run_is_an_error_and_not_an_empty_list(mon
         pubchem.fetch_aids()
 
 
+def test_an_error_reply_with_no_idlist_still_gets_the_reason_and_the_way_out(monkeypatch):
+    """The reply that names an error need not carry the list the build reads next, and a bare
+    `KeyError: 'idlist'` would hide both the reason and the remedy the guard exists to give."""
+    body = {"esearchresult": {"ERROR": "Invalid db name specified"}}
+    monkeypatch.setattr(pubchem, "fetch", lambda url, dest, **kw: _Page(json.dumps(body)))
+    with pytest.raises(ValueError, match=r"Invalid db name.*atlas refresh pubchem.*force=True"):
+        pubchem.fetch_aids()
+
+
 @pytest.mark.parametrize(
     ("reply", "says"),
     [

@@ -167,6 +167,7 @@ def test_the_summary_line_does_not_call_unconfirmed_sources_current(
     assert cli.main(["check", "unichem"]) == 0
     said = capsys.readouterr().out
     assert "Not confirmed current: unichem" in said
+    assert "Nothing that answered has moved" in said  # not "was asked": a silent probe is unasked
     assert "current release" not in said
     # Where everything asked is current (or cannot move), the sentence is still true.
     assert cli.main(["check", "griffin-2011"]) == 0

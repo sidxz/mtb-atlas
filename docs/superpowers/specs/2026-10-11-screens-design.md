@@ -17,6 +17,7 @@ The questions it exists to answer:
   under which conditions and strains?
 - For a campaign's hits: was there a dose–response, a counter-screen, a
   cytotoxicity check, ADME, an animal?
+- For one compound: what has been measured on it beyond whether it works?
 - Which phenotypic hits have a candidate gene? (M12)
 
 ## Why now: the atlas is discarding most of the chemistry it downloads
@@ -54,9 +55,36 @@ part of it.
 
 ## Scope
 
-**M11 — the screening record.** ChEMBL + PubChem. Campaigns, their stages,
-their per-compound results including the compounds that did nothing, and the
-gene links that are real.
+**M11 — the screening record, and hit profiling.** ChEMBL + PubChem.
+Campaigns, their stages, their per-compound results including the compounds
+that did nothing, and the gene links that are real. One ingest, two views:
+**Screens** pivots on the campaign, **Hit profiling** pivots on the compound.
+
+The second view is justified by measurement, not symmetry. Across the 1,942
+Mtb whole-cell publications, 48,106 distinct compounds appear and 37,555 carry
+an Mtb MIC. Beyond potency:
+
+| also measured on the same compound | compounds |
+|---|---|
+| mammalian cytotoxicity | 16,141 |
+| ADME/PK | 5,211 |
+| efficacy in an infected animal | 625 |
+| cytotoxicity **and** ADME | 3,735 |
+| cytotoxicity **and** ADME **and** animal | 267 |
+| any tier beyond potency | **17,763** |
+| also a measurement on an Mtb protein | 3,836 |
+
+17,763 compounds is the second-largest object population in the atlas after
+genes — larger than drugs (112), trials (1,137) and `compounds` (5,178)
+together. PubChem adds 45 counter-screen/cytotoxicity AIDs and 13 confirmatory
+assays across the 124 declared project members, at thousands of compounds
+each.
+
+**The view is named for coverage, not for a verdict.** "Hit assessment" is the
+pipeline stage and stays in prose; the view is **Hit profiling**, and its
+content is what was measured, with the absences visible. 20,000 compounds have
+a MIC and nothing else, which is the answer and not a low score. No column in
+it is ranked, weighted or summed.
 
 **M12 — chemical genetics.** PROSPECT (Broad, CC0): compound × hypomorph
 growth rate, the only public source at scale that proposes a *gene* for a
@@ -132,6 +160,14 @@ tested set and the stated outcome; ChEMBL supplies the literature ladder and
 the potency values.
 
 ### Two orthogonal axes, never one
+
+**The ingest takes every assay in a campaign document, not only the Mtb-target
+ones.** This is the step that makes hit profiling possible and the easiest one
+to leave out: a paper's cytotoxicity, microsome and animal assays are filed
+against `CELL-LINE`, `ADMET` and non-molecular targets, so an Mtb-target query
+cannot see them. Querying ChEMBL by target returns 11,686 assays for these
+documents; querying by document returns **38,335**. The campaign document is
+the unit of the second fetch, and ~293,000 further activity rows come with it.
 
 `stage` is funnel position: `primary` | `confirmatory` | `counter_screen` |
 `profiling`. `modality` is what was measured: `phenotypic_mtb` |
@@ -254,6 +290,18 @@ large.
 10. **Public TB chemistry is almost unreplicated**, and the layer should make
     that visible rather than imply a consensus: 105,833 of the 107,463
     distinct whole-cell compounds appear in exactly one document.
+11. **A ratio ChEMBL computed is not a measurement.** ChEMBL files selectivity
+    indices, therapeutic indices and resistance ratios as activity rows —
+    6,577 compounds in these documents carry one. They are arithmetic over two
+    other rows, so they are labelled `derived` and never counted as a
+    cytotoxicity or potency measurement. Counting them inflated the
+    cytotoxicity coverage by ~250 compounds before they were excluded.
+12. **Anticancer is not a cytotoxicity counter-screen.** The same molecules are
+    screened against cancer lines in papers that also report MICs. Both are
+    mammalian-cell readings and both are kept, but `modality` records the
+    assay's own target and the description travels with it, so an
+    antiproliferative assay on RKO cells is not presented as a selectivity
+    control.
 
 ## Reproducible source definition
 
@@ -274,7 +322,19 @@ ChEMBL/Gates re-deposits. Per-AID data comes from
 (`PUGREST.BadRequest: Too many SIDs`). One file plus one `.meta.json` per AID,
 as `fetch.py` already does.
 
-## The page
+## The pages
+
+The nav becomes the pipeline, early to late:
+
+```
+[ Genome ]   [ Screens ]   [ Hit profiling ]   [ Drugs & trials ]
+   4,031        ~200            17,763            112 / 1,137
+   genes      campaigns        compounds         drugs / trials
+
+ target selection ──▶ screening ──▶ hit assessment ──▶ the clinic
+```
+
+### Screens
 
 A third view beside Genome and Drugs & trials, following the two-state rule
 from the genome view: the campaign table takes the full width until a campaign
@@ -292,6 +352,19 @@ rest. Prose caps at 78ch; `tabular-nums` stays.
 - **Compound page panel** — "Tested in": every campaign that tested this
   molecule, with the outcome. This is where a zero becomes provable — "tested
   in AID 1626 (215,397-compound MLSMR library), inactive".
+
+### Hit profiling
+
+One row per compound, columns for what was measured: MIC, cytotoxicity, ADME,
+animal efficacy, Mtb protein, year, how many papers. The rail filters on which
+tiers exist rather than on values. The ADME cell shows *how many* of
+{microsomes, solubility, permeability, PK} were measured — a count of
+measurements, not a grade — and an unmeasured tier reads `—`, never 0.
+
+The view's own copy carries the rule: 20,000 compounds have a MIC and nothing
+else, and that is the answer. Sorting is allowed on any column because a
+reader may want the most-profiled compounds first; no column is combined with
+another, because that would be the score this layer refuses to compute.
 
 `target_summary` gains `n_target_screens`, `max_screen_compounds`,
 `n_screen_actives` (NULL where no calls are stated), `n_complex_screens` and
@@ -332,8 +405,10 @@ source names that gene's protein is not relaxed by it.
 
 ## Costs
 
-`data/raw` grows from 384 MB to roughly 800 MB (20 large AID CSVs plus
-UniChem's 22.8 MB); `data/store` from 19 MB to roughly 100 MB. Cold `make
+`data/raw` grows from 384 MB to roughly 900 MB (20 large AID CSVs, UniChem's
+22.8 MB, and ~90 MB of document-level ChEMBL activity JSON); `data/store`
+from 19 MB to roughly 100 MB. `screen_results` is ~4.4M rows from PubChem and
+~300k from the ChEMBL literature. Cold `make
 build` grows by the AID downloads, which cache like everything else. No new
 runtime dependency: CSV, gzip and DuckDB cover it. `atlas check` gains a
 PubChem probe (an AID's `SIDCountAll` is cheap) and the ingesters follow the

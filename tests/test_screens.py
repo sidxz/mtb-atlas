@@ -6,6 +6,7 @@ The classifiers read the depositor's own prose, the same standing as
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -14,7 +15,9 @@ import pytest
 from atlas.sources import chembl
 from atlas.sources.chembl import (
     aggregate_sizes,
+    campaign_document_meta,
     campaign_documents,
+    campaign_publications,
     census_rows,
     classify_modality,
     classify_stage,
@@ -557,8 +560,13 @@ def test_a_derived_index_is_flagged_and_not_given_a_modality_of_its_own():
     by_assay = {row["assay_chembl_id"]: row for row in normalize_campaign_assays(assays, targets)}
     assert by_assay["CHEMBL106"]["derived"] is True
     assert by_assay["CHEMBL106"]["modality"] == "other"
-    # Everything else in the paper is a measurement.
-    assert sum(row["derived"] for row in normalize_campaign_assays(assays, targets)) == 1
+    # A ratio of two other assays holds no position in a funnel: NULL, not `primary`, so a
+    # count of primary screens never has to remember to exclude it.
+    assert by_assay["CHEMBL106"]["stage"] is None
+    # Everything else in the paper is a measurement, and every measurement has a stage.
+    rows = normalize_campaign_assays(assays, targets)
+    assert sum(row["derived"] for row in rows) == 1
+    assert all(row["stage"] for row in rows if not row["derived"])
 
 
 def test_a_whole_cell_stage_keeps_its_condition_and_strain():
@@ -569,6 +577,23 @@ def test_a_whole_cell_stage_keeps_its_condition_and_strain():
     assert by_assay["CHEMBL100"]["strain"] == "H37Rv"
     # A biochemical assay on purified protein has no growth condition at all.
     assert by_assay["CHEMBL101"]["assay_condition"] is None
+
+
+def test_a_stage_carries_its_assay_and_target_record_unchanged():
+    assays, targets = _campaign()
+    by_assay = {row["assay_chembl_id"]: row for row in normalize_campaign_assays(assays, targets)}
+    vero = by_assay["CHEMBL102"]
+    assert vero["document_chembl_id"] == "CHEMBL_DOC1"
+    assert vero["description"] == (
+        "Cytotoxicity against african green monkey Vero cells after 72 hrs by MTT assay"
+    )
+    assert vero["target_chembl_id"] == "CHEMBL_VERO"
+    assert vero["target_type"] == "CELL-LINE"
+    assert vero["target_organism"] == "Chlorocebus aethiops"
+    # A microsome assay names no target, and none is invented for it.
+    microsomes = by_assay["CHEMBL103"]
+    assert (microsomes["target_chembl_id"], microsomes["target_type"]) == (None, None)
+    assert microsomes["target_organism"] is None
 
 
 def test_a_stage_follows_the_modality_read_from_the_target_not_the_prose_alone():
@@ -593,13 +618,24 @@ def test_a_stage_follows_the_modality_read_from_the_target_not_the_prose_alone()
     assert [stages[a] for a in ("CHEMBL102", "CHEMBL103", "CHEMBL104")] == ["profiling"] * 3
 
 
+def _digest(batch: list[str]) -> str:
+    return hashlib.sha1(",".join(batch).encode()).hexdigest()[:10]
+
+
 @pytest.mark.parametrize(
-    ("fetch_all", "endpoint", "fields", "dest"),
+    ("fetch_all", "endpoint", "key", "fields", "dest"),
     [
-        (chembl.campaign_assays, "assay", chembl.CAMPAIGN_ASSAY_FIELDS, "campaigns/assays"),
+        (
+            chembl.campaign_assays,
+            "assay",
+            "assays",
+            chembl.CAMPAIGN_ASSAY_FIELDS,
+            "campaigns/assays",
+        ),
         (
             chembl.campaign_activities,
             "activity",
+            "activities",
             chembl.CAMPAIGN_ACTIVITY_FIELDS,
             "campaigns/activities",
         ),
@@ -607,25 +643,100 @@ def test_a_stage_follows_the_modality_read_from_the_target_not_the_prose_alone()
     ids=["assays", "activities"],
 )
 def test_a_campaign_is_fetched_by_document_in_batches_of_ten(
-    monkeypatch: pytest.MonkeyPatch, fetch_all, endpoint, fields, dest
+    monkeypatch: pytest.MonkeyPatch, fetch_all, endpoint, key, fields, dest
 ):
     """The query is keyed on the document, not the target: that is the whole difference
     between the 11,686 assays a target query sees and the 38,335 a document holds."""
     calls: list[tuple] = []
 
     def fake_pages(endpoint, query, key, dest, *, force):
-        calls.append((endpoint, query, dest, force))
+        calls.append((endpoint, query, key, dest, force))
         return [{"from": dest}]
 
     monkeypatch.setattr(chembl, "pages", fake_pages)
     documents = [f"CHEMBL_DOC{n}" for n in range(23)]
+    batches = [documents[:10], documents[10:20], documents[20:]]
     assert len(fetch_all(documents, force=True)) == 3
     assert [call[0] for call in calls] == [endpoint] * 3
-    assert [call[2] for call in calls] == [f"{dest}-0", f"{dest}-10", f"{dest}-20"]
-    assert all(call[3] is True for call in calls)
+    # The payload key is what `pages` reads out of the response; the wrong one is a KeyError.
+    assert [call[2] for call in calls] == [key] * 3
+    assert [call[3] for call in calls] == [f"{dest}-{_digest(batch)}" for batch in batches]
+    assert all(call[4] is True for call in calls)
     assert calls[0][1] == f"document_chembl_id__in={','.join(documents[:10])}&only={fields}"
     assert calls[2][1].startswith(f"document_chembl_id__in={','.join(documents[20:])}&")
     assert not any("target_chembl_id=" in call[1] for call in calls)
+
+
+def test_a_campaign_batch_is_cached_by_what_it_holds_not_where_it_sits(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """The document list comes from live, uncached fetches, so it differs between builds: a
+    new target, a skipped batch. A cache named by position would hand one batch another's
+    pages, and the documents that moved would lose their assays with no error."""
+    dests: list[str] = []
+
+    def fake_pages(endpoint, query, key, dest, *, force):
+        dests.append(dest)
+        return []
+
+    monkeypatch.setattr(chembl, "pages", fake_pages)
+    documents = [f"CHEMBL_DOC{n:02d}" for n in range(20)]
+    chembl.campaign_assays(documents)
+    first, second = dests
+    dests.clear()
+    # The second batch alone: same documents, now first in the list.
+    chembl.campaign_assays(documents[10:])
+    assert dests == [second]
+    dests.clear()
+    # One document changed: a different batch, so a different cache name.
+    chembl.campaign_assays([*documents[10:19], "CHEMBL_NEW"])
+    assert dests[0] not in (first, second)
+
+
+def test_document_meta_is_keyed_by_document_and_keeps_the_type(monkeypatch: pytest.MonkeyPatch):
+    seen: list[str] = []
+
+    def fake_many(urls, **kwargs):
+        seen.extend(urls)
+        document = {"document_chembl_id": "CHEMBL_DOC1", "doc_type": "PUBLICATION"}
+        dataset = {"document_chembl_id": "CHEMBL_DS", "doc_type": "DATASET"}
+        document |= {"title": "A paper", "year": 2019, "pubmed_id": 12345}
+        dataset |= {"title": "A library", "year": None, "pubmed_id": None}
+        return {url: {"documents": [document, dataset]} for url in urls}
+
+    monkeypatch.setattr(chembl, "fetch_json_many", fake_many)
+    meta = campaign_document_meta(["CHEMBL_DOC1", "CHEMBL_DS"])
+    assert len(seen) == 1
+    assert "/document.json?document_chembl_id__in=CHEMBL_DOC1,CHEMBL_DS&" in seen[0]
+    assert meta["CHEMBL_DOC1"] == {
+        "doc_type": "PUBLICATION",
+        "title": "A paper",
+        "year": 2019,
+        "pubmed_id": "12345",
+    }
+    assert meta["CHEMBL_DS"]["doc_type"] == "DATASET"
+    assert meta["CHEMBL_DS"]["pubmed_id"] is None
+
+
+def test_only_publications_are_campaigns_because_datasets_come_in_through_pubchem():
+    """CHEMBL3988442 is Dundee's Small-Polar-MMV library, a DATASET with 1,413,047 activity
+    rows (1,414 pages), and it is already in PubChem as AIDs 1671154-1671185."""
+    meta = {
+        "CHEMBL_PAPER1": {"doc_type": "PUBLICATION"},
+        "CHEMBL3988442": {"doc_type": "DATASET"},
+        "CHEMBL_PAPER2": {"doc_type": "PUBLICATION"},
+        "CHEMBL_PATENT": {"doc_type": "PATENT"},
+        "CHEMBL_UNTYPED": {"doc_type": None},
+    }
+    assert campaign_publications(list(meta), meta) == ["CHEMBL_PAPER1", "CHEMBL_PAPER2"]
+
+
+def test_a_candidate_with_no_record_is_an_error_not_a_dropped_campaign():
+    """`fetch_json_many` skips a batch that fails. Its documents then have no type, and
+    treating that as "not a publication" would lose their campaigns without a word."""
+    meta = {"CHEMBL_PAPER1": {"doc_type": "PUBLICATION"}}
+    with pytest.raises(RuntimeError, match="CHEMBL_LOST"):
+        campaign_publications(["CHEMBL_PAPER1", "CHEMBL_LOST"], meta)
 
 
 def test_campaign_documents_are_the_documents_behind_whole_cell_activities():
@@ -635,3 +746,13 @@ def test_campaign_documents_are_the_documents_behind_whole_cell_activities():
         {"assay_chembl_id": "C", "evidence": "whole_cell", "document_chembl_id": None},
     ]
     assert campaign_documents(activities) == ["CHEMBL_DOC1"]
+
+
+def test_campaign_documents_are_sorted_and_unique():
+    """The sort is what makes batch composition, and so the cache names, the same on every
+    build: a set's order changes with the process. A document with many assays repeats."""
+    documents = ["CHEMBL_DOC6", "CHEMBL_DOC2", "CHEMBL_DOC5", "CHEMBL_DOC1", "CHEMBL_DOC4"]
+    activities = [
+        {"evidence": "whole_cell", "document_chembl_id": d} for d in [*documents, *documents[:2]]
+    ]
+    assert campaign_documents(activities) == sorted(documents)

@@ -8,6 +8,7 @@ is why `source_version` is parsed from the file rather than hardcoded.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import re
@@ -545,27 +546,37 @@ def classify_stage(
 # CELL-LINE, ADMET and non-molecular targets, so a target-keyed query cannot
 # see them: these documents hold 11,686 assays on Mtb targets and 38,335 in
 # total. The document is therefore the unit of the second fetch.
+#
+# Only publications are campaigns here. ChEMBL also files whole-cell activity
+# under DATASET documents, which are deposited screening libraries rather than
+# papers: CHEMBL3988442 (Dundee's Small-Polar-MMV library) alone holds 1,413,047
+# activity rows, a 1,414-page walk that would also make one deposit's non-Mtb
+# assays most of `screen_results`. Of the 977 documents behind whole-cell
+# activity, 972 are publications, 4 are datasets and 1 is a patent. Nothing is
+# lost by the filter: a campaign with a PubChem AID is ingested from PubChem,
+# and that deposit is there as AIDs 1671154-1671185.
 
 CAMPAIGN_ASSAY_FIELDS = (
-    "assay_chembl_id,document_chembl_id,assay_type,target_chembl_id,description,assay_strain"
+    "assay_chembl_id,document_chembl_id,target_chembl_id,description,assay_strain"
 )
 CAMPAIGN_ACTIVITY_FIELDS = (
     "activity_id,assay_chembl_id,document_chembl_id,molecule_chembl_id,standard_type,"
     "standard_relation,standard_value,standard_units,pchembl_value,activity_comment"
 )
-# Ten documents per request, not fifty: one deposited dataset holds 410k
-# activity rows, and a batch containing it pages past ChEMBL's patience at
-# deep offsets. Deposited datasets are fetched by target instead, which is
-# what `census_rows` already does.
+CAMPAIGN_DOC_FIELDS = "document_chembl_id,doc_type,year,title,pubmed_id"
+# Ten documents per request, not fifty: an activity query pages at PAGE rows, so a
+# smaller batch bounds how deep any one request has to walk.
 DOC_BATCH = 10
 
 
 def campaign_documents(activities: Iterable[Mapping[str, Any]]) -> list[str]:
-    """The documents that reported whole-cell Mtb activity.
+    """The candidate campaigns: documents that reported whole-cell Mtb activity.
 
-    These are the campaigns: a paper that measured growth inhibition is the
-    unit a screening record is organised by, and whatever else it measured on
-    the same compounds is its hit profiling.
+    A paper that measured growth inhibition is the unit a screening record is
+    organised by, and whatever else it measured on the same compounds is its hit
+    profiling. These are candidates only: `campaign_publications` keeps the papers,
+    once `campaign_document_meta` has said which they are. Sorted and unique, so
+    that the batches built from this list are the same on every build.
     """
     return sorted(
         {
@@ -574,6 +585,54 @@ def campaign_documents(activities: Iterable[Mapping[str, Any]]) -> list[str]:
             if row.get("evidence") == "whole_cell" and row.get("document_chembl_id")
         }
     )
+
+
+def campaign_document_meta(documents: Sequence[str]) -> dict[str, dict[str, Any]]:
+    """Type, year and title for each document. Not cached, like `campaign_targets`."""
+    out: dict[str, dict[str, Any]] = {}
+    urls = [
+        f"{API}/document.json?document_chembl_id__in={batch}"
+        f"&only={CAMPAIGN_DOC_FIELDS}&limit={ID_BATCH}"
+        for batch in batches(list(documents))
+    ]
+    for payload in fetch_json_many(
+        urls, workers=6, min_interval=0.1, label="chembl campaign documents"
+    ).values():
+        for document in payload["documents"]:
+            out[document["document_chembl_id"]] = {
+                "doc_type": document.get("doc_type"),
+                "title": document.get("title"),
+                "year": document.get("year"),
+                "pubmed_id": str(document["pubmed_id"]) if document.get("pubmed_id") else None,
+            }
+    return out
+
+
+def campaign_publications(
+    documents: Sequence[str], meta: Mapping[str, Mapping[str, Any]]
+) -> list[str]:
+    """The candidates that are papers, in the order given.
+
+    A candidate with no record is an error rather than a non-publication:
+    `fetch_json_many` skips a batch that fails, and reading its documents as
+    "not a paper" would drop their campaigns without a word.
+    """
+    missing = [d for d in documents if d not in meta]
+    if missing:
+        raise RuntimeError(
+            f"no document record for {len(missing)} campaign candidates, first {missing[0]}: "
+            "a metadata batch failed, and their type is unknown"
+        )
+    return [d for d in documents if meta[d].get("doc_type") == "PUBLICATION"]
+
+
+def _batch_name(batch: Sequence[str]) -> str:
+    """A cache name that follows what the batch holds, not where it sits in the list.
+
+    The document list comes from live fetches and differs between builds, so a
+    positional name would serve one batch's pages to another.
+    """
+    return hashlib.sha1(",".join(batch).encode()).hexdigest()[:10]
 
 
 def campaign_assays(documents: Sequence[str], *, force: bool = False) -> list[dict[str, Any]]:
@@ -585,7 +644,7 @@ def campaign_assays(documents: Sequence[str], *, force: bool = False) -> list[di
             "assay",
             f"document_chembl_id__in={','.join(batch)}&only={CAMPAIGN_ASSAY_FIELDS}",
             "assays",
-            f"campaigns/assays-{index}",
+            f"campaigns/assays-{_batch_name(batch)}",
             force=force,
         )
     return rows
@@ -600,16 +659,14 @@ def campaign_activities(documents: Sequence[str], *, force: bool = False) -> lis
             "activity",
             f"document_chembl_id__in={','.join(batch)}&only={CAMPAIGN_ACTIVITY_FIELDS}",
             "activities",
-            f"campaigns/activities-{index}",
+            f"campaigns/activities-{_batch_name(batch)}",
             force=force,
         )
     return rows
 
 
-def campaign_targets(
-    assays: Iterable[Mapping[str, Any]], *, force: bool = False
-) -> dict[str, dict[str, Any]]:
-    """Target type and organism for every target these assays name."""
+def campaign_targets(assays: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Target type and organism for every target these assays name. Not cached."""
     ids = sorted({a["target_chembl_id"] for a in assays if a.get("target_chembl_id")})
     out: dict[str, dict[str, Any]] = {}
     urls = [
@@ -649,7 +706,9 @@ def normalize_campaign_assays(
                 # modality travels with it: `classify_stage` derives `profiling`
                 # from it, so that the two axes cannot drift apart. Passing the
                 # description alone reintroduces the disagreement Task 3 fixed.
-                "stage": classify_stage(description, modality=modality),
+                # A derived index is a ratio of two other assays and holds no
+                # position in a funnel, so its stage is NULL rather than `primary`.
+                "stage": None if derived else classify_stage(description, modality=modality),
                 "modality": modality,
                 "description": description,
                 "target_chembl_id": assay.get("target_chembl_id"),

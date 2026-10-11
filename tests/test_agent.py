@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import duckdb
 import pytest
 
 from atlas import agent
@@ -50,11 +51,10 @@ def test_cap_cannot_be_raised_past_the_ceiling() -> None:
         "SET enable_external_access=true",
         "COPY genes TO '/tmp/leak.csv'",
         "INSTALL httpfs",
-        "PRAGMA database_list",
+        "PRAGMA enable_profiling",
+        "PRAGMA threads=1",
         "SELECT 1; DROP TABLE genes",
-        "SELECT * FROM read_csv('/etc/passwd')",
-        "SELECT * FROM read_parquet('/etc/passwd')",
-        "WITH x AS (SELECT 1) SELECT * FROM glob('/etc/*')",
+        "SELECT 1; SELECT 2",
     ],
 )
 def test_dangerous_statements_are_refused(sql: str) -> None:
@@ -62,16 +62,57 @@ def test_dangerous_statements_are_refused(sql: str) -> None:
         agent.run_sql(sql)
 
 
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT * FROM read_csv('/etc/passwd')",
+        "SELECT * FROM read_parquet('/etc/passwd')",
+        "SELECT * FROM '/etc/passwd'",
+        "WITH x AS (SELECT 1) SELECT * FROM glob('/etc/*')",
+        "SELECT * FROM read_json('https://example.com/x.json')",
+    ],
+)
+def test_file_reads_parse_as_select_and_the_lock_stops_them(sql: str) -> None:
+    """These are SELECTs, so the parser passes them; only the lock stands in the way."""
+    with pytest.raises(duckdb.Error):
+        agent.run_sql(sql)
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT rv_id FROM essentiality WHERE call = 'ES'",
+        "SELECT 'data set; drop' AS s",
+        "SELECT 1;",
+    ],
+)
+def test_keywords_in_names_and_strings_are_not_commands(sql: str) -> None:
+    """The old regex refused every query on `essentiality.call`, the essentiality call."""
+    agent.run_sql(sql)
+
+
+def test_exactly_the_cap_is_not_truncated() -> None:
+    assert agent.run_sql("SELECT * FROM range(5)", limit=5)["truncated"] is False
+    assert agent.run_sql("SELECT * FROM range(6)", limit=5)["truncated"] is True
+
+
+def test_a_runaway_query_is_interrupted(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(agent, "QUERY_SECONDS", 0.2)
+    with pytest.raises(duckdb.InterruptException):
+        agent.run_sql(
+            "SELECT count(*) FROM range(100000) a, range(100000) b WHERE a.range + b.range = -1"
+        )
+
+
 def test_external_access_is_off_even_if_a_guard_is_bypassed() -> None:
     """Defence in depth: the connection itself cannot reach the filesystem.
 
-    The keyword guard is a string match and string matches can be fooled, so
-    the DuckDB connection is also locked down. This asserts the lock, not the
-    guard, by going around the guard deliberately.
+    This asserts the lock, not the guard, by going around the guard
+    deliberately -- on a cursor too, since that is what each query runs on.
     """
-    import duckdb
-
     connection = agent.connection()
+    with pytest.raises(duckdb.Error):
+        connection.cursor().execute("SET enable_external_access=true")
     with pytest.raises(duckdb.Error):
         connection.execute("SELECT * FROM read_csv_auto('/etc/passwd')")
     with pytest.raises(duckdb.Error):

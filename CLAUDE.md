@@ -312,7 +312,10 @@ asks are joins.
 It is safe because the tables are copied into an in-memory DuckDB and then
 `enable_external_access` is turned off and the configuration locked, so no
 statement can read a file, attach a database or reach the network -- with a
-single-SELECT guard and a row cap on top. **That sandbox is the only thing
+single-SELECT guard, a row cap and a 30 s timeout on top. The guard asks
+DuckDB's own parser for the statement type; a keyword regex refused every
+query on `essentiality.call`. File-reading table functions parse as SELECT,
+so the lock is what stops them, not the guard. **That sandbox is the only thing
 between a generated string and the filesystem; it has its own tests and they
 test the lock as well as the guard.**
 

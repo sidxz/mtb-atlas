@@ -8,8 +8,9 @@ the WHO catalogue" is one WHERE clause and would otherwise be five endpoints.
 **Why the SQL tool is safe.** The tables are copied into an in-memory DuckDB at
 startup, then `enable_external_access` is turned off and the configuration
 locked, so no statement can read a file, attach a database or reach the
-network. On top of that only a single SELECT/WITH statement is accepted and
-every result is capped. The store is public data and read-only either way.
+network. On top of that DuckDB's own parser must find exactly one SELECT, every
+result is capped and every query is timed out. The store is public data and
+read-only either way.
 
 The system prompt carries the same rules as the rest of the codebase, because
 an agent that quietly treats a missing row as a zero is worse than no agent:
@@ -20,8 +21,7 @@ names the records it came from.
 from __future__ import annotations
 
 import json
-import os
-import re
+import threading
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -29,9 +29,17 @@ import duckdb
 
 from .store import STORE, provenance
 
-MODEL = "claude-opus-5-5"
+MODEL = "claude-haiku-5-5"
 MAX_ROWS = 200
 MAX_TURNS = 12
+QUERY_SECONDS = 30
+
+# What to say when the loop ends on anything but a finished answer.
+STOPPED = {
+    "tool_use": f"No final answer: the agent used all {MAX_TURNS} turns.",
+    "max_tokens": "Cut off at the length limit; what follows is incomplete.",
+    "refusal": "The model declined to answer this question.",
+}
 
 TABLES = (
     "target_summary",
@@ -338,13 +346,6 @@ class Answer:
 
 _connection: duckdb.DuckDBPyConnection | None = None
 
-SELECT_ONLY = re.compile(r"^\s*(with|select)\b", re.IGNORECASE)
-FORBIDDEN = re.compile(
-    r"\b(attach|copy|install|load|export|import|create|insert|update|delete|drop|alter|"
-    r"pragma|set|call|read_csv|read_parquet|read_json|glob)\b",
-    re.IGNORECASE,
-)
-
 
 def connection() -> duckdb.DuckDBPyConnection:
     """An in-memory copy of the store with external access locked off."""
@@ -389,27 +390,47 @@ def describe() -> str:
 
 
 def run_sql(sql: str, limit: int = MAX_ROWS) -> dict[str, Any]:
-    """One read-only SELECT against the store."""
-    statement = sql.strip().rstrip(";")
-    if ";" in statement:
-        raise ValueError("one statement at a time, please")
-    if not SELECT_ONLY.match(statement):
-        raise ValueError("only SELECT and WITH queries are allowed")
-    if FORBIDDEN.search(statement):
-        raise ValueError("that statement uses a keyword this tool does not allow")
+    """One read-only SELECT against the store.
 
-    capped = min(limit, MAX_ROWS)
-    result = connection().execute(f"SELECT * FROM ({statement}) LIMIT {capped}")
-    columns = [c[0] for c in result.description]
+    The statement type comes from DuckDB's own parser, not a keyword match, so a
+    column called `call` or a description containing "data set" is not refused.
+    Table functions that read files parse as SELECT too; the connection's lock is
+    what stops those.
+    """
+    # A DuckDB connection is not thread-safe and FastAPI serves /ask from a
+    # thread pool; a cursor per query is the documented way to share one, and
+    # it inherits the lock.
+    cursor = connection().cursor()
+    try:
+        statements = cursor.extract_statements(sql)
+        if len(statements) != 1:
+            raise ValueError("one statement at a time, please")
+        if statements[0].type != duckdb.StatementType.SELECT:
+            raise ValueError("only SELECT and WITH queries are allowed")
+
+        capped = min(limit, MAX_ROWS)
+        # A generated cross join must not hold a server thread forever.
+        timer = threading.Timer(QUERY_SECONDS, cursor.interrupt)
+        timer.start()
+        try:
+            result = cursor.execute(
+                f"SELECT * FROM ({statements[0].query.strip().rstrip(';')}) LIMIT {capped + 1}"
+            )
+            fetched = result.fetchall()
+        finally:
+            timer.cancel()
+        columns = [c[0] for c in result.description]
+    finally:
+        cursor.close()
     rows = [
         {c: (str(v) if hasattr(v, "isoformat") else v) for c, v in zip(columns, row, strict=True)}
-        for row in result.fetchall()
+        for row in fetched[:capped]
     ]
     return {
         "columns": columns,
         "rows": rows,
         "row_count": len(rows),
-        "truncated": len(rows) == capped,
+        "truncated": len(fetched) > capped,
     }
 
 
@@ -418,7 +439,10 @@ def ask(question: str, *, model: str = MODEL, effort: str = "high") -> Answer:
     import anthropic
     from anthropic import beta_tool
 
-    if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+    # Ask the SDK rather than the environment: it also resolves an `ant auth login`
+    # profile, which a check on two variables would refuse.
+    client = anthropic.Anthropic()
+    if not (client.api_key or client.auth_token or client.credentials):
         raise RuntimeError(
             "No Anthropic credentials. Set ANTHROPIC_API_KEY, or run `ant auth login`."
         )
@@ -454,23 +478,27 @@ def ask(question: str, *, model: str = MODEL, effort: str = "high") -> Answer:
         call.result = payload["rows"][:20]
         return json.dumps(payload, default=str)
 
-    client = anthropic.Anthropic()
     runner = client.beta.messages.tool_runner(
         model=model,
         max_tokens=16000,
+        max_iterations=MAX_TURNS,
+        # Every turn resends the ~9k-token schema dump the first one fetched.
+        cache_control={"type": "ephemeral"},
         system=SYSTEM,
         output_config={"effort": effort},
         tools=[describe_store, query_store],
         messages=[{"role": "user", "content": question}],
     )
+    try:
+        final = runner.until_done()
+    except anthropic.APIError as error:
+        # Rate limit or outage upstream: this route is unavailable, the rest of the API is not.
+        raise RuntimeError(f"The model call failed: {error}") from error
 
-    text = ""
-    for turn, message in enumerate(runner, 1):
-        for block in message.content:
-            if block.type == "text" and block.text.strip():
-                text = block.text
-        if turn >= MAX_TURNS:
-            break
+    text = "".join(block.text for block in final.content if block.type == "text").strip()
+    if final.stop_reason != "end_turn":
+        # Narration from a loop that never finished must not pass for an answer.
+        text = f"**{STOPPED.get(final.stop_reason, final.stop_reason)}**\n\n{text}".strip()
 
     sources = {}
     for name in available_tables():

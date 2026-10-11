@@ -28,13 +28,13 @@ def test_unichem_normalize_keeps_both_identifiers():
 
 
 def test_one_compound_can_have_several_pubchem_entries():
-    """7.5% of ChEMBL ids map to more than one CID -- up to 14 of them.
+    """0.9% of ChEMBL ids map to more than one CID -- up to 32 of them.
 
     Every CID has to resolve, because a PubChem screening result arrives keyed
     on whichever CID the depositor used. Inverting the dict to {chembl_id: cid}
     would keep one CID per compound and silently drop the rest; the CID side is
-    the unique one (0 collisions in a 26,867-pair sample), which is why the
-    bridge is keyed on it.
+    the unique one (no CID repeats in the full file's 2,832,793 pairs), which is
+    why the bridge is keyed on it.
     """
     mapping = unichem.chembl_by_cid(FIXTURES / "unichem_src1src22.txt")
     for cid in ("16694118", "24850", "75366293"):

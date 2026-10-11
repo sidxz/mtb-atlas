@@ -57,10 +57,10 @@ def normalize(path: Path) -> Iterator[dict[str, Any]]:
 def chembl_by_cid(path: Path) -> dict[str, str]:
     """CID -> ChEMBL id, for stamping a ChEMBL identity onto a PubChem result.
 
-    Keyed on the CID side because that is the unique side of the relation. A
-    ChEMBL id maps to several CIDs (7.5% of ids do, up to 14), so the other way
-    round would keep one CID per compound. No CID maps to two ChEMBL ids in the
-    26,867-pair sample, which is what makes this dict lossless. A dict
+    Keyed on the CID side because that is the unique side of the relation. In
+    the full file 25,938 ChEMBL ids (0.9%) map to more than one CID, up to 32,
+    so the other way round would keep one CID per compound. No CID appears twice
+    across the 2,832,793 pairs, which is what makes this dict lossless. A dict
     comprehension keeps the last of any colliding pair without complaint, so
     that claim rests on the data, and the test pins the multi-CID case.
     """

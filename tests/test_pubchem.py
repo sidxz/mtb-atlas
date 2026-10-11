@@ -202,6 +202,40 @@ def test_the_target_is_kept_exactly_as_pubchem_states_it():
     assert rows["1626"]["targets"] == []
 
 
+def test_a_campaign_row_has_exactly_the_agreed_keys():
+    """DuckDB types a column from a sample of the rows, so a key present in some
+    rows only becomes NULL for all of them without an error. The ChEMBL campaign
+    rows must carry this same set, and a drift here is what that sample hides."""
+    expected = {
+        "screen_id",
+        "aid",
+        "title",
+        "depositor",
+        "deposit_kind",
+        "library_name",
+        "library_size_stated",
+        "year",
+        "n_stages",
+        "n_tested",
+        "n_active",
+        "n_inactive",
+        "n_inconclusive",
+        "outcome_stated",
+        "outcome_method",
+        "stages_source",
+        "project_declared",
+        "modalities",
+        "document_chembl_id",
+        "pubmed_id",
+        "targets",
+        "licence",
+    }
+    for row in _rows().values():
+        assert set(row) == expected
+    # No blanket licence is claimed; the depositor column is where it lives.
+    assert "per depositor" in _rows()["1626"]["licence"]
+
+
 def test_the_depositor_is_stored_as_given_even_when_it_is_not_a_name():
     """AID 2060911's `SourceName` is the bare string "11908". The licence is per
     depositor, so the field is recorded either way and never resolved."""
@@ -252,9 +286,9 @@ def test_aids_come_back_as_strings_in_the_order_pubchem_gave_them(monkeypatch):
 
     def fake_fetch(url, dest, **kwargs):
         seen["url"] = url
-        body = {"esearchresult": {"count": "2", "idlist": ["2060911", "375"]}}
+        body = {"esearchresult": {"count": "2", "idlist": ["375", "2060911"]}}
         return _Page(json.dumps(body))
 
     monkeypatch.setattr(pubchem, "fetch", fake_fetch)
-    assert pubchem.fetch_aids() == ["2060911", "375"]
+    assert pubchem.fetch_aids() == ["375", "2060911"]
     assert "txid1773[ORGN]" in seen["url"]

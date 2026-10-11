@@ -12,7 +12,7 @@ import json
 
 from . import freshness, pipeline, storediff
 from .store import read
-from .summary import counts
+from .summary import counts, unclassified
 
 STATE_MARK = {
     "stale": "STALE",
@@ -175,6 +175,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "summary":
         for key, value in counts().items():
             print(f"{value:>8,}  {key.replace('_', ' ')}")
+        # The only maintenance signal the stage labels have: see `unclassified`.
+        for label, (n, of) in unclassified().items():
+            share = f"{n / of:.1%}" if of else "n/a"
+            print(f"{n:>8,}  {label} ({share} of {of:,})")
         return 0
 
     print(

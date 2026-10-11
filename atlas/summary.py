@@ -705,3 +705,39 @@ def counts(*, store: Path | None = None) -> dict[str, int]:
         for name in CLINICAL_COUNTS:
             out.pop(name, None)
     return out
+
+
+def unclassified(*, store: Path | None = None) -> dict[str, tuple[int, int]]:
+    """How much of the stage labelling fell through to its catch-all, as (n, of).
+
+    The labels are read from a depositor's prose, so the way they rot is that a new
+    release brings vocabulary the patterns do not know and the assays land in the
+    default. `atlas diff` compares tables on their keys and no key changes, so the
+    counts would quietly understate. This is the one signal for it: compare the
+    share before and after a refresh. Nothing here calls a model, so it runs
+    unattended with the rest of the update path.
+
+    Derived rows are left out: a computed ratio is *meant* to be modality `other` and
+    stageless, and counted it would hold the share up permanently. PubChem stages have
+    no modality (the title names no measurement), so they are not in the modality
+    denominator. `stage` is never NULL on a stage that is not derived --
+    `classify_stage` falls through to `primary` -- so the catch-all to watch is
+    `primary`, not a NULL.
+
+    Empty where the table was never built: no stages is not a share of zero.
+    """
+    if not built("screen_stages", store=store):
+        return {}
+    n_other, of_modality, n_primary, of_stage = (
+        read("screen_stages", store=store)
+        .filter("NOT derived")
+        .aggregate(
+            "count(*) FILTER (WHERE modality = 'other'), count(modality),"
+            " count(*) FILTER (WHERE stage = 'primary'), count(stage)"
+        )
+        .fetchone()
+    )
+    return {
+        "stages with modality 'other'": (n_other, of_modality),
+        "stages at the default 'primary'": (n_primary, of_stage),
+    }

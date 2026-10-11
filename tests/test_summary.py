@@ -12,9 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from atlas import crosswalk, orthologue, summary
+from atlas import cli, crosswalk, orthologue, summary
+from atlas import store as store_module
 from atlas.store import read, records
-from atlas.summary import counts
+from atlas.summary import counts, unclassified
 
 
 @pytest.fixture(scope="session")
@@ -330,6 +331,39 @@ def test_a_screen_of_an_orthologue_is_not_a_screen_of_this_protein(
     assert mmpl3["chembl_evidence"] == "orthologue", "the stubbed link did not arrive"
     assert mmpl3["n_target_screens"] == 0
     assert mmpl3["n_complex_screens"] == 0
+
+
+def test_the_unclassified_share_leaves_out_derived_rows_and_missing_modalities(
+    evidence_store: Path,
+) -> None:
+    """Of 11 non-derived stages, 6 have a modality (the ChEMBL ones: PubChem's title names no
+    measurement) and 3 of those are `other`; 10 sit at the default stage. The computed ratio is
+    `other` by design and stageless, so counted it would hold both shares up for good."""
+    assert unclassified(store=evidence_store) == {
+        "stages with modality 'other'": (3, 6),
+        "stages at the default 'primary'": (10, 11),
+    }
+
+
+def test_the_unclassified_share_is_empty_where_there_are_no_stages(
+    evidence_store: Path, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """No stages is not a share of zero."""
+    out = tmp_path_factory.mktemp("no-stages")
+    for parquet in evidence_store.glob("*.parquet"):
+        if parquet.stem != "screen_stages":
+            shutil.copy(parquet, out / parquet.name)
+    assert unclassified(store=out) == {}
+
+
+def test_the_summary_command_prints_the_unclassified_share(
+    evidence_store: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    monkeypatch.setattr(store_module, "STORE", evidence_store)
+    assert cli.main(["summary"]) == 0
+    printed = capsys.readouterr().out
+    assert "3  stages with modality 'other' (50.0% of 6)" in printed
+    assert "10  stages at the default 'primary' (90.9% of 11)" in printed
 
 
 def test_a_store_without_the_screens_still_summarises(

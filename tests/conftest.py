@@ -246,13 +246,20 @@ def evidence_store(store: Path) -> Path:
                 "Selectivity index, ratio of CC50 for Vero cells to MIC for "
                 "Mycobacterium tuberculosis H37Rv",
             ),
-            # A stage on cyp144's own protein, in a dated paper: the ChEMBL half of a gene
+            # A stage on cyp144's own protein, in a 2019 paper: the ChEMBL half of a gene
             # that PubChem also screened (deposit 9000008 below).
             (
                 "CHEMBL9100008",
                 "CHEMBL_DOC2",
                 "CHEMBL6195687",
                 "Inhibition of Mycobacterium tuberculosis CYP144",
+            ),
+            # A later paper on the same protein: two dated screens and an undated deposit.
+            (
+                "CHEMBL9100009",
+                "CHEMBL_DOC1",
+                "CHEMBL6195687",
+                "Inhibition of Mycobacterium tuberculosis CYP144 by a second series",
             ),
             # Prose no classifier pattern has seen: modality `other`, stage the default.
             ("CHEMBL9100005", "CHEMBL_DOC2", None, "Assay of a kind no pattern here has seen"),
@@ -283,6 +290,7 @@ def evidence_store(store: Path) -> Path:
         "CHEMBL9100006": 2,
         "CHEMBL9100007": 2,
         "CHEMBL9100008": 3,
+        "CHEMBL9100009": 2,
     }
     stage_activities = [
         {"assay_chembl_id": assay_id, "molecule_chembl_id": f"CHEMBL_M{i}"}

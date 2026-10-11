@@ -325,14 +325,14 @@ def test_a_stated_call_that_found_no_actives_is_zero_not_null(rows: dict) -> Non
 
 
 def test_a_gene_screened_through_both_sources_keeps_each_aggregate_as_it_is(rows: dict) -> None:
-    """Pins what the aggregates do across sources, so a change is deliberate. cyp144 has a
-    dated ChEMBL paper that states no call and an undated PubChem deposit that states 120:
-    the actives are the stated ones alone (120 beside two screens), and the year is the dated
-    paper's, because PubChem has none to compare."""
+    """Pins what the aggregates do across sources, so a change is deliberate. cyp144 has two
+    dated ChEMBL papers (2019, 2021) that state no call and an undated PubChem deposit that
+    states 120: the actives are the stated ones alone (120 beside three screens), and the year
+    is the latest dated paper's, because PubChem has none to compare."""
     row = rows["Rv1777"]
-    assert row["n_target_screens"] == 2
+    assert row["n_target_screens"] == 3
     assert row["n_screen_actives"] == 120
-    assert row["latest_screen_year"] == 2019
+    assert row["latest_screen_year"] == 2021
     assert row["max_screen_compounds"] == 12000
 
 
@@ -368,13 +368,13 @@ def test_a_screen_of_an_orthologue_is_not_a_screen_of_this_protein(
 def test_the_unclassified_share_leaves_out_derived_rows_and_missing_modalities(
     evidence_store: Path,
 ) -> None:
-    """Of 15 non-derived stages (7 ChEMBL, 8 PubChem), 7 have a modality (PubChem's title names
-    no measurement) and 3 of those are `other`; 14 sit at the default stage, all but the one
+    """Of 16 non-derived stages (8 ChEMBL, 8 PubChem), 8 have a modality (PubChem's title names
+    no measurement) and 3 of those are `other`; 15 sit at the default stage, all but the one
     confirmation. The computed ratio is `other` by design and stageless, so counted it would
     hold both shares up for good."""
     assert unclassified(store=evidence_store) == {
-        "stages with modality 'other'": (3, 7),
-        "stages at the default 'primary'": (14, 15),
+        "stages with modality 'other'": (3, 8),
+        "stages at the default 'primary'": (15, 16),
     }
 
 
@@ -395,8 +395,8 @@ def test_the_summary_command_prints_the_unclassified_share(
     monkeypatch.setattr(store_module, "STORE", evidence_store)
     assert cli.main(["summary"]) == 0
     printed = capsys.readouterr().out
-    assert "3  stages with modality 'other' (42.9% of 7)" in printed
-    assert "14  stages at the default 'primary' (93.3% of 15)" in printed
+    assert "3  stages with modality 'other' (37.5% of 8)" in printed
+    assert "15  stages at the default 'primary' (93.8% of 16)" in printed
 
 
 @pytest.mark.parametrize(

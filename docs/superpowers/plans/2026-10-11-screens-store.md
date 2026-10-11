@@ -1988,7 +1988,16 @@ def build(
             }
         )
         results += list(
-            normalize_results(fetch_results(aid, force=force).path, aid, chembl_by_cid or {})
+            # screen_id is the CAMPAIGN's id, not the AID's. For a project
+            # member they differ -- the campaign is `pubchem:project:<lowest
+            # member>` -- and passing the AID here orphans every member's
+            # results from `screens.screen_id`.
+            normalize_results(
+                fetch_results(aid, force=force).path,
+                aid,
+                chembl_by_cid or {},
+                screen_id=campaign_of[aid],
+            )
         )
 
     # The same statement the probe in `freshness.py` reads, so the comparison

@@ -269,6 +269,16 @@ large.
    nothing". `n_active` is NULL when `outcome_stated` is false, never 0. This
    trap is the reason `outcome_stated` is a stored column and not a derived
    one.
+
+   **And a zero active count is not the only shape it takes**, which an earlier
+   draft of this rule missed. Measured: **six of the eight ChEMBL deposits
+   report between 1 and 90 actives while `SIDCountUnspecified` equals
+   `SIDCountAll`.** So a heuristic reading "any non-zero call count means calls
+   were stated" publishes `n_inactive = 0` on six real screens. The signal is
+   `SIDCountUnspecified`, used as a veto: if every SID is unspecified, no call
+   was stated, whatever the active count says. One consequence to expect —
+   Pks13's 25 IC50-row actives give a NULL `n_active` on the campaign row and
+   live on `screen_results` instead.
 3. **`n_tested` is the deposited set, not the screened library.** AID 1259343
    states ~300,000 compounds screened and deposits 6,225 SIDs. The prose
    figure lives in `library_size_stated`, sourced and separate, and the two
@@ -288,12 +298,22 @@ large.
    project siblings; its Vero counter-screen exists only in its prose.
    `project_declared` says which, and a campaign with one stage is not a
    campaign that stopped.
-8. **Taxonomy tagging over-counts.** Several AIDs above 300,000 compounds are
-   tagged Mtb while the assay target is *Bos taurus* MsrA, *S. aureus* NadD or
-   *B. subtilis* Sfp. Inclusion requires the assay's own target or description
-   to name Mtb, and `depositor` is recorded per AID because **PubChem's licence
-   is per-depositor, not per-database** (NCBI policy explicitly carves PubChem
-   out of its public-domain statement).
+8. **`depositor` is recorded per AID, because PubChem's licence is
+   per-depositor, not per-database** — NCBI policy explicitly carves PubChem out
+   of its public-domain statement.
+
+   **An earlier draft of this trap was false and is worth recording as a
+   lesson.** It claimed that "several AIDs above 300,000 compounds are tagged
+   Mtb while the assay target is *Bos taurus* MsrA, *S. aureus* NadD or
+   *B. subtilis* Sfp", and required inclusion to need the assay's own target or
+   description to name Mtb. Measured against the live search, both halves are
+   wrong: those AIDs (651718, 602163, 602399, 1490) **are not in
+   `txid1773[ORGN]` at all**, so the hazard does not exist in this query — and
+   the extra name test *rejects 8 of the 28 real Mtb AIDs*, including the
+   65,366-compound TrpRS screen, whose title ("Biochemical assay for Mt-TrpRS")
+   names neither tuberculosis nor mycobacterium. The taxonomy search is the
+   filter. The claim came from a literature survey and was written into this
+   spec without being checked against the endpoint.
 9. **Stage labels state their provenance.** `stages_source = 'stated'` where
    PubChem gives `Assay Type` and project roles; `'from_prose'` where they are
    classified from the depositor's description, the same standing as

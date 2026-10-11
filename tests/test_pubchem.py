@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from atlas.sources import unichem
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -40,3 +42,14 @@ def test_one_compound_can_have_several_pubchem_entries():
     mapping = unichem.chembl_by_cid(FIXTURES / "unichem_src1src22.txt")
     for cid in ("16694118", "24850", "75366293"):
         assert mapping[cid] == "CHEMBL3833402"
+
+
+def test_unichem_raises_when_a_cid_maps_to_two_chembl_ids(tmp_path):
+    """The bridge is keyed on CID, which is unique in the live file. If that ever
+    stops being true, the build must stop: keeping either pair would attribute one
+    compound's screening history to another.
+    """
+    path = tmp_path / "collision.txt"
+    path.write_text("From src:'1'\tTo src:'22'\nCHEMBL6329\t12846578\nCHEMBL1004\t12846578\n")
+    with pytest.raises(ValueError, match="CID 12846578 maps to both CHEMBL6329 and CHEMBL1004"):
+        unichem.chembl_by_cid(path)

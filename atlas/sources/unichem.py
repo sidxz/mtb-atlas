@@ -60,8 +60,19 @@ def chembl_by_cid(path: Path) -> dict[str, str]:
     Keyed on the CID side because that is the unique side of the relation. In
     the full file 25,938 ChEMBL ids (0.9%) map to more than one CID, up to 32,
     so the other way round would keep one CID per compound. No CID appears twice
-    across the 2,832,793 pairs, which is what makes this dict lossless. A dict
-    comprehension keeps the last of any colliding pair without complaint, so
-    that claim rests on the data, and the test pins the multi-CID case.
+    across the 2,832,793 pairs, which is what makes this dict lossless. A CID
+    that does map to two ChEMBL ids raises, rather than keeping one of them: that
+    uniqueness is asserted here, not assumed.
     """
-    return {row["pubchem_cid"]: row["molecule_chembl_id"] for row in normalize(path)}
+    out: dict[str, str] = {}
+    for row in normalize(path):
+        cid, chembl_id = row["pubchem_cid"], row["molecule_chembl_id"]
+        seen = out.get(cid)
+        if seen is not None and seen != chembl_id:
+            raise ValueError(
+                f"CID {cid} maps to both {seen} and {chembl_id} in UniChem. The bridge "
+                "is keyed on CID, so keeping either would attribute one compound's "
+                "screens to the other."
+            )
+        out[cid] = chembl_id
+    return out

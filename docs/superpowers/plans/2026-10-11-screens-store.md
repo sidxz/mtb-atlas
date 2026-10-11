@@ -966,10 +966,12 @@ def campaign_activities(documents: Sequence[str], *, force: bool = False) -> lis
     return rows
 
 
-def campaign_targets(
-    assays: Iterable[Mapping[str, Any]], *, force: bool = False
-) -> dict[str, dict[str, Any]]:
-    """Target type and organism for every target these assays name."""
+def campaign_targets(assays: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Target type and organism for every target these assays name.
+
+    No `force`: this goes through `fetch_json_many`, which does not cache, so a
+    parameter here would promise a re-download that `build-force` cannot give.
+    """
     ids = sorted({a["target_chembl_id"] for a in assays if a.get("target_chembl_id")})
     out: dict[str, dict[str, Any]] = {}
     urls = [
@@ -1861,34 +1863,17 @@ def campaign_screens(
     return rows
 ```
 
-`campaign_screens` needs the documents' metadata. Add the fetch beside it:
+`campaign_screens` needs the documents' metadata. **`campaign_document_meta` already
+exists** — Task 4 moved it forward, because the publications-only filter needs
+`doc_type` before any activity is fetched. Do not define it again; its signature
+is `campaign_document_meta(documents: Sequence[str]) -> dict[str, dict[str, Any]]`
+with **no `force` parameter**, returning `doc_type`, `title`, `year` and
+`pubmed_id` per document.
 
-```python
-CAMPAIGN_DOC_FIELDS = "document_chembl_id,doc_type,journal,year,title,pubmed_id,doi"
-
-
-def campaign_document_meta(
-    documents: Sequence[str], *, force: bool = False
-) -> dict[str, dict[str, Any]]:
-    """Year, title and type for each campaign document."""
-    out: dict[str, dict[str, Any]] = {}
-    urls = [
-        f"{API}/document.json?document_chembl_id__in={batch}"
-        f"&only={CAMPAIGN_DOC_FIELDS}&limit={ID_BATCH}"
-        for batch in batches(list(documents))
-    ]
-    for payload in fetch_json_many(
-        urls, workers=6, min_interval=0.1, label="chembl campaign documents"
-    ).values():
-        for document in payload["documents"]:
-            out[document["document_chembl_id"]] = {
-                "doc_type": document.get("doc_type"),
-                "title": document.get("title"),
-                "year": document.get("year"),
-                "pubmed_id": str(document["pubmed_id"]) if document.get("pubmed_id") else None,
-            }
-    return out
-```
+Task 4 also added `campaign_publications(documents, meta)`, which keeps only the
+`PUBLICATION` documents and **raises** on a candidate with no document record
+rather than silently treating it as a non-paper — `fetch_json_many` skips failed
+batches, so a missing record means a lost fetch, not a dataset.
 
 And the per-stage counts, which `normalize_campaign_assays` left as None
 because it had not seen the activities yet:
@@ -2054,15 +2039,24 @@ In `atlas/pipeline.py`, add `pubchem` and `unichem` to the `from .sources import
         .project("assay_chembl_id, evidence, document_chembl_id")
         .fetchall()
     ]
-    documents = chembl.campaign_documents(whole_cell)
+    # Publications only, and the filter has to come before any activity fetch:
+    # CHEMBL3988442 is a DATASET with 1,413,047 activity rows, which one batch of
+    # ten would page over ~1,414 times. Deposited datasets reach the store
+    # through PubChem instead -- that deposit is AIDs 1671154-1671185.
+    candidates = chembl.campaign_documents(whole_cell)
+    meta = chembl.campaign_document_meta(candidates)
+    documents = chembl.campaign_publications(candidates, meta)
     campaign_assays = chembl.campaign_assays(documents, force=force)
-    campaign_targets = chembl.campaign_targets(campaign_assays, force=force)
+    campaign_targets = chembl.campaign_targets(campaign_assays)
     campaign_acts = chembl.campaign_activities(documents, force=force)
     campaign_stages = chembl.stamp_stage_counts(
         chembl.normalize_campaign_assays(campaign_assays, campaign_targets), campaign_acts
     )
-    meta = chembl.campaign_document_meta(documents, force=force)
-    _say(f"[evidence] screens: {len(documents)} ChEMBL campaigns, {len(campaign_stages)} stages")
+    _say(
+        f"[evidence] screens: {len(documents)} ChEMBL campaigns "
+        f"({len(candidates) - len(documents)} deposits left to PubChem), "
+        f"{len(campaign_stages)} stages"
+    )
     paths += pubchem.build(
         retrieved_at=retrieved_at,
         extra_screens=chembl.campaign_screens(campaign_stages, campaign_acts, meta),

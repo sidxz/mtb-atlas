@@ -48,12 +48,14 @@ free consistency check on the unit handling.
 
 The fixture store's `assay_sizes` is not a file here: `tests/conftest.py`
 derives it from `chembl_bioactivity.json` through `chembl.aggregate_sizes`, so a
-gene cannot have activities and no assays. Three rows are added by hand because
-the potency rows cannot show them: a percent-inhibition screen of 5 compounds on
-dprE1 (in the census, never in `activities`), a 3-compound ClpP1P2 screen, and a
-4-compound screen on `CHEMBL5629`, which reaches `Rv3545c` only through UniProt's
+gene cannot have activities and no assays. Two census rows are added by hand
+because the potency rows cannot show them: a percent-inhibition screen of 5
+compounds on dprE1 (in the census, never in `activities`), and a 4-compound
+screen on `CHEMBL5629`, which reaches `Rv3545c` only through UniProt's
 cross-reference and so has no `target_type` — it must be reported as
-not-a-single-protein rather than dropped.
+not-a-single-protein rather than dropped. The ClpP1P2 screen is three hand-written
+potency rows in `tests/conftest.py` (compounds borrowed from dprE1's), so the
+complex's assay has a description that `protein_assay_example` must not offer.
 
 `extra_evidence.json` carries nine real `orthologue_structures` rows, chosen to
 be the three shapes rather than a sample: folC's two `same_sequence` entries

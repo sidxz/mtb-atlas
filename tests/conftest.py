@@ -96,6 +96,33 @@ def evidence_store(store: Path) -> Path:
         store=store,
     )
     bioactivity = json.loads((FIXTURES / "chembl_bioactivity.json").read_text())
+    # Three potency rows on the ClpP1P2 screen, as the live assay has (7 of them,
+    # beside its 68,611 percent-inhibition measurements). They give the complex
+    # target an assay description, which is what `protein_assay_example` would
+    # wrongly offer for a gene that has no assay of its own. The compounds are
+    # reused from dprE1's rows; none has a whole-cell measurement.
+    bioactivity["activities"] += [
+        {
+            "activity_id": 9000001 + i,
+            "molecule_chembl_id": molecule,
+            "target_chembl_id": "CHEMBL4662931",
+            "target_organism": "Mycobacterium tuberculosis (strain ATCC 25618 / H37Rv)",
+            "evidence": "direct",
+            "standard_type": "IC50",
+            "standard_relation": "=",
+            "standard_value": 1000.0,
+            "standard_units": "nM",
+            "pchembl_value": 6.0,
+            "assay_chembl_id": "CHEMBL4649972",
+            "assay_type": "B",
+            "assay_description": "Inhibition of Mycobacterium tuberculosis ClpP1P2 protease",
+            "document_chembl_id": "CHEMBL3988442",
+            "document_year": 2021,
+            "data_validity_comment": None,
+            "potential_duplicate": False,
+        }
+        for i, molecule in enumerate(("CHEMBL4439876", "CHEMBL4453252", "CHEMBL5180878"))
+    ]
     write_parquet(
         "activities",
         chembl.annotate_activities(bioactivity["activities"], bioactivity["compounds"]),
@@ -123,14 +150,13 @@ def evidence_store(store: Path) -> Path:
         for target_id, target_rows in sorted(by_target.items())
         for row in chembl.aggregate_sizes(target_id, target_rows)
     ]
-    # Three cases the live store has and this fixture otherwise cannot show.
+    # Two cases the live store has and this fixture otherwise cannot show.
     # First, a primary screen: it reports percent inhibition, so the census
     # counts it and `activities` (potency rows only) never held it. Without
     # this row nothing distinguishes the census from the potency rows.
-    # Second, a screen filed against a two-subunit complex, which must not
-    # become either subunit's own assay. ClpP1P2 is the real example
-    # (CLAUDE.md's complex rule), and 3 compounds is enough to tell it apart.
-    # Third, a screen on a target whose type is unknown: CHEMBL5629 reaches
+    # (The screen filed against the ClpP1P2 complex needs no row here: its
+    # three potency rows above already put 3 compounds in the census.)
+    # Second, a screen on a target whose type is unknown: CHEMBL5629 reaches
     # Rv3545c only through UniProt's cross-reference, so the crosswalk has no
     # `target_type` for it. It must be shown as not-a-single-protein, never lost.
     sizes += [
@@ -139,14 +165,6 @@ def evidence_store(store: Path) -> Path:
             "assay_chembl_id": "CHEMBL9000001",
             "n_compounds": 5,
             "n_measurements": 5,
-            "endpoint_types": ["Percent Effect"],
-            "latest_year": 2021,
-        },
-        {
-            "target_chembl_id": "CHEMBL4662931",
-            "assay_chembl_id": "CHEMBL4649972",
-            "n_compounds": 3,
-            "n_measurements": 3,
             "endpoint_types": ["Percent Effect"],
             "latest_year": 2021,
         },

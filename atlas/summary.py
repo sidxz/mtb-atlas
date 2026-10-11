@@ -40,12 +40,18 @@ assay_example AS (
     -- what the measurement actually is: a coupled enzymatic readout and a
     -- fluorescence cell-free screen are not interchangeable to someone who has
     -- to run one.
+    --
+    -- This is the illustration of `n_protein_assays` and has to answer the same
+    -- question, so it takes the same `SINGLE PROTEIN` filter (see `assay_scale`).
+    -- Without it a gene reading 0 assays names one -- gyrB beside a gyrase
+    -- complex assay -- which is a zero that does not mean zero.
     SELECT rv_id, arg_max(assay_description, n_measurements) AS protein_assay_example
     FROM (
         SELECT gt.rv_id, a.assay_description, count(*) AS n_measurements
         FROM gene_target gt
         JOIN act a ON a.target_chembl_id = gt.target_id
         WHERE a.evidence = 'direct' AND a.assay_description IS NOT NULL
+          AND gt.target_type = 'SINGLE PROTEIN'
         GROUP BY 1, 2
     )
     GROUP BY 1

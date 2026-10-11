@@ -189,6 +189,10 @@ def test_a_complex_screen_is_not_either_subunits_protein_assay(rows: dict) -> No
         # Shown, never counted.
         assert rows[rv_id]["n_complex_assays"] == 1, rv_id
         assert rows[rv_id]["max_complex_assay_compounds"] == 3, rv_id
+        # The example illustrates `n_protein_assays`, so it answers the same
+        # question: a gene with no assay on its own protein names none. The
+        # fixture gives the complex's assay a description to wrongly offer.
+        assert rows[rv_id]["protein_assay_example"] is None, rv_id
 
 
 def test_a_target_of_unknown_type_is_reported_not_lost(rows: dict, evidence_store: Path) -> None:

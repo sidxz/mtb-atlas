@@ -194,7 +194,9 @@ Two traps, both of which would inflate the number badly:
   3,083 `F` assays over *two* targets (`CHEMBL360`, `CHEMBL2111188`) against
   454 `B` assays over 92. Reading `assay_type = 'F'` as "functional protein
   assay" credits every MIC screen in the database to whichever genes its
-  compounds touch. The filter that works is `evidence = 'direct'`.
+  compounds touch. The filter that works is `evidence = 'direct'` on a
+  `SINGLE PROTEIN` target, the second half of which keeps a complex's assays
+  out of its subunits' counts (see "Screened, or merely studied?" below).
 - **Count assays, not measurements.** InhA has 205 assays behind 1,460
   activity rows; one assay run against 400 compounds is one assay you could
   run again.
@@ -290,7 +292,7 @@ out at 76 compounds in any single assay.
 `assay_sizes`, which counts every activity row ChEMBL files against an assay.
 Reading it from `activities` instead counted only rows carrying a
 `pchembl_value`, and a primary screen reports percent inhibition: the census
-holds 295,278 measurements across 1,099 assays on 132 protein targets, 279,306
+holds 295,278 measurements across 1,099 assays on 132 targets, 279,306
 of them in assays that report `Percent Effect`, while `activities` holds 8,766
 protein-level rows. The screens above therefore read as 143 (Pks13), 5 (CoaBC),
 2 (TrpRS), 8 (ClpP1P2) and 12 (AspRS), and `dnaB` and `recA` as 1,642 and

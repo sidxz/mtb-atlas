@@ -152,7 +152,8 @@ This is the rule that outranks completeness.
   direct or orthologue activity on it. Attaching cell data to a gene with no
   protein-level link invents an association that is not in the data.
 - **"Is there an assay" is not "is there a hit."** `n_protein_assays` counts
-  distinct ChEMBL assays on the gene's own protein (`evidence = 'direct'`), and
+  distinct ChEMBL assays on the gene's own protein (`evidence = 'direct'` on a
+  `SINGLE PROTEIN` target, so a complex's assays are not its subunits'), and
   434 essential genes have none. Never read `assay_type = 'F'` as a protein
   assay: ChEMBL files whole-cell MICs that way against the organism, so the
   genome holds 3,083 of them over two "targets". And **an assay count is not a

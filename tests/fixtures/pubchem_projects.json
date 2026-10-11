@@ -73,5 +73,13 @@
         ]
       }
     ]
+  },
+  "error": {
+    "header": {
+      "type": "elink",
+      "version": "0.3"
+    },
+    "linksets": [],
+    "ERROR": "Invalid db name specified: nosuchdb"
   }
 }

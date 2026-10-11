@@ -159,7 +159,7 @@ states the library size. Nothing is synthetic.
 | `1671170` | `SIDCountActive: 0` and `SIDCountUnspecified` equal to `SIDCountAll`: no cutoff was deposited. Neither its title (`Mt-TrpRS`) nor its target name says *tuberculosis* |
 | `1671178` | The other all-`Unspecified` shape: 25 actives (the IC50 rows) beside `SIDCountUnspecified` equal to `SIDCountAll`. Six of the eight ChEMBL deposits among the 28 large AIDs look like this |
 | `2060911` | `SourceName` is the bare string `11908`; a prose library of 100,639 compounds against 93,270 SIDs deposited; a UniProt target accession |
-| `2253871` | A **partial** deposit: 13 actives and 2 `Unspecified` of 15 SIDs, so `0 < SIDCountUnspecified < SIDCountAll`. A small ChEMBL deposit, far below the 10,000 floor, kept only for the shape (1,912 of the 8,391 small AIDs fetched look like this; none of the 28 large ones do) |
+| `2253871` | A **partial** deposit: 13 actives and 2 `Unspecified` of 15 SIDs, so `0 < SIDCountUnspecified < SIDCountAll`. A small ChEMBL deposit, far below the 10,000 floor, kept only for the shape (1,912 small AIDs in Task 6's census look like this; none of the 28 large ones do) |
 
 The summary has no `TaxonomyID` on any target and no `PubMedID` field, in any of
 the 28 AIDs of 10,000 or more tested SIDs.
@@ -195,14 +195,16 @@ Relation`, `Standard Value` and `Standard Units`:
 
 ## `pubchem_projects.json`
 
-**Hand-assembled, not captured.** PubChem was blocking this machine when the task
-was written, so no live eLink call could be made. The 39 member AIDs are the 39
-`<Link>` ids of a real eLink **XML** response for AID 449775 (taken earlier the
-same day); the JSON envelope is E-utilities' `retmode=json` shape for the same
-`pcassay_pcassay_same_assay_project_list` link. The `1626` entry is the shape
-eLink returns for an AID that declares no project: a linkset with no
-`linksetdbs`. The lowest member of the 449775 project is `435019`, which is
-neither the primary (449762) nor the AID that was asked.
+Three real E-utilities eLink answers (`retmode=json`,
+`linkname=pcassay_pcassay_same_assay_project_list`), fetched 2026-10-11 from
+`eutils.ncbi.nlm.nih.gov`. PubChem itself was blocking this machine that day;
+E-utilities was not.
+
+| Key | Exercises |
+|---|---|
+| `449775` | A declared project: 39 member AIDs, among them the 327,669-SID primary (449762) and the confirmatory. Its lowest member is `435019`, which is neither the primary nor the AID that was asked |
+| `1626` | The genuine "declares no project" answer: a linkset whose `ids` is the AID asked, with no `linksetdbs` |
+| `error` | `db=nosuchdb`, `id=1`: HTTP **200** with `{"linksets": [], "ERROR": "Invalid db name specified: nosuchdb"}`. E-utilities answers a bad db, id or linkname this way, and `fetch` caches it as a success |
 
 ## `pubchem_refseq_uniprot.json`
 

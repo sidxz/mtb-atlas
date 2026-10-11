@@ -157,7 +157,7 @@ def test_a_few_actives_beside_an_all_unspecified_set_is_still_no_call():
 def test_a_partial_deposit_keeps_its_calls_and_says_how_many_sids_have_none():
     """AID 2253871 (a small ChEMBL deposit, below the floor) calls 13 of its 15 SIDs.
 
-    1,912 of the 8,391 small AIDs fetched look like this and none of the 28 large
+    1,912 small AIDs (Task 6's census) look like this and none of the 28 large
     ones do. The calls are real, so they are kept; without `n_unspecified` the
     13 + 0 + 0 against 15 tested would have a gap and nothing to explain it.
     """
@@ -309,8 +309,9 @@ def test_the_depositor_is_stored_as_given_even_when_it_is_not_a_name():
 
 
 class _Page:
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str, headers: dict | None = None) -> None:
         self.text = text
+        self.headers = headers or {}
 
 
 def test_summaries_are_fetched_in_batches_that_cover_every_aid_once(monkeypatch):
@@ -558,6 +559,33 @@ def test_a_download_that_is_not_a_result_table_raises_instead_of_reading_as_empt
         list(pubchem.normalize_results(path, "7", {}))
 
 
+@pytest.mark.parametrize("cell", ["1,200", ">5", "nan", "inf", "1e999", "5 uM"])
+def test_a_standard_value_that_is_not_a_finite_number_raises(tmp_path, cell):
+    """The column is FLOAT in the file's own `RESULT_TYPE` row. A cell that will not
+    parse swallowed into NULL leaves `endpoint`, `standard_relation` and
+    `standard_units` populated: "IC50 in nM, no value", with no trace of why. NaN
+    and infinity parse, and are no more a measurement."""
+    path = tmp_path / "bad.csv"
+    path.write_text(
+        "PUBCHEM_RESULT_TAG,PUBCHEM_SID,PUBCHEM_CID,PUBCHEM_ACTIVITY_OUTCOME,Standard Value\n"
+        f'1,10,20,Unspecified,"{cell}"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=rf"AID 7.*{cell!r}"):
+        list(pubchem.normalize_results(path, "7", {}))
+
+
+def test_a_blank_standard_value_is_no_value_and_a_plain_one_is_a_float(tmp_path):
+    path = tmp_path / "blank.csv"
+    path.write_text(
+        "PUBCHEM_RESULT_TAG,PUBCHEM_SID,PUBCHEM_CID,PUBCHEM_ACTIVITY_OUTCOME,Standard Value\n"
+        "1,10,20,Unspecified,\n2,11,21,Unspecified,-1.5e2\n",
+        encoding="utf-8",
+    )
+    rows = list(pubchem.normalize_results(path, "7", {}))
+    assert [row["standard_value"] for row in rows] == [None, -150.0]
+
+
 def test_results_come_from_the_uncapped_route_at_pubchems_pace(monkeypatch):
     """PUG-REST refuses above 10,000 SIDs ("Too many SIDs"), and AID 1626 has
     215,397. `pcget.cgi` has no cap, and a 30 MB body needs more than the default
@@ -571,6 +599,9 @@ def test_results_come_from_the_uncapped_route_at_pubchems_pace(monkeypatch):
     monkeypatch.setattr(pubchem, "fetch", fake_fetch)
     pubchem.fetch_results("1626")
     assert "pcget.cgi" in seen["url"]
+    # `actvty=all` is what returns the inactives; `actvty=active` would cut AID
+    # 1626 from 215,397 rows to about 2,000 and nothing else would notice.
+    assert "actvty=all" in seen["url"]
     assert seen["url"].endswith("&aid=1626")
     assert seen["dest"] == "results/1626.csv"
     assert seen["min_interval"] == pubchem.PACE
@@ -584,12 +615,21 @@ def _projects() -> dict:
     return json.loads((FIXTURES / "pubchem_projects.json").read_text())
 
 
+def _asked(aid: str, payload: dict) -> dict:
+    """What eLink answers when the same project is asked for from another member."""
+    return {**payload, "linksets": [{**payload["linksets"][0], "ids": [aid]}]}
+
+
 def test_a_declared_project_groups_its_members_and_an_undeclared_one_stands_alone():
     """AID 449775's real project lists 39 AIDs, among them the 327,669-SID primary
     (449762) and the confirmatory. Asked from either, they name one campaign."""
     links = _projects()
     grouped = pubchem.group_projects(
-        {"449762": links["449775"], "449775": links["449775"], "1626": links["1626"]}
+        {
+            "449762": _asked("449762", links["449775"]),
+            "449775": links["449775"],
+            "1626": links["1626"],
+        }
     )
     # The lowest member is 435019, which is neither AID that was asked.
     assert grouped["449762"] == grouped["449775"] == "pubchem:project:435019"
@@ -599,12 +639,14 @@ def test_a_declared_project_groups_its_members_and_an_undeclared_one_stands_alon
 
 
 def test_the_lowest_member_is_the_lowest_number_not_the_lowest_text():
-    payload = {"linksets": [{"linksetdbs": [{"links": ["100000", "99999", "100001"]}]}]}
+    payload = {
+        "linksets": [{"ids": ["100000"], "linksetdbs": [{"links": ["100000", "99999", "100001"]}]}]
+    }
     assert pubchem.group_projects({"100000": payload}) == {"100000": "pubchem:project:99999"}
 
 
 def test_a_project_that_lists_only_itself_is_not_a_project():
-    payload = {"linksets": [{"linksetdbs": [{"links": ["1626"]}]}]}
+    payload = {"linksets": [{"ids": ["1626"], "linksetdbs": [{"links": ["1626"]}]}]}
     assert pubchem.group_projects({"1626": payload}) == {"1626": "pubchem:1626"}
 
 
@@ -623,6 +665,36 @@ def test_a_project_is_read_from_the_pcassay_project_link_at_pubchems_pace(monkey
     assert seen["min_interval"] == pubchem.PACE
     assert seen["json_body"] is True
     assert len(payload["linksets"][0]["linksetdbs"][0]["links"]) == 39
+
+
+ERRORS = [
+    pytest.param(_projects()["error"], id="eutils error"),
+    pytest.param({"linksets": []}, id="no linkset"),
+    pytest.param({"linksets": [{"dbfrom": "pcassay", "ids": ["7"]}]}, id="linkset for another id"),
+    pytest.param(
+        {"linksets": [{"dbfrom": "pcassay", "ids": ["1"]}], "ERROR": "Invalid linkname"},
+        id="error beside a linkset",
+    ),
+]
+
+
+@pytest.mark.parametrize("payload", ERRORS)
+def test_an_eutils_error_is_not_a_project_that_declares_none(payload):
+    """E-utilities answers HTTP 200 with JSON for a bad db, id or linkname, and
+    `{"linksets": [], "ERROR": "Invalid db name specified"}` has no project in it
+    either. Read as one, it would say AID 1 "declares no project", which is not
+    the same statement as the lookup having failed. The genuine answer is a
+    linkset whose `ids` is the AID that was asked, and the 1626 fixture is one."""
+    with pytest.raises(ValueError, match=r"AID 1\b.*atlas refresh pubchem"):
+        pubchem.group_projects({"1": payload})
+
+
+def test_a_project_lookup_that_eutils_failed_is_not_returned_to_be_cached(monkeypatch):
+    """`fetch` has cached the body by the time it is parsed, so the error is raised
+    here, with the way out, rather than left for `group_projects` to find."""
+    monkeypatch.setattr(pubchem, "fetch", lambda *a, **k: _Page(json.dumps(_projects()["error"])))
+    with pytest.raises(ValueError, match=r"AID 1\b.*Invalid db name.*atlas refresh pubchem"):
+        pubchem.fetch_project("1")
 
 
 # --- the gene a campaign aims at ----------------------------------------------
@@ -748,6 +820,20 @@ def test_an_accession_two_loci_share_reaches_both_and_says_so(monkeypatch):
     assert linked["shared_accession"] is True
 
 
+def test_a_refseq_that_reaches_two_loci_through_two_accessions_shares_nothing(monkeypatch):
+    """`shared_accession` is the crosswalk column's meaning: an accession that
+    belongs to more than one locus. UniProt mapping one RefSeq protein to two
+    accessions (here Swiss-Prot and TrEMBL entries of two different genes, a
+    synthetic answer) reaches two loci without any accession being shared, and
+    flagging it would send Task 9 looking for siblings that do not exist."""
+    body = {"results": [{"primaryAccession": "P9WHW5"}, {"primaryAccession": "P9WQA3"}]}
+    monkeypatch.setattr(pubchem, "fetch", lambda *a, **k: _Page(json.dumps(body)))
+    (linked,) = pubchem.link_targets([{"accession": "NP_214877", "name": "x"}], RV_BY_ACC)
+    assert linked["uniprot_accessions"] == ["P9WHW5", "P9WQA3"]
+    assert linked["rv_ids"] == ["Rv0018c", "Rv0363c"]
+    assert linked["shared_accession"] is False
+
+
 def test_every_linked_target_carries_the_same_keys(monkeypatch):
     """Targets are stored as a list of structs, so a key on some of them only is
     the same silent-NULL trap as on the rows."""
@@ -762,6 +848,24 @@ def test_every_linked_target_carries_the_same_keys(monkeypatch):
     )
     assert [set(t) for t in linked] == [LINK_KEYS] * 3
     assert pubchem.link_targets([], RV_BY_ACC) == []
+
+
+def test_a_refseq_answer_that_runs_to_a_second_page_raises_instead_of_truncating(monkeypatch):
+    """UniProt's search returns 25 hits and a `Link: ...; rel="next"` header when
+    there are more (checked live: a query for 4,059 hits sends one). The guard
+    mirrors the one on the AID list: a silent cut is a locus that goes unmatched
+    with nothing to say the answer was incomplete."""
+    link = (
+        "<https://rest.uniprot.org/uniprotkb/search?format=json&fields=accession"
+        "&query=xref%3Arefseq-NP_214877&cursor=88d67348niembui5ewaai9up6mimhem4c9&size=25>; "
+        'rel="next"'
+    )
+    body = {"results": [{"primaryAccession": "P9WQA3"}]}
+    monkeypatch.setattr(
+        pubchem, "fetch", lambda *a, **k: _Page(json.dumps(body), headers={"link": link})
+    )
+    with pytest.raises(ValueError, match=r"NP_214877.*more than one page.*atlas refresh pubchem"):
+        pubchem.fetch_refseq("NP_214877")
 
 
 def test_a_refseq_lookup_is_cached_under_uniprot_and_refuses_a_non_refseq_string(monkeypatch):

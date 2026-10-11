@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import re
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
@@ -161,8 +162,8 @@ def normalize_screens(summaries: Iterable[Mapping[str, Any]]) -> list[dict[str, 
     `n_inactive` and `n_inconclusive` are NULL wherever it is false.
 
     Where it is true, each is the number of SIDs the depositor called that way,
-    and a deposit that called only some of its SIDs (a partial one: 1,912 of the
-    8,391 small AIDs fetched, none of the 28 large) has `n_unspecified` for the rest.
+    and a deposit that called only some of its SIDs (a partial one: 1,912 small
+    AIDs in Task 6's census, none of the 28 large) has `n_unspecified` for the rest.
     """
     rows = []
     for summary in summaries:
@@ -255,11 +256,25 @@ def fetch_results(aid: str, *, force: bool = False) -> Fetched:
     )
 
 
-def _number(value: str | None) -> float | None:
-    try:
-        return float(value) if value else None
-    except ValueError:
+def _number(value: str | None, aid: str) -> float | None:
+    """A FLOAT cell: blank is no value, and anything else must be a finite number.
+
+    The file's own `RESULT_TYPE` row types the column FLOAT, so a cell that will
+    not parse (`1,200`, `>5`) is a surprise worth stopping for. Turned into NULL it
+    would leave `endpoint`, `standard_relation` and `standard_units` populated
+    beside no value, with no trace of why. `nan` and `inf` parse and are no more a
+    measurement.
+    """
+    text = _text(value)
+    if text is None:
         return None
+    try:
+        number = float(text)
+    except ValueError:
+        number = math.nan
+    if not math.isfinite(number):
+        raise ValueError(f"AID {aid}: {text!r} is not a finite number in a FLOAT column")
+    return number
 
 
 def _text(value: str | None) -> str | None:
@@ -291,6 +306,12 @@ def normalize_results(
     different in every AID and stay in the raw file. The four keys are NULL, not
     absent, where the deposit has none.
     """
+    # errors="replace" is deliberate: a depositor's free text (comments, names) can
+    # hold bytes that are not UTF-8, and a strict decode would abort a parse of
+    # hundreds of thousands of rows over a column nothing here reads. Neither file
+    # measured needed it (AID 1626 and 1671170 are pure ASCII), and the cost is
+    # that a bad byte in a column that IS read (`Standard Type`, `Standard Units`)
+    # becomes U+FFFD instead of raising.
     with path.open(encoding="utf-8", errors="replace", newline="") as handle:
         reader = csv.DictReader(handle)
         if missing := [name for name in RESULT_COLUMNS if name not in (reader.fieldnames or [])]:
@@ -316,7 +337,7 @@ def normalize_results(
                 "outcome": OUTCOMES[label.lower()],
                 "activity_score": int(score) if score else None,
                 "endpoint": _text(row.get("Standard Type")),
-                "standard_value": _number(row.get("Standard Value")),
+                "standard_value": _number(row.get("Standard Value"), aid),
                 "standard_units": _text(row.get("Standard Units")),
                 "standard_relation": _text(row.get("Standard Relation")),
             }
@@ -345,12 +366,30 @@ def fetch_project(aid: str, *, force: bool = False) -> dict[str, Any]:
         force=force,
         json_body=True,
     )
-    return json.loads(page.text)
+    payload = json.loads(page.text)
+    _members(aid, payload)  # raises if E-utilities answered with an error
+    return payload
 
 
-def _members(payload: Mapping[str, Any]) -> list[str]:
+def _members(aid: str, payload: Mapping[str, Any]) -> list[str]:
+    """The AIDs the link set names for `aid`, after checking it answers for `aid`.
+
+    E-utilities answers HTTP 200 with JSON for a bad db, id or linkname --
+    `{"linksets": [], "ERROR": "Invalid db name specified"}` -- so a failed lookup
+    parses like an empty one and `fetch` caches it. A genuine "declares no
+    project" is a linkset whose `ids` is the AID asked and which has no
+    `linksetdbs`; anything else is an error here, never that answer.
+    """
+    linksets = payload.get("linksets") or []
+    answered = {str(i) for linkset in linksets for i in linkset.get("ids") or []}
+    if "ERROR" in payload or str(aid) not in answered:
+        raise ValueError(
+            f"E-utilities gave no project answer for AID {aid} "
+            f"({payload.get('ERROR') or payload.get('error') or 'no linkset for that id'}). "
+            f"The response is cached already, so a re-run reads it back: {_REMEDY}"
+        )
     out: list[str] = []
-    for linkset in payload.get("linksets") or []:
+    for linkset in linksets:
         for db in linkset.get("linksetdbs") or []:
             out += [str(link) for link in db.get("links") or []]
     return sorted(set(out), key=int)
@@ -366,7 +405,7 @@ def group_projects(payloads: Mapping[str, Mapping[str, Any]]) -> dict[str, str]:
     """
     grouped: dict[str, str] = {}
     for aid, payload in payloads.items():
-        members = _members(payload)
+        members = _members(aid, payload)
         grouped[aid] = f"pubchem:project:{members[0]}" if len(members) > 1 else f"pubchem:{aid}"
     return grouped
 
@@ -409,6 +448,13 @@ def fetch_refseq(accession: str, *, force: bool = False) -> list[str]:
         force=force,
         json_body=True,
     )
+    # The search sends 25 hits and a `Link: <...>; rel="next"` header when there are
+    # more. A cut list would leave a locus unmatched with nothing to say why.
+    if 'rel="next"' in page.headers.get("link", ""):
+        raise ValueError(
+            f"UniProt answered {accession} with more than one page of accessions. "
+            f"The response is cached already, so a re-run reads it back: {_REMEDY}"
+        )
     return [hit["primaryAccession"] for hit in json.loads(page.text)["results"]]
 
 
@@ -422,8 +468,12 @@ def link_targets(
 
     `rv_by_acc` is the crosswalk's UniProt accession -> Rv ids. An accession that
     reaches no locus has `rv_ids == []` and keeps its accession and name, so the
-    absence is visible. One that reaches several (55 loci share an accession with
-    a sibling) keeps all of them and says `shared_accession`; none is picked.
+    absence is visible. One that reaches several keeps all of them; none is picked.
+
+    `shared_accession` means what the crosswalk column of that name means: a
+    resolved accession belongs to more than one locus (55 loci share one with a
+    sibling). It is not `len(rv_ids) > 1`: a RefSeq protein UniProt maps to two
+    accessions of two genes reaches two loci and shares nothing.
     """
     out = []
     for target in targets:
@@ -443,7 +493,7 @@ def link_targets(
                 "accession_kind": kind,
                 "uniprot_accessions": uniprot,
                 "rv_ids": rv_ids,
-                "shared_accession": len(rv_ids) > 1,
+                "shared_accession": any(len(rv_by_acc.get(acc, ())) > 1 for acc in uniprot),
             }
         )
     return out

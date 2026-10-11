@@ -69,7 +69,7 @@ That last line is the product: a target shortlist short enough to read, with
 Enablement — what it would take to work on one:
 
 ```
-103 genes with a published assay against the protein · 431 essential genes
+119 genes with a published assay against the protein · 434 essential genes
     with none, where screening starts by building the assay
 3,936 genes also measured in HN878, a clinical isolate · 507 with the
     authors' own H37Rv-vs-HN878 differential

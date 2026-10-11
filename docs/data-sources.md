@@ -180,10 +180,12 @@ Examples kept as test fixtures:
 ### Is there an assay, as opposed to a hit?
 
 `target_summary.n_protein_assays` counts the DISTINCT `assay_chembl_id` values
-run against a gene's own protein. It answers a question none of the other
-columns do: whether this target can be screened at all, as against whether
-anyone has already hit it. 103 genes have one; **431 essential genes have
-none**, and for those the first experiment is building the assay.
+run against a gene's own protein, read from the `assay_sizes` census rather
+than from `activities` (see "Screened, or merely studied?" below for why that
+matters). It answers a question none of the other columns do: whether this
+target can be screened at all, as against whether anyone has already hit it.
+119 genes have one; **434 essential genes have none**, and for those the first
+experiment is building the assay.
 
 Two traps, both of which would inflate the number badly:
 
@@ -193,7 +195,7 @@ Two traps, both of which would inflate the number badly:
   454 `B` assays over 92. Reading `assay_type = 'F'` as "functional protein
   assay" credits every MIC screen in the database to whichever genes its
   compounds touch. The filter that works is `evidence = 'direct'`.
-- **Count assays, not measurements.** InhA has 86 assays behind thousands of
+- **Count assays, not measurements.** InhA has 205 assays behind 1,460
   activity rows; one assay run against 400 compounds is one assay you could
   run again.
 
@@ -272,14 +274,40 @@ resistance panels swallow a thousand rows whose medium was simply unstated.
 
 `target_summary.max_assay_compounds` is the largest single published assay on
 the gene's own protein, by distinct compounds. `n_protein_assays` cannot
-separate one 1,875-compound campaign from fourteen five-compound follow-ups,
+separate one 66,592-compound campaign from fourteen five-compound follow-ups,
 and those are opposite answers to "is there a tractable screen here".
 
-Genome-wide the answer is stark: **two genes have a public assay reaching
-1,000 compounds** — `recA` (1,875) and `dnaB` (1,642), both PubChem
-deposits — and five reach 100. inhA, the best-studied target in TB, tops out
-at 52 compounds in any single assay. The scarcity is the finding, not a gap in
-the ingest.
+Genome-wide, **six genes have a public assay reaching 1,000 compounds** and
+thirteen reach 100. The four largest come from one 2021 deposit
+(`CHEMBL3988442`, Dundee/GHDDI/Cornell): CoaBC (`dfp`) at 66,942 compounds,
+Pks13 at 66,592, TrpRS at 65,366 and AspRS at 8,841. The other two are the
+PubChem deposits that were already visible, `dnaB` (2,123) and `recA` (2,118).
+ClpP1P2 has the largest single assay in the store, 68,611 compounds, and is
+counted for neither subunit (below). inhA, the best-studied target in TB, tops
+out at 76 compounds in any single assay.
+
+**This number was wrong until the census landed.** It is computed from
+`assay_sizes`, which counts every activity row ChEMBL files against an assay.
+Reading it from `activities` instead counted only rows carrying a
+`pchembl_value`, and a primary screen reports percent inhibition: the census
+holds 295,278 measurements across 1,099 assays on 132 protein targets, 279,306
+of them in assays that report `Percent Effect`, while `activities` holds 8,766
+protein-level rows. The screens above therefore read as 143 (Pks13), 5 (CoaBC),
+2 (TrpRS), 8 (ClpP1P2) and 12 (AspRS), and `dnaB` and `recA` as 1,642 and
+1,875. The scarcity is still the finding, but it is a scarcity of *campaigns*
+and not of compounds.
+
+A screen of `ClpP1P2` is not a screen of `clpP1`. The crosswalk maps that
+`PROTEIN COMPLEX` target to both subunits as `direct`, so the counts filter on
+`SINGLE PROTEIN` — the rule `n_complex_drugs` already follows — and complex
+screens are reported beside them in `n_complex_assays` and
+`max_complex_assay_compounds`. Fourteen genes carry one: both ClpP subunits,
+eight ATP synthase subunits, `gyrA`/`gyrB`, and `rmlC`/`rmlD`, whose target
+ChEMBL files as a `PROTEIN FAMILY` and which the same filter keeps out of the
+single-protein count. The rule is not free: eleven essential genes (`gyrB`,
+seven ATP synthase subunits, `clpP1`, `clpP2` and `rmlC`) had an assay before
+and read zero now, which is why "essential genes with no protein assay" moved
+from 431 to 434 while the census gave eight others their first.
 
 ### The orthologue bridge
 

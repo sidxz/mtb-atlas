@@ -31,6 +31,7 @@ upstream change and the test that names it should be updated deliberately.
 | `Rv0667` (rpoB) | Ditto, the canonical rifampicin resistance gene |
 | `Rv0148` | Present **only** as a `promoter` row, to prove non-CDS rows are dropped |
 | `Rv2447c` (folC) | Essential, **zero** PDB entries of its own, and two under a CDC 1551 accession at 100% identity — the `same_sequence` case, which no other fixture locus has |
+| `Rv2461c` / `Rv2460c` (clpP1 / clpP2) | The pair behind `CHEMBL4662931`, ClpP1P2, a `PROTEIN COMPLEX` target the crosswalk maps to both as `direct`. A screen filed against it is reported in `n_complex_assays` and counted as neither subunit's own `n_protein_assays`. No Pfam on either, so `precedent_domain_genes` is untouched |
 
 `chembl_bioactivity.json` carries three whole-cell rows added for the potency
 layer, all on `CHEMBL1976041`: a censored `MIC > 128 uM` (must produce no
@@ -44,6 +45,12 @@ free consistency check on the unit handling.
 
 `chembl_uniprot_mapping.txt` additionally keeps `A0QP27` (*M. smegmatis* MmpL3,
 `CHEMBL5465372`) — the far side of the orthologue bridge.
+
+The fixture store's `assay_sizes` is not a file here: `tests/conftest.py`
+derives it from `chembl_bioactivity.json` through `chembl.aggregate_sizes`, so a
+gene cannot have activities and no assays. Two rows are added by hand because
+the potency rows cannot show them: a percent-inhibition screen of 5 compounds on
+dprE1 (in the census, never in `activities`) and a 3-compound ClpP1P2 screen.
 
 `extra_evidence.json` carries nine real `orthologue_structures` rows, chosen to
 be the three shapes rather than a sample: folC's two `same_sequence` entries

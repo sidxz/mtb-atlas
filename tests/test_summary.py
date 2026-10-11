@@ -7,11 +7,13 @@ must not silently widen to include growth-defect genes.
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import pytest
 
-from atlas.store import read
+from atlas import summary
+from atlas.store import read, records
 from atlas.summary import counts
 
 
@@ -157,6 +159,49 @@ def test_screening_scale_separates_a_campaign_from_a_follow_up(rows: dict) -> No
             assert row["max_assay_compounds"] == 0, row["rv_id"]
         else:
             assert row["max_assay_compounds"] >= 1, row["rv_id"]
+
+
+def test_assay_size_comes_from_the_census_not_the_potency_rows(rows: dict) -> None:
+    """A primary screen reports percent inhibition, so it has no pchembl row.
+
+    Reading assay size from `activities` measured the follow-ups and missed the
+    campaign: genome-wide, pks13 read 143 compounds against a 66,592-compound
+    screen. The fixture's dprE1 has 7 assays with potency rows (the largest
+    over 3 compounds) plus a percent-inhibition screen of 5 that only the
+    census holds; both numbers must include it.
+    """
+    dpre1 = rows["Rv3790"]
+    assert dpre1["n_protein_assays"] == 8
+    assert dpre1["max_assay_compounds"] == 5
+    # Potency-based measures are untouched: the screen added no pchembl row.
+    assert dpre1["n_activities"] == 10
+
+
+def test_a_complex_screen_is_not_either_subunits_protein_assay(rows: dict) -> None:
+    """ClpP1P2's target maps to both clpP1 and clpP2 as `direct`.
+
+    Counting it would hand each subunit a screen of the pair, which is the rule
+    `n_complex_drugs` already follows for the ribosome's 45 approved drugs.
+    """
+    for rv_id in ("Rv2460c", "Rv2461c"):
+        assert rows[rv_id]["n_protein_assays"] == 0, rv_id
+        assert rows[rv_id]["max_assay_compounds"] == 0, rv_id
+        # Shown, never counted.
+        assert rows[rv_id]["n_complex_assays"] == 1, rv_id
+        assert rows[rv_id]["max_complex_assay_compounds"] == 3, rv_id
+
+
+def test_a_store_without_the_census_still_summarises(
+    evidence_store: Path, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """An older store has no assay_sizes table; absence is not a failure."""
+    out = tmp_path_factory.mktemp("no-census")
+    for parquet in evidence_store.glob("*.parquet"):
+        if parquet.stem not in ("assay_sizes", "target_summary"):
+            shutil.copy(parquet, out / parquet.name)
+    summary.build(store=out)
+    by_id = {r["rv_id"]: r for r in records("target_summary", store=out)}
+    assert by_id["Rv3790"]["n_protein_assays"] == 0
 
 
 # --- resistance ---------------------------------------------------------------
@@ -335,13 +380,15 @@ def test_a_gene_never_measured_in_the_clinical_strain_is_null(rows: dict) -> Non
 
 
 def test_a_published_protein_assay_is_counted_and_shown(rows: dict) -> None:
-    """DprE1 has seven distinct ChEMBL assays on the Mtb protein itself.
+    """DprE1 has eight distinct ChEMBL assays on the Mtb protein itself.
 
     The count is of assays, not measurements: one assay run against 400
-    compounds is one assay you could run again.
+    compounds is one assay you could run again. Seven of the eight carry a
+    potency row; the eighth is the percent-inhibition screen that only the
+    census holds (it was seven while this was read from `activities`).
     """
     dpre1 = rows["Rv3790"]
-    assert dpre1["n_protein_assays"] == 7
+    assert dpre1["n_protein_assays"] == 8
     assert dpre1["latest_protein_assay_year"] == 2024
     assert "DprE1" in dpre1["protein_assay_example"]
 

@@ -23,24 +23,14 @@ from .store import STORE, built, provenance, read, write_parquet
 # already has protein-level activity on it. See CLAUDE.md.
 SUMMARY_SQL = """
 WITH gene_target AS (
-    SELECT w.rv_id, t.target_id, t.evidence
+    SELECT w.rv_id, t.target_id, t.evidence, t.target_type
     FROM walk w, UNNEST(w.chembl_targets) AS u(t)
 ),
 protein_act AS (
     SELECT gt.rv_id,
            count(*)                                AS n_activities,
            count(DISTINCT a.molecule_chembl_id)    AS n_compounds,
-           max(a.pchembl_value)                    AS best_pchembl,
-           -- Whether anyone has published a way to measure this protein, which
-           -- is a different question from whether anyone has hit it. Distinct
-           -- assays, not measurements: one assay run against 400 compounds is
-           -- one assay you could run again. `direct` only -- an orthologue
-           -- assay is a real assay on another organism's protein, and
-           -- `whole_cell` rows are MICs ChEMBL files against the organism.
-           count(DISTINCT a.assay_chembl_id) FILTER (WHERE a.evidence = 'direct')
-               AS n_protein_assays,
-           max(a.document_year) FILTER (WHERE a.evidence = 'direct')
-               AS latest_protein_assay_year
+           max(a.pchembl_value)                    AS best_pchembl
     FROM gene_target gt
     JOIN act a ON a.target_chembl_id = gt.target_id AND a.evidence <> 'whole_cell'
     GROUP BY 1
@@ -112,19 +102,35 @@ cell_conditions AS (
     )
     GROUP BY 1
 ),
-screening AS (
-    -- Has this target been SCREENED, or merely studied? `n_protein_assays`
-    -- counts assays; it cannot tell one 1,880-compound campaign from fourteen
-    -- five-compound follow-ups, and those are opposite answers to "is there a
-    -- tractable screen here". Genome-wide only three public assays reach 1,000
-    -- compounds, so the scarcity is the finding.
-    SELECT rv_id, max(n_cpd) AS max_assay_compounds
-    FROM (
-        SELECT gt.rv_id, a.assay_chembl_id, count(DISTINCT a.molecule_chembl_id) AS n_cpd
-        FROM gene_target gt
-        JOIN act a ON a.target_chembl_id = gt.target_id AND a.evidence = 'direct'
-        GROUP BY 1, 2
-    )
+assay_scale AS (
+    -- Assay existence and size come from the census, never from `act`:
+    -- `activities` holds only rows with a potency value, so a 66,592-compound
+    -- primary screen reporting percent inhibition is invisible there and
+    -- pks13 read 143. `direct` only, because an assay on M. smegmatis MmpL3
+    -- is a real assay on another organism's protein.
+    --
+    -- Whether anyone has published a way to measure this protein is a
+    -- different question from whether anyone has hit it, and the count cannot
+    -- tell one 66,000-compound screen from fourteen five-compound follow-ups.
+    -- So: distinct assays, and `max_assay_compounds`, the biggest single one.
+    --
+    -- SINGLE PROTEIN only, the same rule n_complex_drugs follows. The
+    -- crosswalk maps the ClpP1P2 complex target to clpP1 AND clpP2, so
+    -- without the filter each subunit is credited with a screen of the pair.
+    SELECT gt.rv_id,
+           count(DISTINCT s.assay_chembl_id)
+               FILTER (WHERE gt.target_type = 'SINGLE PROTEIN') AS n_protein_assays,
+           max(s.n_compounds)
+               FILTER (WHERE gt.target_type = 'SINGLE PROTEIN') AS max_assay_compounds,
+           max(s.latest_year)
+               FILTER (WHERE gt.target_type = 'SINGLE PROTEIN') AS latest_protein_assay_year,
+           count(DISTINCT s.assay_chembl_id)
+               FILTER (WHERE gt.target_type <> 'SINGLE PROTEIN') AS n_complex_assays,
+           max(s.n_compounds)
+               FILTER (WHERE gt.target_type <> 'SINGLE PROTEIN') AS max_complex_assay_compounds
+    FROM gene_target gt
+    JOIN sizes s ON s.target_chembl_id = gt.target_id
+    WHERE gt.evidence = 'direct'
     GROUP BY 1
 ),
 struct AS (
@@ -418,9 +424,11 @@ SELECT
     coalesce(ca.n_mic_censored, 0)     AS n_mic_censored,
     coalesce(ca.n_resistant_panel, 0)  AS n_resistant_panel,
     coalesce(cc.whole_cell_conditions, []) AS whole_cell_conditions,
-    coalesce(pa.n_protein_assays, 0) AS n_protein_assays,
-    coalesce(sc.max_assay_compounds, 0)   AS max_assay_compounds,
-    pa.latest_protein_assay_year,
+    coalesce(asz.n_protein_assays, 0)        AS n_protein_assays,
+    coalesce(asz.max_assay_compounds, 0)     AS max_assay_compounds,
+    coalesce(asz.n_complex_assays, 0)        AS n_complex_assays,
+    coalesce(asz.max_complex_assay_compounds, 0) AS max_complex_assay_compounds,
+    asz.latest_protein_assay_year,
     ax.protein_assay_example,
 
     -- CLINICAL COLUMNS
@@ -446,7 +454,7 @@ LEFT JOIN pred  p   ON p.uniprot_acc = w.uniprot_acc
 LEFT JOIN protein_act pa ON pa.rv_id = w.rv_id
 LEFT JOIN cell_act    ca ON ca.rv_id = w.rv_id
 LEFT JOIN cell_conditions cc ON cc.rv_id = w.rv_id
-LEFT JOIN screening   sc ON sc.rv_id = w.rv_id
+LEFT JOIN assay_scale asz ON asz.rv_id = w.rv_id
 LEFT JOIN assay_example ax ON ax.rv_id = w.rv_id
 LEFT JOIN res ON res.gene = coalesce(w.gene_name, w.rv_id)
 LEFT JOIN vuln v ON v.rv_id = w.rv_id
@@ -502,6 +510,10 @@ CLINICAL_COUNTS = ("with_clinical_drug", "drugs", "trials")
 # and `make summary` on it should report absence rather than fail. The columns
 # are nullable either way, so an empty view is the whole stand-in.
 EMPTY_OPTIONAL: dict[str, str] = {
+    "assay_sizes": "SELECT NULL::VARCHAR AS target_chembl_id,"
+    " NULL::VARCHAR AS assay_chembl_id, NULL::BIGINT AS n_compounds,"
+    " NULL::BIGINT AS n_measurements, NULL::VARCHAR[] AS endpoint_types,"
+    " NULL::BIGINT AS latest_year WHERE false",
     "orthologue_structures": "SELECT NULL::VARCHAR AS uniprot_acc, NULL::VARCHAR AS via_acc,"
     " NULL::VARCHAR AS via_gene, NULL::VARCHAR AS via_organism, NULL::VARCHAR AS relation,"
     " NULL::DOUBLE AS identity, NULL::DOUBLE AS coverage, NULL::DOUBLE AS bitscore,"
@@ -518,6 +530,7 @@ EMPTY_OPTIONAL: dict[str, str] = {
 TABLES = {
     "walk": "crosswalk",
     "act": "activities",
+    "sizes": "assay_sizes",
     "structures": "structures",
     "pred": "predicted_structures",
     "ess": "essentiality",

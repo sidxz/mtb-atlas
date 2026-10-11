@@ -112,6 +112,50 @@ def evidence_store(store: Path) -> Path:
         retrieved_at="2026-10-09",
         store=store,
     )
+    # The census is derived from the same rows, through the ingester's own
+    # aggregation, so the fixture store cannot claim a gene has activities but
+    # no assays. Grouped per target, which is how `census_rows` fetches.
+    by_target: dict[str, list[dict]] = {}
+    for activity in bioactivity["activities"]:
+        by_target.setdefault(activity["target_chembl_id"], []).append(activity)
+    sizes = [
+        row
+        for target_id, target_rows in sorted(by_target.items())
+        for row in chembl.aggregate_sizes(target_id, target_rows)
+    ]
+    # Two cases the live store has and this fixture otherwise cannot show.
+    # First, a primary screen: it reports percent inhibition, so the census
+    # counts it and `activities` (potency rows only) never held it. Without
+    # this row nothing distinguishes the census from the potency rows.
+    # Second, a screen filed against a two-subunit complex, which must not
+    # become either subunit's own assay. ClpP1P2 is the real example
+    # (CLAUDE.md's complex rule), and 3 compounds is enough to tell it apart.
+    sizes += [
+        {
+            "target_chembl_id": "CHEMBL3804751",
+            "assay_chembl_id": "CHEMBL9000001",
+            "n_compounds": 5,
+            "n_measurements": 5,
+            "endpoint_types": ["Percent Effect"],
+            "latest_year": 2021,
+        },
+        {
+            "target_chembl_id": "CHEMBL4662931",
+            "assay_chembl_id": "CHEMBL4649972",
+            "n_compounds": 3,
+            "n_measurements": 3,
+            "endpoint_types": ["Percent Effect"],
+            "latest_year": 2021,
+        },
+    ]
+    write_parquet(
+        "assay_sizes",
+        sizes,
+        source=chembl.SOURCE,
+        source_version="chembl_37",
+        retrieved_at="2026-10-09",
+        store=store,
+    )
     write_parquet(
         "essentiality",
         essentiality.normalize(FIXTURES / "dejesus_supplement.zip"),

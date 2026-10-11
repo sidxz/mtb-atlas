@@ -21,7 +21,7 @@ from atlas.sources import (
     uniprot,
     vulnerability,
 )
-from atlas.store import read, write_parquet
+from atlas.store import read, stamp, write_parquet, write_stamped
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -115,7 +115,10 @@ def evidence_store(store: Path) -> Path:
             "pchembl_value": 6.0,
             "assay_chembl_id": "CHEMBL4649972",
             "assay_type": "B",
-            "assay_description": "Inhibition of Mycobacterium tuberculosis ClpP1P2 protease",
+            "assay_description": (
+                "in vitro assay to detect presence of AMC directly proportional to the "
+                "activity of ClpP1P2.  GHDDI collaboration."
+            ),
             "document_chembl_id": "CHEMBL3988442",
             "document_year": 2021,
             "data_validity_comment": None,
@@ -185,6 +188,108 @@ def evidence_store(store: Path) -> Path:
         retrieved_at="2026-10-09",
         store=store,
     )
+    # The screening layer, through the ingesters' own functions so that the key set cannot
+    # drift from the real tables'. The assay ids (CHEMBL91xxxxx) and documents are
+    # synthetic; the targets are the fixture genes' own.
+    assays = [
+        {
+            "assay_chembl_id": assay_id,
+            "document_chembl_id": document,
+            "target_chembl_id": target,
+            "description": description,
+            "assay_strain": None,
+        }
+        for assay_id, document, target, description in (
+            # A stage on a single protein: dprE1.
+            (
+                "CHEMBL9100001",
+                "CHEMBL_DOC1",
+                "CHEMBL3804751",
+                "Inhibition of Mycobacterium tuberculosis DprE1",
+            ),
+            # A second stage of the same campaign on the same protein: a screen is one
+            # campaign, however many of its stages reached the gene.
+            (
+                "CHEMBL9100006",
+                "CHEMBL_DOC1",
+                "CHEMBL3804751",
+                "Confirmation of DprE1 inhibition in a dose-response assay",
+            ),
+            # A stage on a complex that the crosswalk maps to both subunits.
+            (
+                "CHEMBL9100002",
+                "CHEMBL_DOC1",
+                "CHEMBL4662931",
+                "Inhibition of Mycobacterium tuberculosis ClpP1P2 protease",
+            ),
+            # A stage on a target whose type was not looked up (see `targets` below).
+            (
+                "CHEMBL9100003",
+                "CHEMBL_DOC2",
+                "CHEMBL5629",
+                "Inhibition of Mycobacterium tuberculosis CYP125",
+            ),
+            # A screen of the *M. smegmatis* MmpL3, which the crosswalk reaches Rv0206c
+            # through only when the orthologue bridge is on (it is off in this store).
+            (
+                "CHEMBL9100007",
+                "CHEMBL_DOC2",
+                "CHEMBL5465372",
+                "Inhibition of Mycobacterium smegmatis MmpL3",
+            ),
+            # A computed ratio, which `normalize_campaign_assays` calls derived and stageless.
+            (
+                "CHEMBL9100004",
+                "CHEMBL_DOC1",
+                None,
+                "Selectivity index, ratio of CC50 for Vero cells to MIC for "
+                "Mycobacterium tuberculosis H37Rv",
+            ),
+            # Prose no classifier pattern has seen: modality `other`, stage the default.
+            ("CHEMBL9100005", "CHEMBL_DOC2", None, "Assay of a kind no pattern here has seen"),
+        )
+    ]
+    stage_targets = {
+        "CHEMBL3804751": {
+            "target_type": "SINGLE PROTEIN",
+            "organism": "Mycobacterium tuberculosis",
+        },
+        "CHEMBL4662931": {
+            "target_type": "PROTEIN COMPLEX",
+            "organism": "Mycobacterium tuberculosis",
+        },
+        "CHEMBL5465372": {
+            "target_type": "SINGLE PROTEIN",
+            "organism": "Mycolicibacterium smegmatis (strain ATCC 700084 / mc(2)155)",
+        },
+    }
+    tested = {
+        "CHEMBL9100001": 4,
+        "CHEMBL9100002": 3,
+        "CHEMBL9100003": 4,
+        "CHEMBL9100006": 2,
+        "CHEMBL9100007": 2,
+    }
+    stage_activities = [
+        {"assay_chembl_id": assay_id, "molecule_chembl_id": f"CHEMBL_M{i}"}
+        for assay_id, n in tested.items()
+        for i in range(n)
+    ]
+    chembl_stages = chembl.stamp_stage_counts(
+        chembl.normalize_campaign_assays(assays, stage_targets), stage_activities
+    )
+    documents = {
+        document: {"doc_type": "PUBLICATION", "title": "A paper", "year": year, "pubmed_id": None}
+        for document, year in (("CHEMBL_DOC1", 2021), ("CHEMBL_DOC2", 2019))
+    }
+    chembl_screens = chembl.campaign_screens(chembl_stages, stage_activities, documents)
+    chembl_label = {
+        "source": chembl.SOURCE,
+        "source_version": "ChEMBL_37 (2026-05-01)",
+        "retrieved_at": "2026-10-09",
+    }
+    write_stamped("screens", stamp(chembl_screens, **chembl_label), store=store)
+    write_stamped("screen_stages", stamp(chembl_stages, **chembl_label), store=store)
     write_parquet(
         "essentiality",
         essentiality.normalize(FIXTURES / "dejesus_supplement.zip"),

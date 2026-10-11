@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from atlas import summary
+from atlas import crosswalk, orthologue, summary
 from atlas.store import read, records
 from atlas.summary import counts
 
@@ -223,6 +223,94 @@ def test_a_store_without_the_census_still_summarises(
     summary.build(store=out)
     by_id = {r["rv_id"]: r for r in records("target_summary", store=out)}
     assert by_id["Rv3790"]["n_protein_assays"] == 0
+
+
+# --- screens ------------------------------------------------------------------
+
+
+def test_a_stage_on_the_genes_own_protein_counts_the_screen(rows: dict) -> None:
+    """Two stages of one campaign (4 and 2 compounds) are one screen, and the size is the
+    biggest single stage, not the sum."""
+    assert rows["Rv3790"]["n_target_screens"] == 1
+    assert rows["Rv3790"]["max_screen_compounds"] == 4
+    assert rows["Rv3790"]["latest_screen_year"] == 2021
+
+
+def test_a_complex_stage_is_counted_apart_from_the_genes_own_screens(rows: dict) -> None:
+    """The crosswalk maps ClpP1P2 to both subunits. Its stage tested 3 compounds in a 2021
+    paper, and credited to a subunit that would move every one of the gene's own columns."""
+    for rv_id in ("Rv2460c", "Rv2461c"):
+        assert rows[rv_id]["n_target_screens"] == 0
+        assert rows[rv_id]["n_complex_screens"] == 1
+        assert rows[rv_id]["max_screen_compounds"] is None
+        assert rows[rv_id]["latest_screen_year"] is None
+
+
+def test_a_stage_on_a_target_of_unknown_type_is_shown_not_lost(rows: dict) -> None:
+    """`= 'SINGLE PROTEIN'` and `<> 'SINGLE PROTEIN'` are both NULL for an untyped stage, which
+    dropped it from both columns without an error."""
+    assert rows["Rv3545c"]["n_target_screens"] == 0
+    assert rows["Rv3545c"]["n_complex_screens"] == 1
+
+
+def test_actives_are_null_where_no_source_stated_a_call(rows: dict) -> None:
+    """ChEMBL states no activity call. A 0 would read as a screen that found nothing."""
+    assert rows["Rv3790"]["n_target_screens"] == 1
+    assert rows["Rv3790"]["n_screen_actives"] is None
+
+
+def test_a_gene_never_screened_reads_zero_screens_not_null(rows: dict) -> None:
+    """Most of the 4,031 genes. Zero is the answer, and it has to be sayable."""
+    row = rows["Rv1484"]
+    assert row["n_target_screens"] == 0
+    assert row["n_complex_screens"] == 0
+    assert row["max_screen_compounds"] is None
+    assert row["n_screen_actives"] is None
+    assert row["latest_screen_year"] is None
+
+
+def test_a_screen_of_an_orthologue_is_not_a_screen_of_this_protein(
+    evidence_store: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """MmpL3's chemistry is assayed against the *M. smegmatis* protein, so the crosswalk reaches
+    Rv0206c to it as `orthologue`. A campaign on that protein is real and is not a screen of
+    this one; 18 structures and the ligands come this way too, and are labelled for it."""
+    out = tmp_path_factory.mktemp("orthologue")
+    for parquet in evidence_store.glob("*.parquet"):
+        if parquet.stem != "target_summary":
+            shutil.copy(parquet, out / parquet.name)
+    link = orthologue.Link(
+        mtb_acc="P9WJV5",
+        chembl_target_id="CHEMBL5465372",
+        via_accession="A0QP27",
+        via_organism="Mycolicibacterium smegmatis (strain ATCC 700084 / mc(2)155)",
+        via_gene="mmpL3",
+        uniref_cluster="UniRef50_A0QP27",
+        identity_level="0.5",
+        cluster_size=611,
+    )
+    monkeypatch.setattr(orthologue, "build_links", lambda _accessions: [link])
+    crosswalk.build(store=out, with_orthologues=True)
+    summary.build(store=out)
+    mmpl3 = {r["rv_id"]: r for r in records("target_summary", store=out)}["Rv0206c"]
+    assert mmpl3["chembl_evidence"] == "orthologue", "the stubbed link did not arrive"
+    assert mmpl3["n_target_screens"] == 0
+    assert mmpl3["n_complex_screens"] == 0
+
+
+def test_a_store_without_the_screens_still_summarises(
+    evidence_store: Path, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """A store built before the screening layer has neither table; absence is not a failure."""
+    out = tmp_path_factory.mktemp("no-screens")
+    for parquet in evidence_store.glob("*.parquet"):
+        if parquet.stem not in ("screens", "screen_stages", "target_summary"):
+            shutil.copy(parquet, out / parquet.name)
+    summary.build(store=out)
+    by_id = {r["rv_id"]: r for r in records("target_summary", store=out)}
+    assert by_id["Rv3790"]["n_target_screens"] == 0
+    assert by_id["Rv2461c"]["n_complex_screens"] == 0
+    assert by_id["Rv3790"]["n_screen_actives"] is None
 
 
 # --- resistance ---------------------------------------------------------------

@@ -55,7 +55,24 @@ screen on `CHEMBL5629`, which reaches `Rv3545c` only through UniProt's
 cross-reference and so has no `target_type` — it must be reported as
 not-a-single-protein rather than dropped. The ClpP1P2 screen is three hand-written
 potency rows in `tests/conftest.py` (compounds borrowed from dprE1's), so the
-complex's assay has a description that `protein_assay_example` must not offer.
+complex's assay has a description that `protein_assay_example` must not offer;
+the assay id and its description are the live ones.
+
+The fixture store's `screens` and `screen_stages` are not files either. `tests/conftest.py`
+runs seven hand-written ChEMBL assays through `chembl.normalize_campaign_assays`,
+`stamp_stage_counts` and `campaign_screens`, so the rows have the ingesters' own key
+set and the classifiers' own labels. The assay ids (`CHEMBL91xxxxx`) and the two
+documents are **synthetic**; the targets are the fixture genes' own:
+
+| Assay | Exercises |
+|---|---|
+| `CHEMBL9100001` | A 4-compound stage on dprE1's `SINGLE PROTEIN` target: the gene's own screen |
+| `CHEMBL9100006` | A 2-compound confirmation stage of the same campaign on the same protein: one screen, not two, and the size is the biggest single stage |
+| `CHEMBL9100002` | A 3-compound stage on `CHEMBL4662931`, the ClpP1P2 complex the crosswalk maps to both subunits: shown in `n_complex_screens`, never in `n_target_screens` |
+| `CHEMBL9100003` | A stage on `CHEMBL5629` whose target type was not looked up (`NULL`), so it must land on the shown-not-counted side rather than in neither column. Its modality is `other` |
+| `CHEMBL9100007` | A stage on the *M. smegmatis* MmpL3 target (`CHEMBL5465372`). The store's crosswalk is built without the orthologue bridge, so it reaches no gene; the test that turns the bridge on shows `Rv0206c` still reads 0 screens |
+| `CHEMBL9100004` | A computed selectivity index: `derived`, `stage = NULL`, modality `other` by assignment. The unclassified-share counters leave it out |
+| `CHEMBL9100005` | Prose no pattern has seen: modality `other`, stage the default `primary`. Reaches no gene |
 
 `extra_evidence.json` carries nine real `orthologue_structures` rows, chosen to
 be the three shapes rather than a sample: folC's two `same_sequence` entries

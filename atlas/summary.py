@@ -144,6 +144,45 @@ assay_scale AS (
     WHERE gt.evidence = 'direct'
     GROUP BY 1
 ),
+screen_reach AS (
+    -- Every (gene, campaign) pair where a stage was run on one of the gene's
+    -- direct ChEMBL targets, and whether that is a screen of the gene's *own*
+    -- protein. `own` is NULL-safe on purpose: a stage whose target type is
+    -- unknown is not a confirmed single protein, so it falls on the
+    -- shown-not-counted side. `= 'SINGLE PROTEIN'` and `<> 'SINGLE PROTEIN'` are
+    -- both NULL for it, which drops the stage from both columns without an error.
+    --
+    -- `n_active` is cast because a column that is NULL in every row is stored as
+    -- JSON, which `sum` refuses, and ChEMBL states no calls: a store with no
+    -- PubChem deposit with calls in it has exactly that column.
+    SELECT gt.rv_id, st.screen_id, st.n_tested, st.n_active::BIGINT AS n_active, sc.year,
+           st.target_type IS NOT DISTINCT FROM 'SINGLE PROTEIN' AS own
+    FROM gene_target gt
+    JOIN screen_stages st ON st.target_chembl_id = gt.target_id
+    LEFT JOIN screens sc ON sc.screen_id = st.screen_id
+    WHERE gt.evidence = 'direct'
+),
+screen_scale AS (
+    -- Whether anyone has screened this protein, which `assay_scale` cannot say
+    -- for a campaign that was not filed as one ChEMBL assay.
+    --
+    -- Own screens only, for the same reason `assay_scale` takes SINGLE PROTEIN:
+    -- the crosswalk maps the ClpP1P2 complex to clpP1 AND clpP2, so without the
+    -- filter each subunit is credited with a screen of the pair. That includes
+    -- the year, which would otherwise date a gene that reads zero screens.
+    --
+    -- `n_screen_actives` is NULL unless a source stated calls. A 0 would read as
+    -- a screen that found nothing, which is what PubChem's own summary endpoint
+    -- says for a deposit with no cutoff; ChEMBL states no calls at all.
+    SELECT rv_id,
+           count(DISTINCT screen_id) FILTER (WHERE own)     AS n_target_screens,
+           max(n_tested)             FILTER (WHERE own)     AS max_screen_compounds,
+           sum(n_active)             FILTER (WHERE own)     AS n_screen_actives,
+           count(DISTINCT screen_id) FILTER (WHERE NOT own) AS n_complex_screens,
+           max(year)                 FILTER (WHERE own)     AS latest_screen_year
+    FROM screen_reach
+    GROUP BY 1
+),
 struct AS (
     SELECT s.uniprot_acc,
            count(*)                                      AS n_pdb,
@@ -441,6 +480,12 @@ SELECT
     coalesce(asz.max_complex_assay_compounds, 0) AS max_complex_assay_compounds,
     asz.latest_protein_assay_year,
     ax.protein_assay_example,
+    coalesce(ss.n_target_screens, 0)  AS n_target_screens,
+    coalesce(ss.n_complex_screens, 0) AS n_complex_screens,
+    ss.max_screen_compounds,
+    -- NOT coalesced: see screen_scale.
+    ss.n_screen_actives,
+    ss.latest_screen_year,
 
     -- CLINICAL COLUMNS
 
@@ -467,6 +512,7 @@ LEFT JOIN cell_act    ca ON ca.rv_id = w.rv_id
 LEFT JOIN cell_conditions cc ON cc.rv_id = w.rv_id
 LEFT JOIN assay_scale asz ON asz.rv_id = w.rv_id
 LEFT JOIN assay_example ax ON ax.rv_id = w.rv_id
+LEFT JOIN screen_scale ss ON ss.rv_id = w.rv_id
 LEFT JOIN res ON res.gene = coalesce(w.gene_name, w.rv_id)
 LEFT JOIN vuln v ON v.rv_id = w.rv_id
 LEFT JOIN strain_vuln sv ON sv.rv_id = w.rv_id
@@ -536,6 +582,12 @@ EMPTY_OPTIONAL: dict[str, str] = {
     "strain_vulnerability": "SELECT NULL::VARCHAR AS rv_id, NULL::DOUBLE AS vulnerability_index,"
     " NULL::BOOLEAN AS certain, NULL::DOUBLE AS delta_vi, NULL::DOUBLE AS delta_vi_norm,"
     " NULL::BOOLEAN AS differential_reported WHERE false",
+    # Only the columns `screen_reach` reads: a stand-in that lacks one breaks a store
+    # without the table instead of reporting its absence.
+    "screens": "SELECT NULL::VARCHAR AS screen_id, NULL::BIGINT AS year WHERE false",
+    "screen_stages": "SELECT NULL::VARCHAR AS screen_id, NULL::VARCHAR AS target_chembl_id,"
+    " NULL::VARCHAR AS target_type, NULL::BIGINT AS n_tested, NULL::BIGINT AS n_active"
+    " WHERE false",
 }
 
 TABLES = {
@@ -552,6 +604,8 @@ TABLES = {
     "para": "paralogs",
     "orthologue_structures": "orthologue_structures",
     "precedent": "drug_precedent",
+    "screens": "screens",
+    "screen_stages": "screen_stages",
     "interactions": "interactions",
     "cond": "conditional_fitness",
     "prot": "proteins",

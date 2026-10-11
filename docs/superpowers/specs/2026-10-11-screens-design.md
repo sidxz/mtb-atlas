@@ -265,7 +265,7 @@ large.
    not the depositor's.
 2. **`n_active = 0` is not a finding of zero hits.** PubChem's summary
    endpoint reports `SIDCountActive: 0` for that same TrpRS deposit, which
-   means "no call stated" and reads as "a 65,366-compound screen that found
+   means "no call stated" and reads as "a 65,366-SID screen that found
    nothing". `n_active` is NULL when `outcome_stated` is false, never 0. This
    trap is the reason `outcome_stated` is a stored column and not a derived
    one.
@@ -310,7 +310,7 @@ large.
    wrong: those AIDs (651718, 602163, 602399, 1490) **are not in
    `txid1773[ORGN]` at all**, so the hazard does not exist in this query — and
    the extra name test *rejects 8 of the 28 real Mtb AIDs*, including the
-   65,366-compound TrpRS screen, whose title ("Biochemical assay for Mt-TrpRS")
+   65,366-SID TrpRS screen, whose title ("Biochemical assay for Mt-TrpRS")
    names neither tuberculosis nor mycobacterium. The taxonomy search is the
    filter. The claim came from a literature survey and was written into this
    spec without being checked against the endpoint.

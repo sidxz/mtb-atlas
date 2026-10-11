@@ -53,6 +53,21 @@ a real one), and dprE1's and inhA's, which sit beside 31 and 135 entries of
 their own and so must not read as a rescue. `Rv1908c` (katG) has none, which is
 how the zero gets tested.
 
+It also carries 23 real `drug_precedent` rows, picked for the readings rather
+than for coverage — the table's risk is entirely in what gets counted:
+
+| Rows | Exercises |
+|---|---|
+| inhA's `PF13561`: isoniazid and ethionamide on `P9WGR1`, triclosan and hexachlorophene on *E. coli* FabI, three phase-2 compounds on the *S. aureus* and *B. pseudomallei* enzymes | The gene's own two approved drugs must be excluded and the other organisms' five counted, which is the whole shape of the column |
+| dprE1's `PF01565` and `PF04030`: triparanol on human Δ24-sterol reductase, macozinone and TBA-7371 on `P9WJF1` | An all-human approved precedent beside a clinical one the gene must not claim for itself |
+| atpE's `PF00137`: bedaquiline on the ATP synthase complex | Filed against `P9WPS1`, atpE's own accession — excluded by the own-protein rule before the complex rule ever applies |
+| rpoC's `PF00623`: rifampin, rifabutin and fidaxomicin on a `PROTEIN COMPLEX`, TAS-106 on a human RNA polymerase III subunit | The complex exclusion, with one `SINGLE PROTEIN` row left to prove the filter is not just dropping everything |
+| cyp124/cyp144/cyp125's `PF00067`: cobicistat on the "Cytochrome P450 3A" `PROTEIN FAMILY`, abiraterone and aminoglutethimide on single human P450s | The family exclusion, and the only fixture domain three genes share, so `precedent_domain_genes` reads 3 |
+
+mmpL3's `PF03176` is deliberately absent: a measured zero is a state the table
+has to produce, and an RNA gene reads NULL because it has no protein to carry a
+domain at all.
+
 ## `bosch_vulnerability.xlsx`
 
 A real slice of Bosch 2021 Table S3, keeping the four sheets' headers and nine

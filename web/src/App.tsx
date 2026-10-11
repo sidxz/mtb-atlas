@@ -88,6 +88,7 @@ const COLUMNS: [string, string, boolean][] = [
   ["best_pchembl", "Best pChEMBL", true],
   ["best_pmic", "Best pMIC", true],
   ["best_whole_cell_pchembl", "Cell IC50", true],
+  ["n_precedent_approved", "Fold precedent", true],
   ["n_close_paralogs", "Paralogs", true],
   ["n_variants_associated", "WHO", true],
   ["best_drug_phase", "TB phase", true],
@@ -108,6 +109,7 @@ const COLUMN_GROUPS = [
       "best_pchembl",
       "best_pmic",
       "best_whole_cell_pchembl",
+      "n_precedent_approved",
     ],
   },
   { label: "Clinical evidence", keys: ["n_variants_associated", "best_drug_phase"] },
@@ -234,6 +236,31 @@ function cell(gene: TargetSummary, key: string): React.ReactNode {
           {gene.same_sequence_structure && (
             <span className="chip ok" style={{ marginLeft: 4 }}>
               =
+            </span>
+          )}
+        </span>
+      ) : (
+        "—"
+      );
+    // Approved drugs on another protein sharing a Pfam domain. NULL means no
+    // domain annotated, which is a different answer from zero, so the two do
+    // not render the same.
+    case "n_precedent_approved":
+      if (gene.n_precedent_approved === null) return <span className="faint">n/a</span>;
+      return gene.n_precedent_approved ? (
+        <span
+          title={
+            `${gene.n_precedent_approved} approved drug(s) filed against another protein ` +
+            `carrying ${gene.precedent_pfam_name} (${gene.precedent_pfam}), e.g. ` +
+            `${gene.precedent_example}. ${gene.n_precedent_human_target} on a human protein. ` +
+            `${gene.precedent_domain_genes} Mtb genes carry that domain, and a shared domain ` +
+            `is not a shared binding site.`
+          }
+        >
+          {gene.n_precedent_approved}
+          {gene.n_precedent_human_target === gene.n_precedent_approved && (
+            <span className="chip" style={{ marginLeft: 4 }} title="all of it on human proteins">
+              hs
             </span>
           )}
         </span>

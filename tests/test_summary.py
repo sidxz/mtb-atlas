@@ -431,3 +431,118 @@ def test_a_gene_with_no_mycobacterial_relative_reads_zero(rows: dict) -> None:
     assert katg["same_sequence_structure"] is False
     assert katg["closest_orthologue_gene"] is None
     assert katg["best_orthologue_resolution"] is None
+
+
+# --- has a drug ever been filed against this fold? ---------------------------
+
+
+def test_a_drug_on_a_relative_s_protein_is_precedent(rows: dict) -> None:
+    """inhA's fold: the FabI inhibitor class, from three other organisms.
+
+    Triclosan and hexachlorophene are approved against E. coli FabI, and
+    afabicin, AFN-1252 and CG-400549 are phase 2 against the S. aureus and
+    B. pseudomallei enzymes. All five share PF13561 with inhA. That is the
+    strongest sourced answer the atlas can give to "is this fold tractable",
+    and it is a count of ChEMBL records, never a druggability claim.
+    """
+    inha = rows["Rv1484"]
+    assert inha["n_precedent_approved"] == 2
+    assert inha["n_precedent_clinical"] == 3
+    assert inha["precedent_pfam"] == "PF13561"
+    assert inha["precedent_example"] == "HEXACHLOROPHENE"
+
+
+def test_a_gene_is_not_its_own_precedent(rows: dict) -> None:
+    """Isoniazid and ethionamide are filed against inhA itself.
+
+    They are already in `n_drugs` and `drug_names`. Counting them again as
+    precedent for inhA's fold would make the column self-confirming, which is
+    the whole reason the roll-up excludes the gene's own accession.
+    """
+    inha = rows["Rv1484"]
+    assert inha["n_drugs"] == 2, "the two drugs are still on the gene itself"
+    assert "ISONIAZID" in inha["drug_names"]
+    # ...and not in the precedent, which counts only the other three organisms'
+    # proteins: 4 approved rows on PF13561, 2 of them inhA's own.
+    assert inha["n_precedent_approved"] == 2
+
+
+def test_dpre1_s_only_precedent_is_a_human_protein(rows: dict) -> None:
+    """Triparanol against human Delta(24)-sterol reductase, which shares
+    PF01565 with dprE1. Tractable chemistry and a selectivity problem are the
+    same fact, so the human share is its own column rather than a footnote."""
+    dpre1 = rows["Rv3790"]
+    assert dpre1["n_precedent_approved"] == 1
+    assert dpre1["n_precedent_human_target"] == 1
+    assert dpre1["precedent_example"] == "TRIPARANOL"
+
+
+def test_dpre1_s_own_clinical_compounds_are_not_fold_precedent(rows: dict) -> None:
+    """Macozinone and TBA-7371 are phase 2 against dprE1 itself, on both of its
+    domains. The clinical count has to read zero, or the gene's own pipeline
+    comes back as evidence that its fold can be drugged."""
+    assert rows["Rv3790"]["n_precedent_clinical"] == 0
+
+
+def test_a_complex_filing_is_shown_and_never_counted(rows: dict) -> None:
+    """rpoC: the rifamycins are filed against a bacterial RNA polymerase.
+
+    ChEMBL names every subunit on that one target, so counting it would hand
+    rifampicin to rpoC's fold as precedent -- the same rule `n_complex_drugs`
+    follows for drugs on this gene. The one counted compound is TAS-106,
+    against a human RNA polymerase III subunit filed as a SINGLE PROTEIN.
+    """
+    rpoc = rows["Rv0668"]
+    assert rpoc["n_precedent_complex"] == 3
+    assert rpoc["n_precedent_approved"] == 0
+    assert rpoc["n_precedent_clinical"] == 1
+    assert rpoc["precedent_example"] == "TAS-106"
+
+
+def test_a_protein_family_filing_is_not_counted_either(rows: dict) -> None:
+    """Cobicistat is filed against "Cytochrome P450 3A", a PROTEIN FAMILY
+    target naming several accessions, so it is no more attributable to one
+    protein than a complex is. The three counted drugs are against single
+    human P450s."""
+    cyp124 = rows["Rv2266"]
+    assert cyp124["n_precedent_complex"] == 1
+    assert cyp124["n_precedent_approved"] == 3
+    assert cyp124["n_precedent_human_target"] == 3
+
+
+def test_the_breadth_of_the_domain_travels_with_the_count(rows: dict) -> None:
+    """Three fixture genes carry PF00067, and the reader has to see that.
+
+    A shared domain is not a shared binding site. Genome-wide PF00005 covers 37
+    genes, so a precedent on it is a statement about a superfamily; without
+    this column the count reads as being about one protein.
+    """
+    for rv_id in ("Rv2266", "Rv1777", "Rv3545c"):
+        assert rows[rv_id]["precedent_pfam"] == "PF00067"
+        assert rows[rv_id]["precedent_domain_genes"] == 3
+    assert rows["Rv1484"]["precedent_domain_genes"] == 1
+
+
+def test_a_fold_nobody_has_drugged_reads_zero(rows: dict) -> None:
+    """mmpL3 again: no drug in ChEMBL is filed against any MmpL protein.
+
+    A measured zero, and one of the more interesting numbers in the atlas --
+    the most vulnerable of the three reference genes has no chemical precedent
+    at all. It must not be NULL, which would mean nobody looked.
+    """
+    mmpl3 = rows["Rv0206c"]
+    assert mmpl3["n_precedent_approved"] == 0
+    assert mmpl3["n_precedent_clinical"] == 0
+    assert mmpl3["n_precedent_complex"] == 0
+    assert mmpl3["precedent_pfam"] is None
+
+
+def test_no_domain_annotated_is_null_not_zero(rows: dict) -> None:
+    """An RNA gene has no protein, so no domain, so no question to answer.
+
+    Zero would say the lookup ran and found nothing. 500 CDS genes are in the
+    same position for want of a Pfam annotation.
+    """
+    rrs = rows["MTB000019"]
+    assert rrs["n_precedent_approved"] is None
+    assert rrs["n_precedent_complex"] is None

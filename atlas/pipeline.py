@@ -31,6 +31,7 @@ from .sources import (
     orthologue_structures,
     paralogs,
     pdb,
+    precedent,
     resistance,
     string_db,
     uniprot,
@@ -71,11 +72,20 @@ def build_evidence(*, force: bool = False) -> list[Path]:
             for target in chembl_targets or []
         }
     )
+    # The Pfam domains this proteome carries, which is the key set for the drug
+    # precedent bridge the way the accessions are for the structures.
+    domains = sorted(
+        {
+            domain
+            for (ids,) in read("proteins").project("pfam_ids").fetchall()
+            for domain in ids or []
+        }
+    )
     _, retrieved_at = provenance("crosswalk")
     retrieved_at = str(retrieved_at)
     _say(
         f"[evidence] {len(accessions)} accessions, {len(predicted)} predicted models, "
-        f"{len(targets)} ChEMBL targets"
+        f"{len(targets)} ChEMBL targets, {len(domains)} Pfam domains"
     )
 
     paths = []
@@ -119,6 +129,8 @@ def build_evidence(*, force: bool = False) -> list[Path]:
     paths.append(paralogs.build(retrieved_at=retrieved_at, force=force))
     _say("[evidence] orthologue structures (mycobacterial neighbours with a PDB entry)")
     paths.append(orthologue_structures.build(retrieved_at=retrieved_at, force=force))
+    _say(f"[evidence] drug precedent for {len(domains)} Pfam domains (ChEMBL mechanisms)")
+    paths.append(precedent.build(domains, retrieved_at=retrieved_at, force=force))
     return paths
 
 

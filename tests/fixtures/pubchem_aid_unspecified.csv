@@ -1,0 +1,11 @@
+PUBCHEM_RESULT_TAG,PUBCHEM_SID,PUBCHEM_CID,PUBCHEM_EXT_DATASOURCE_SMILES,PUBCHEM_ACTIVITY_OUTCOME,PUBCHEM_ACTIVITY_SCORE,PUBCHEM_ACTIVITY_URL,PUBCHEM_ASSAYDATA_COMMENT,PubChem Standard Value,Standard Type,Standard Relation,Standard Value,Standard Units,Data Validity Comment
+RESULT_TYPE,,,,,,,,FLOAT,STRING,STRING,FLOAT,STRING,STRING
+RESULT_DESCR,,,,,,,,PubChem standardized value transformed from 'Standard Value'. The unit is always micromolar,Standardized activity type (e.g. IC50 rather than Ic-50/Ic50/ic50/ic-50),"Qualifier (e.g. >, <, =) for 'Standard Value'",Standardized activity value transformed to common units: e.g. mM concentrations converted to nM,Selected units for 'Standard Type': e.g. concentrations are in nM,Comment reflecting whether the values for this activity measurement are likely to be correct
+RESULT_UNIT,,,,,,,,MICROMOLAR,,,,,
+RESULT_IS_ACTIVE_CONCENTRATION,,,,,,,,TRUE,,,,,
+RESULT_IS_ACTIVE_CONCENTRATION_QUALIFIER,,,,,,,,,,TRUE,,,
+2227,312400166,56761864,CC1=NC2=C(C(S1)C3=CSC=C3)C(=O)NN2C(C)C,Unspecified,,,,,Percent Effect,=,-1.988,%,
+2228,312400166,56761864,CC1=NC2=C(C(S1)C3=CSC=C3)C(=O)NN2C(C)C,Unspecified,,,,,Percent Effect,=,1.19,%,
+3777,312401710,97398757,C1CC1CC(=O)N2CCC3(CC2)C(=O)NCCN3CC4=CC=CC=C4,Unspecified,,,,,Percent Effect,=,54.24,%,
+3778,312401710,97398757,C1CC1CC(=O)N2CCC3(CC2)C(=O)NCCN3CC4=CC=CC=C4,Unspecified,,,,194.984,IC50,>,194984,nM,Outside typical range
+65639,374364304,,,Unspecified,,,,,Percent Effect,=,-3.618,%,

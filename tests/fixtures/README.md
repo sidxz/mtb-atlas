@@ -159,7 +159,57 @@ states the library size. Nothing is synthetic.
 | `1671170` | `SIDCountActive: 0` and `SIDCountUnspecified` equal to `SIDCountAll`: no cutoff was deposited. Neither its title (`Mt-TrpRS`) nor its target name says *tuberculosis* |
 | `1671178` | The other all-`Unspecified` shape: 25 actives (the IC50 rows) beside `SIDCountUnspecified` equal to `SIDCountAll`. Six of the eight ChEMBL deposits among the 28 large AIDs look like this |
 | `2060911` | `SourceName` is the bare string `11908`; a prose library of 100,639 compounds against 93,270 SIDs deposited; a UniProt target accession |
-| `2253871` | A **partial** deposit: 13 actives and 2 `Unspecified` of 15 SIDs, so `0 < SIDCountUnspecified < SIDCountAll`. A small ChEMBL deposit, far below the 10,000 floor, kept only for the shape (1,912 of the 8,400 small AIDs fetched look like this; none of the 28 large ones do) |
+| `2253871` | A **partial** deposit: 13 actives and 2 `Unspecified` of 15 SIDs, so `0 < SIDCountUnspecified < SIDCountAll`. A small ChEMBL deposit, far below the 10,000 floor, kept only for the shape (1,912 of the 8,391 small AIDs fetched look like this; none of the 28 large ones do) |
 
 The summary has no `TaxonomyID` on any target and no `PubMedID` field, in any of
 the 28 AIDs of 10,000 or more tested SIDs.
+
+## `pubchem_aid_results.csv` and `pubchem_aid_unspecified.csv`
+
+Real rows of `pcget.cgi?query=download&record_type=datatable&actvty=all`, fetched
+2026-10-11 and trimmed to a handful of rows. Every column of every kept row is as
+PubChem sent it, and so are the header and the metadata rows after it: **five** of
+them in both files (`RESULT_TYPE`, `RESULT_DESCR`, `RESULT_UNIT` and two
+`RESULT_IS_ACTIVE_CONCENTRATION*` rows), not the three the plan assumed. Only a
+numeric `PUBCHEM_RESULT_TAG` tells a result from one.
+
+`pubchem_aid_results.csv` is AID 1626, the TAACF primary screen, which names its
+own columns (`IC90`, `% Inhibition of H37Rv @ 100 uM`, 49 in all) and has **no**
+`Standard *` column:
+
+| Tag | Exercises |
+|---|---|
+| `1`, `13` | `Active`, score 80. CID `911287` has a ChEMBL id in UniChem (`CHEMBL1461400`); `135458645` has none |
+| `2045`, `2046` | `Inactive`, score 0: the 209,843 "tested and did nothing" this source exists for. CIDs `3803930` and `7314608` are mapped (`CHEMBL533602`, `CHEMBL1404086`) |
+| `2275` | `Inconclusive`, score 40, **CID `135458645` again**: SID `49681785` (tag 13) is `Active` and SID `26719829` is `Inconclusive`. 11 CIDs in this AID have SIDs that disagree |
+
+`pubchem_aid_unspecified.csv` is AID 1671170 (Mt-TrpRS), a ChEMBL deposit that
+states no activity call, and it **does** carry `Standard Type`, `Standard
+Relation`, `Standard Value` and `Standard Units`:
+
+| Tag | Exercises |
+|---|---|
+| `3777`, `3778` | One SID (`312401710`) on two rows: a single-point `Percent Effect` of 54.24 % and an `IC50` of `>` 194984 nM, a censored value stored with its relation. 612 of the file's 65,646 rows are IC50, the rest `Percent Effect` |
+| `2227`, `2228` | One SID (`312400166`) measured twice, `Percent Effect` `-1.988` and `1.19`. 280 SIDs are on two rows (259 `IC50` beside `Percent Effect`, 15 two IC50s, 6 two replicates), so 65,646 rows cover 65,366 SIDs |
+| `65639` | The only row with no CID (and no SMILES): its SID is all there is |
+
+## `pubchem_projects.json`
+
+**Hand-assembled, not captured.** PubChem was blocking this machine when the task
+was written, so no live eLink call could be made. The 39 member AIDs are the 39
+`<Link>` ids of a real eLink **XML** response for AID 449775 (taken earlier the
+same day); the JSON envelope is E-utilities' `retmode=json` shape for the same
+`pcassay_pcassay_same_assay_project_list` link. The `1626` entry is the shape
+eLink returns for an AID that declares no project: a linkset with no
+`linksetdbs`. The lowest member of the 449775 project is `435019`, which is
+neither the primary (449762) nor the AID that was asked.
+
+## `pubchem_refseq_uniprot.json`
+
+Two real answers from UniProt's `search?query=xref:refseq-<NP>&fields=accession`,
+fetched 2026-10-11 (UniProt release 2026_03). `NP_214877` is Rv0363c (`P9WQA3`,
+Swiss-Prot). `NP_999999` is not an *M. tuberculosis* protein at all: UniProt
+answers with a TrEMBL entry (`D3ZNH9`), because RefSeq `NP_` spans organisms,
+which is why the crosswalk and not this answer decides whether a locus is reached.
+`xref:embl-CCE37082` returned zero results the same day and is not a fixture,
+because nothing here queries an EMBL id.

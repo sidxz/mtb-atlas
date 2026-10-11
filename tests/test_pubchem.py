@@ -157,7 +157,7 @@ def test_a_few_actives_beside_an_all_unspecified_set_is_still_no_call():
 def test_a_partial_deposit_keeps_its_calls_and_says_how_many_sids_have_none():
     """AID 2253871 (a small ChEMBL deposit, below the floor) calls 13 of its 15 SIDs.
 
-    1,912 of the 8,400 small AIDs fetched look like this and none of the 28 large
+    1,912 of the 8,391 small AIDs fetched look like this and none of the 28 large
     ones do. The calls are real, so they are kept; without `n_unspecified` the
     13 + 0 + 0 against 15 tested would have a gap and nothing to explain it.
     """
@@ -337,7 +337,10 @@ def test_summaries_are_fetched_in_batches_that_cover_every_aid_once(monkeypatch)
 def test_a_summary_pubchem_does_not_return_raises_instead_of_dropping_the_campaign(monkeypatch):
     """PUG-REST skips an AID it cannot find and still answers 200 for the rest
     (checked with AID 999999999 beside two real ones), so a lost summary is
-    silent. An absent campaign would read as an answer."""
+    silent. An absent campaign would read as an answer.
+
+    `fetch` has already cached the incomplete batch by the time this raises, so
+    every later run raises too; the message says how to get out."""
 
     def fake_fetch(url, dest, **kwargs):
         aids = url.split("/aid/")[1].split("/")[0].split(",")
@@ -346,20 +349,21 @@ def test_a_summary_pubchem_does_not_return_raises_instead_of_dropping_the_campai
         return _Page(json.dumps(body))
 
     monkeypatch.setattr(pubchem, "fetch", fake_fetch)
-    with pytest.raises(ValueError, match="1010.*1055"):
+    with pytest.raises(ValueError, match=r"1010.*1055.*atlas refresh pubchem.*force=True"):
         pubchem.fetch_summaries([str(n) for n in range(1000, 1060)])
 
 
 def test_a_truncated_aid_list_raises_instead_of_dropping_campaigns(monkeypatch):
     """esearch returns `retmax` ids and says how many matched; a list shorter than
-    the count would silently lose campaigns."""
+    the count would silently lose campaigns. The response is cached before the
+    check runs, so the message names the way out."""
 
     def fake_fetch(url, dest, **kwargs):
         body = {"esearchresult": {"count": "12519", "idlist": ["1626", "375"]}}
         return _Page(json.dumps(body))
 
     monkeypatch.setattr(pubchem, "fetch", fake_fetch)
-    with pytest.raises(ValueError, match="12519"):
+    with pytest.raises(ValueError, match=r"12519.*atlas refresh pubchem.*force=True"):
         pubchem.fetch_aids()
 
 
@@ -393,3 +397,388 @@ def test_the_search_carries_the_size_floor_so_only_large_summaries_are_fetched(m
     assert f"{pubchem.MIN_TESTED}:" in seen["url"]
     assert "[TSC]" in seen["url"]
     assert pubchem.MIN_TESTED == 10_000
+
+
+# --- the per-compound results -------------------------------------------------
+#
+# `pubchem_aid_results.csv` is five real rows of AID 1626 (TAACF, the primary
+# screen) and `pubchem_aid_unspecified.csv` five real rows of AID 1671170
+# (Mt-TrpRS, a ChEMBL deposit with no activity call). Both keep the header and
+# every metadata row after it, because only a numeric `PUBCHEM_RESULT_TAG` tells
+# a result from one. tests/fixtures/README.md says what each row is for.
+
+# The true UniChem pairs for three of the fixture's CIDs. 135458645 has no ChEMBL id.
+BRIDGE = {
+    "911287": "CHEMBL1461400",
+    "3803930": "CHEMBL533602",
+    "7314608": "CHEMBL1404086",
+}
+
+RESULT_KEYS = {
+    "stage_id",
+    "screen_id",
+    "pubchem_cid",
+    "pubchem_sid",
+    "molecule_chembl_id",
+    "outcome",
+    "activity_score",
+    "endpoint",
+    "standard_value",
+    "standard_units",
+    "standard_relation",
+}
+
+
+def _results(name="pubchem_aid_results.csv", aid="1626", bridge=BRIDGE, **kwargs):
+    return list(pubchem.normalize_results(FIXTURES / name, aid, bridge, **kwargs))
+
+
+def _unspecified():
+    return _results("pubchem_aid_unspecified.csv", "1671170", {})
+
+
+def test_results_skip_the_metadata_rows_and_keep_every_outcome():
+    rows = _results()
+    # Ten lines follow the header; five of them are column metadata.
+    assert [row["pubchem_sid"] for row in rows] == [
+        "26660563",
+        "49681785",
+        "14730495",
+        "22405324",
+        "26719829",
+    ]
+    assert [row["outcome"] for row in rows] == [
+        "active",
+        "active",
+        "inactive",
+        "inactive",
+        "inconclusive",
+    ]
+    assert [row["activity_score"] for row in rows] == [80, 80, 0, 0, 40]
+    assert rows[0]["stage_id"] == "pubchem:1626"
+    assert rows[0]["screen_id"] == "pubchem:1626"
+
+
+def test_a_cid_with_no_unichem_mapping_is_still_a_result():
+    rows = _results()
+    assert rows[0]["molecule_chembl_id"] == "CHEMBL1461400"
+    # CID 135458645 has no ChEMBL id, and the row survives: it was tested either way.
+    assert rows[1]["pubchem_cid"] == "135458645"
+    assert rows[1]["molecule_chembl_id"] is None
+    # A row with no CID at all still has its SID.
+    nocid = _unspecified()[-1]
+    assert nocid["pubchem_cid"] is None
+    assert nocid["pubchem_sid"] == "374364304"
+    assert nocid["molecule_chembl_id"] is None
+
+
+def test_two_sids_of_one_compound_can_disagree_and_both_rows_are_kept():
+    """CID 135458645 is Active as SID 49681785 and Inconclusive as SID 26719829.
+
+    11 CIDs in AID 1626 do this. A row per compound would have to pick one and
+    the choice would be silent; a row per SID keeps both calls.
+    """
+    rows = [row for row in _results() if row["pubchem_cid"] == "135458645"]
+    assert [(row["pubchem_sid"], row["outcome"]) for row in rows] == [
+        ("49681785", "active"),
+        ("26719829", "inconclusive"),
+    ]
+
+
+def test_an_unspecified_outcome_is_null_and_keeps_its_value():
+    """No threshold was deposited, so there is no call and no score -- but the
+    number is real, and a censored one keeps its qualifier."""
+    rows = _unspecified()
+    assert [row["outcome"] for row in rows] == [None] * 5
+    assert [row["activity_score"] for row in rows] == [None] * 5
+    effect, ic50 = rows[2], rows[3]
+    assert (effect["endpoint"], effect["standard_relation"]) == ("Percent Effect", "=")
+    assert (effect["standard_value"], effect["standard_units"]) == (54.24, "%")
+    # `>` 194984 nM is a lower bound; stored as given, with its relation.
+    assert (ic50["endpoint"], ic50["standard_relation"]) == ("IC50", ">")
+    assert (ic50["standard_value"], ic50["standard_units"]) == (194984.0, "nM")
+
+
+def test_a_sid_on_two_rows_keeps_both():
+    """AID 1671170 has 65,646 rows over 65,366 SIDs. Of the 280 SIDs on two rows,
+    259 are a single-point `Percent Effect` beside an `IC50`, 15 are two IC50s and
+    6 are two replicate `Percent Effect` rows. Keeping one row per SID would drop
+    a real measurement in every case, and which one would be arbitrary."""
+    rows = _unspecified()
+    replicate = [row for row in rows if row["pubchem_sid"] == "312400166"]
+    assert [row["standard_value"] for row in replicate] == [-1.988, 1.19]
+    pair = [row for row in rows if row["pubchem_sid"] == "312401710"]
+    assert [(row["endpoint"], row["standard_value"]) for row in pair] == [
+        ("Percent Effect", 54.24),
+        ("IC50", 194984.0),
+    ]
+
+
+def test_a_campaign_without_standard_columns_still_carries_the_potency_keys():
+    """AID 1626 names its columns itself (`IC90`, `% Inhibition of H37Rv @ 100 uM`).
+    The four potency keys are present and NULL anyway: ChEMBL rows fill them, and
+    DuckDB types a column from the rows it sees, so a key that only some rows carry
+    becomes NULL for all of them without an error."""
+    for row in _results():
+        assert set(row) == RESULT_KEYS
+        assert row["endpoint"] is None
+        assert row["standard_value"] is None
+        assert row["standard_units"] is None
+        assert row["standard_relation"] is None
+    for row in _unspecified():
+        assert set(row) == RESULT_KEYS
+
+
+def test_a_project_members_results_point_at_the_campaign_not_the_assay():
+    """The stage stays the assay; the screen is the campaign the project names."""
+    rows = _results(aid="449762", screen_id="pubchem:project:435019")
+    assert {row["stage_id"] for row in rows} == {"pubchem:449762"}
+    assert {row["screen_id"] for row in rows} == {"pubchem:project:435019"}
+
+
+def test_an_outcome_pubchem_has_not_told_us_about_raises(tmp_path):
+    """`Unspecified` is the absence of a call. A label this module does not know
+    (PubChem also counts `Probe`) must not be read the same way."""
+    path = tmp_path / "probe.csv"
+    path.write_text(
+        "PUBCHEM_RESULT_TAG,PUBCHEM_SID,PUBCHEM_CID,PUBCHEM_ACTIVITY_OUTCOME,PUBCHEM_ACTIVITY_SCORE\n"
+        "1,10,20,Probe,100\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="Probe.*AID 7"):
+        list(pubchem.normalize_results(path, "7", {}))
+
+
+def test_a_download_that_is_not_a_result_table_raises_instead_of_reading_as_empty(tmp_path):
+    """A 200 with an HTML error page parses as a CSV with no result rows, which
+    would read as a campaign that tested nothing."""
+    path = tmp_path / "busy.csv"
+    path.write_text("<html><body>Server busy, try later</body></html>\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="AID 7.*PUBCHEM_RESULT_TAG"):
+        list(pubchem.normalize_results(path, "7", {}))
+
+
+def test_results_come_from_the_uncapped_route_at_pubchems_pace(monkeypatch):
+    """PUG-REST refuses above 10,000 SIDs ("Too many SIDs"), and AID 1626 has
+    215,397. `pcget.cgi` has no cap, and a 30 MB body needs more than the default
+    two-minute timeout."""
+    seen = {}
+
+    def fake_fetch(url, dest, **kwargs):
+        seen.update(url=url, dest=dest, **kwargs)
+        return _Page("")
+
+    monkeypatch.setattr(pubchem, "fetch", fake_fetch)
+    pubchem.fetch_results("1626")
+    assert "pcget.cgi" in seen["url"]
+    assert seen["url"].endswith("&aid=1626")
+    assert seen["dest"] == "results/1626.csv"
+    assert seen["min_interval"] == pubchem.PACE
+    assert seen["timeout"] >= 600
+
+
+# --- the declared ladder ------------------------------------------------------
+
+
+def _projects() -> dict:
+    return json.loads((FIXTURES / "pubchem_projects.json").read_text())
+
+
+def test_a_declared_project_groups_its_members_and_an_undeclared_one_stands_alone():
+    """AID 449775's real project lists 39 AIDs, among them the 327,669-SID primary
+    (449762) and the confirmatory. Asked from either, they name one campaign."""
+    links = _projects()
+    grouped = pubchem.group_projects(
+        {"449762": links["449775"], "449775": links["449775"], "1626": links["1626"]}
+    )
+    # The lowest member is 435019, which is neither AID that was asked.
+    assert grouped["449762"] == grouped["449775"] == "pubchem:project:435019"
+    # TAACF 1626 declares nothing. The campaign is the AID, and that is not the
+    # same claim as "this screen had no follow-up".
+    assert grouped["1626"] == "pubchem:1626"
+
+
+def test_the_lowest_member_is_the_lowest_number_not_the_lowest_text():
+    payload = {"linksets": [{"linksetdbs": [{"links": ["100000", "99999", "100001"]}]}]}
+    assert pubchem.group_projects({"100000": payload}) == {"100000": "pubchem:project:99999"}
+
+
+def test_a_project_that_lists_only_itself_is_not_a_project():
+    payload = {"linksets": [{"linksetdbs": [{"links": ["1626"]}]}]}
+    assert pubchem.group_projects({"1626": payload}) == {"1626": "pubchem:1626"}
+
+
+def test_a_project_is_read_from_the_pcassay_project_link_at_pubchems_pace(monkeypatch):
+    seen = {}
+
+    def fake_fetch(url, dest, **kwargs):
+        seen.update(url=url, dest=dest, **kwargs)
+        return _Page(json.dumps(_projects()["449775"]))
+
+    monkeypatch.setattr(pubchem, "fetch", fake_fetch)
+    payload = pubchem.fetch_project("449775")
+    assert "linkname=pcassay_pcassay_same_assay_project_list" in seen["url"]
+    assert seen["url"].endswith("&id=449775")
+    assert seen["dest"] == "projects/449775.json"
+    assert seen["min_interval"] == pubchem.PACE
+    assert seen["json_body"] is True
+    assert len(payload["linksets"][0]["linksetdbs"][0]["links"]) == 39
+
+
+# --- the gene a campaign aims at ----------------------------------------------
+#
+# 18 accessions over 16 AIDs: 7 UniProt, 8 RefSeq NP_, 2 EMBL, 1 PDB chain. The
+# crosswalk joins on UniProt, so the RefSeq ones are bridged through UniProt's own
+# cross-references; the EMBL form returns nothing there (`xref:embl-CCE37082`:
+# 0 results) and the PDB chain is not a UniProt id at all. Those stay unmatched,
+# and are recorded as such.
+
+# True crosswalk pairs. A0A089QRB9 is the accession Rv1180 (pks3) and Rv1181 (pks4) share.
+RV_BY_ACC = {
+    "P9WHW5": ["Rv0018c"],
+    "P9WQA3": ["Rv0363c"],
+    "A0A089QRB9": ["Rv1180", "Rv1181"],
+}
+LINK_KEYS = {
+    "accession",
+    "name",
+    "accession_kind",
+    "uniprot_accessions",
+    "rv_ids",
+    "shared_accession",
+}
+
+
+def _uniprot_answers(monkeypatch):
+    """Serve the two real UniProt answers in the fixture, and refuse anything else."""
+    answers = json.loads((FIXTURES / "pubchem_refseq_uniprot.json").read_text())
+    asked = []
+
+    def fake_fetch(url, dest, **kwargs):
+        asked.append(url)
+        accession = url.split("xref:refseq-")[1].split("&")[0]
+        return _Page(json.dumps(answers[accession]))
+
+    monkeypatch.setattr(pubchem, "fetch", fake_fetch)
+    return asked
+
+
+@pytest.mark.parametrize(
+    ("accession", "kind"),
+    [
+        ("P9WHW5", "uniprot"),
+        ("I6X8D2", "uniprot"),
+        ("P9WNZ1", "uniprot"),
+        ("A0A089QRB9", "uniprot"),
+        ("NP_214877", "refseq"),
+        ("CCE37082", "other"),
+        ("CAB06100", "other"),
+        ("2A88_A", "other"),
+    ],
+)
+def test_an_accession_is_classified_by_its_shape(accession, kind):
+    assert pubchem.accession_kind(accession) == kind
+
+
+def test_a_uniprot_accession_joins_the_crosswalk_directly(monkeypatch):
+    asked = _uniprot_answers(monkeypatch)
+    (linked,) = pubchem.link_targets(
+        [{"accession": "P9WHW5", "name": "Serine/threonine protein phosphatase PstP"}], RV_BY_ACC
+    )
+    assert linked["rv_ids"] == ["Rv0018c"]
+    assert linked["uniprot_accessions"] == ["P9WHW5"]
+    assert linked["shared_accession"] is False
+    assert asked == []
+
+
+def test_a_refseq_accession_is_bridged_through_uniprot(monkeypatch):
+    asked = _uniprot_answers(monkeypatch)
+    (linked,) = pubchem.link_targets([{"accession": "NP_214877", "name": "fba"}], RV_BY_ACC)
+    assert linked["accession"] == "NP_214877"
+    assert linked["accession_kind"] == "refseq"
+    assert linked["uniprot_accessions"] == ["P9WQA3"]
+    assert linked["rv_ids"] == ["Rv0363c"]
+    assert len(asked) == 1
+    assert "rest.uniprot.org" in asked[0]
+
+
+def test_a_refseq_protein_of_another_organism_reaches_no_locus(monkeypatch):
+    """RefSeq is not an Mtb namespace: NP_999999 is a rat protein, UniProt answers
+    with it, and the crosswalk (H37Rv only) has no such accession."""
+    _uniprot_answers(monkeypatch)
+    (linked,) = pubchem.link_targets([{"accession": "NP_999999", "name": "x"}], RV_BY_ACC)
+    assert linked["uniprot_accessions"] == ["D3ZNH9"]
+    assert linked["rv_ids"] == []
+
+
+def test_a_refseq_accession_uniprot_does_not_know_is_recorded_unmatched(monkeypatch):
+    monkeypatch.setattr(pubchem, "fetch", lambda *a, **k: _Page('{"results": []}'))
+    (linked,) = pubchem.link_targets([{"accession": "NP_214877", "name": "x"}], RV_BY_ACC)
+    assert linked["uniprot_accessions"] == []
+    assert linked["rv_ids"] == []
+
+
+def test_an_embl_id_and_a_pdb_chain_stay_unmatched_and_are_not_looked_up(monkeypatch):
+    """No request, no guess. The name is kept verbatim and is never matched to a
+    gene: "bioA" is also a gene symbol, and an EMBL-id target named "bioA" is how
+    a screen would land on the wrong locus. The decoy key stands for any map that
+    a name could be looked up in."""
+    asked = _uniprot_answers(monkeypatch)
+    linked = pubchem.link_targets(
+        [
+            {"accession": "CCE37082", "name": "bioA"},
+            {"accession": "2A88_A", "name": "Ribonucleoside-diphosphate reductase"},
+        ],
+        {**RV_BY_ACC, "bioA": ["Rv1568"]},
+    )
+    assert [(t["accession"], t["name"]) for t in linked] == [
+        ("CCE37082", "bioA"),
+        ("2A88_A", "Ribonucleoside-diphosphate reductase"),
+    ]
+    assert [t["accession_kind"] for t in linked] == ["other", "other"]
+    assert [t["rv_ids"] for t in linked] == [[], []]
+    assert [t["uniprot_accessions"] for t in linked] == [[], []]
+    assert asked == []
+
+
+def test_an_accession_two_loci_share_reaches_both_and_says_so(monkeypatch):
+    _uniprot_answers(monkeypatch)
+    (linked,) = pubchem.link_targets([{"accession": "A0A089QRB9", "name": "x"}], RV_BY_ACC)
+    assert linked["rv_ids"] == ["Rv1180", "Rv1181"]
+    assert linked["shared_accession"] is True
+
+
+def test_every_linked_target_carries_the_same_keys(monkeypatch):
+    """Targets are stored as a list of structs, so a key on some of them only is
+    the same silent-NULL trap as on the rows."""
+    _uniprot_answers(monkeypatch)
+    linked = pubchem.link_targets(
+        [
+            {"accession": "P9WHW5", "name": "a"},
+            {"accession": "NP_214877", "name": "b"},
+            {"accession": "CCE37082", "name": "c"},
+        ],
+        RV_BY_ACC,
+    )
+    assert [set(t) for t in linked] == [LINK_KEYS] * 3
+    assert pubchem.link_targets([], RV_BY_ACC) == []
+
+
+def test_a_refseq_lookup_is_cached_under_uniprot_and_refuses_a_non_refseq_string(monkeypatch):
+    """The accession becomes part of a URL and a cache filename, and it came from
+    a depositor."""
+    seen = {}
+
+    def fake_fetch(url, dest, **kwargs):
+        seen.update(url=url, dest=dest, **kwargs)
+        return _Page('{"results": []}')
+
+    monkeypatch.setattr(pubchem, "fetch", fake_fetch)
+    pubchem.fetch_refseq("NP_214877")
+    assert "xref:refseq-NP_214877" in seen["url"]
+    assert "fields=accession" in seen["url"]
+    assert seen["dest"] == "refseq/NP_214877.json"
+    assert seen["source"] == "uniprot"
+    assert seen["json_body"] is True
+    with pytest.raises(ValueError, match="RefSeq"):
+        pubchem.fetch_refseq("../../etc/passwd")

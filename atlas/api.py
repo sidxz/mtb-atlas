@@ -27,6 +27,7 @@ LICENCES = {
     "activities": ("ChEMBL", "CC BY-SA 3.0"),
     "compounds": ("ChEMBL", "CC BY-SA 3.0"),
     "structures": ("RCSB PDB", "CC0 1.0"),
+    "orthologue_structures": ("phmmer vs Mycobacteriaceae + RCSB PDB", "CC BY 4.0 / CC0 1.0"),
     "predicted_structures": ("AlphaFold DB", "CC BY 4.0"),
     "essentiality": ("DeJesus 2017, mBio", "CC BY 4.0"),
     "resistance": ("WHO catalogue 2nd ed.", "ODC-By 1.0"),
@@ -93,6 +94,8 @@ SORTABLE = {
     "n_protein_assays",
     "max_assay_compounds",
     "best_resolution",
+    "n_orthologue_pdb",
+    "closest_orthologue_identity",
     "cholesterol_log2_ratio",
     "hn878_vulnerability_index",
     "hn878_delta_vi",
@@ -186,6 +189,19 @@ class TargetSummary(BaseModel):
     required_in_vivo: bool | None = None
     n_pdb: int = 0
     best_resolution: float | None = None
+    # A structure to work from that is not of this protein, counted apart from
+    # `n_pdb` so a zero there keeps meaning "none of its own".
+    # `same_sequence_structure` is the stronger claim: an identical sequence
+    # deposited under another accession, which the atlas missed only because
+    # `structures` is keyed on the Mtb one.
+    n_orthologue_pdb: int = 0
+    n_orthologue_pdb_with_ligand: int = 0
+    best_orthologue_resolution: float | None = None
+    closest_orthologue_gene: str | None = None
+    closest_orthologue_organism: str | None = None
+    closest_orthologue_identity: float | None = None
+    closest_orthologue_coverage: float | None = None
+    same_sequence_structure: bool = False
     has_predicted: bool = False
     plddt_mean: float | None = None
     n_activities: int = 0
@@ -292,6 +308,7 @@ class TargetDetail(TargetSummary):
     is_pseudogene: bool = False
     alphafold: dict[str, Any] | None = None
     structures: list[dict[str, Any]] = Field(default_factory=list)
+    orthologue_structures: list[dict[str, Any]] = Field(default_factory=list)
     chembl_targets: list[dict[str, Any]] = Field(default_factory=list)
     activities: list[dict[str, Any]] = Field(default_factory=list)
     whole_cell: list[dict[str, Any]] = Field(default_factory=list)
@@ -505,6 +522,18 @@ def target(rv_id: str) -> TargetDetail:
         " ORDER BY n_ligands DESC, resolution NULLS LAST",
         [accession],
     )
+    # Borrowed structures, best first by how similar the protein is and then by
+    # whether it was solved with something bound -- the two things that decide
+    # whether it is worth opening.
+    orthologue_structures = _query(
+        connection,
+        "SELECT via_acc, via_gene, via_organism, via_taxon, relation, identity, coverage,"
+        " evalue, bitscore, pdb_id, title, method, resolution, released,"
+        " entity_description, n_ligands, ligand_ids"
+        " FROM orthologue_structures WHERE uniprot_acc = ?"
+        " ORDER BY identity DESC, n_ligands DESC, resolution NULLS LAST LIMIT 200",
+        [accession],
+    )
     predicted = _query(
         connection, "SELECT * FROM predicted_structures WHERE uniprot_acc = ?", [accession]
     )
@@ -662,8 +691,24 @@ def target(rv_id: str) -> TargetDetail:
     tnseq = dict(coverage[0]) if coverage else {"measured": 0, "unmeasured": 0}
 
     absences = []
-    if not structures:
+    if not structures and not orthologue_structures:
         absences.append("No experimental structure in the PDB for this accession.")
+    elif not structures:
+        # The absence is real and stays, but on its own it reads as "nothing to
+        # work from", which is the misreading this column exists to correct.
+        best = orthologue_structures[0]
+        same = best["relation"] == "same_sequence"
+        claim = (
+            "an identical sequence is deposited under"
+            if same
+            else f"a {best['identity']:.0%}-identical relative is deposited under"
+        )
+        absences.append(
+            f"No experimental structure under this accession, but {claim} "
+            f"{best['via_acc']} ({best['via_organism']}): "
+            f"{len({row['pdb_id'] for row in orthologue_structures})} entries."
+            + ("" if same else " What that is good for is a judgement, not a fact.")
+        )
     if not activities:
         absences.append("No ChEMBL activity: no compound in ChEMBL is recorded against this gene.")
     if not record.get("n_protein_assays"):
@@ -724,6 +769,7 @@ def target(rv_id: str) -> TargetDetail:
         **record,
         alphafold=predicted[0] if predicted else None,
         structures=structures,
+        orthologue_structures=orthologue_structures,
         chembl_targets=chembl_targets,
         activities=activities,
         whole_cell=whole_cell,

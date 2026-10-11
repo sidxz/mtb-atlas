@@ -31,6 +31,8 @@ const SOURCES = {
   string: "STRING v12.5 · CC BY 4.0",
   homology: "phmmer vs reviewed human proteome (UniProt) · CC BY 4.0",
   paralogs: "phmmer vs the Mtb proteome itself (UniProt) · CC BY 4.0",
+  orthologueStructures:
+    "phmmer vs Mycobacteriaceae with a PDB entry (UniProt · CC BY 4.0) · RCSB PDB · CC0 1.0",
   identity: "Mycobrowser release 5 (licence not stated) · UniProt · CC BY 4.0",
   clinical: "ChEMBL TB indications and mechanisms · Bosch 2021 · ClinicalTrials.gov",
   uniprot: "UniProt · CC BY 4.0",
@@ -235,9 +237,12 @@ export function TargetDetailPanel({
         {tab === "structure" && (
           <>
             {sources.length === 0 ? (
-              <p className="absent">
-                No experimental structure and no AlphaFold model for this accession.
-              </p>
+              <>
+                <p className="absent">
+                  No experimental structure and no AlphaFold model for this accession.
+                </p>
+                <OrthologueStructureTable detail={detail} />
+              </>
             ) : (
               <>
                 <div className="viewerbar">
@@ -296,6 +301,7 @@ export function TargetDetailPanel({
                 </div>
                 <BoundLigands detail={detail} />
                 <StructureTable detail={detail} />
+                <OrthologueStructureTable detail={detail} />
               </>
             )}
           </>
@@ -587,8 +593,9 @@ function Evidence({ detail }: { detail: Detail }) {
             </div>
           </>
         ) : (
-          <span className="absent">none</span>
+          <span className="absent">none of its own</span>
         )}
+        <Borrowed detail={detail} />
       </Row>
 
       <Row label="Predicted structure" source={SOURCES.alphafold}>
@@ -873,6 +880,119 @@ function Construct({ structure }: { structure: Record<string, any> }) {
         </>
       )}
     </td>
+  );
+}
+
+/** "No structure" and "nothing to work from" are different claims.
+ *
+ * 3,146 genes have no entry under their own accession; 449 of them have a
+ * mycobacterial neighbour that does, and for 34 the deposited sequence is
+ * *identical* and was filed under a CDC 1551, H37Ra or M. bovis accession --
+ * the structure is of this protein, and only the key hid it. The two cases are
+ * worded differently on purpose, and the identity is always shown, because
+ * what a 34%-identical structure is good for is the reader's judgement.
+ */
+function Borrowed({ detail }: { detail: Detail }) {
+  if (!detail.n_orthologue_pdb) return null;
+  const identity = detail.closest_orthologue_identity;
+  const liganded = detail.n_orthologue_pdb_with_ligand;
+  return (
+    <div className="note" style={{ marginTop: detail.n_pdb ? 6 : 5 }}>
+      {detail.same_sequence_structure ? (
+        <>
+          <span className="chip ok">same sequence elsewhere</span> {detail.n_orthologue_pdb} entr
+          {detail.n_orthologue_pdb === 1 ? "y" : "ies"} of an{" "}
+          <b>identical</b> sequence filed under another accession
+          {detail.closest_orthologue_organism ? ` (${detail.closest_orthologue_organism})` : ""}.
+        </>
+      ) : (
+        <>
+          {detail.n_pdb ? "Also " : ""}
+          {detail.n_orthologue_pdb} entr{detail.n_orthologue_pdb === 1 ? "y" : "ies"} for{" "}
+          <b>{detail.closest_orthologue_gene ?? "a relative"}</b>
+          {detail.closest_orthologue_organism ? ` of ${detail.closest_orthologue_organism}` : ""}
+          {identity !== null && (
+            <>
+              , <b className="mono">{(identity * 100).toFixed(0)}%</b> identical over{" "}
+              <span className="mono">
+                {((detail.closest_orthologue_coverage ?? 0) * 100).toFixed(0)}%
+              </span>{" "}
+              of this protein
+            </>
+          )}
+          .
+        </>
+      )}
+      {detail.best_orthologue_resolution !== null && (
+        <>
+          {" "}
+          Best {number(detail.best_orthologue_resolution)} Å
+          {liganded > 0 && `, ${liganded} with a ligand bound`}.
+        </>
+      )}{" "}
+      <span className="faint">Not counted in the structure count above.</span>
+    </div>
+  );
+}
+
+function OrthologueStructureTable({ detail }: { detail: Detail }) {
+  const rows = detail.orthologue_structures ?? [];
+  if (rows.length === 0) return null;
+  return (
+    <>
+      <h4 style={{ margin: "18px 0 0" }}>
+        Structures of a relative{" "}
+        <span className="faint" style={{ fontWeight: 400 }}>
+          · not of this protein
+        </span>
+      </h4>
+      <p className="note" style={{ margin: "4px 0 0" }}>
+        Reached by homology to the mycobacterial proteins that have a PDB entry. These are
+        deliberately kept out of the viewer above: the residue numbering is the neighbour's, so
+        overlaying this gene&apos;s resistance residues on one would place them wrongly.
+      </p>
+      <div className="scroller" style={{ marginTop: 10 }}>
+        <table>
+          <thead>
+            <tr>
+              <th>PDB</th>
+              <th>Protein</th>
+              <th>Organism</th>
+              <th className="n" title="Identity to the Mtb protein over the aligned region">
+                Id
+              </th>
+              <th className="n" title="Fraction of the Mtb protein the alignment covers">
+                Cov
+              </th>
+              <th className="n">Å</th>
+              <th>Ligands</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((s) => (
+              <tr key={`${s.via_acc}-${s.pdb_id}`}>
+                <td className="id">{s.pdb_id}</td>
+                <td>
+                  {s.via_gene ?? s.via_acc}
+                  {s.relation === "same_sequence" && (
+                    <span className="chip ok" style={{ marginLeft: 6 }}>
+                      identical
+                    </span>
+                  )}
+                </td>
+                <td className="dim">{s.via_organism}</td>
+                <td className="n mono">{(s.identity * 100).toFixed(0)}%</td>
+                <td className="n mono faint">{(s.coverage * 100).toFixed(0)}%</td>
+                <td className="n">{s.resolution ? number(s.resolution, 2) : "—"}</td>
+                <td className="mono">
+                  {s.ligand_ids.length ? s.ligand_ids.join(" ") : <span className="absent">—</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 

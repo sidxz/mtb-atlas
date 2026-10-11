@@ -22,6 +22,8 @@ All sources are public. No consortium data, ever.
 | [MtbTnDB](#conditional-tnseq-mtbtndb) | Zenodo 10.5281/zenodo.15284946 (2025-04-20) | CC BY 4.0 | Conditional TnSeq, 136 screens |
 | [STRING](#string) | v12.5, taxon 83332 | CC BY 4.0 | Interaction partners |
 | [phmmer vs human proteome](#human-homology) | UniProt UP000005640, reviewed | CC BY 4.0 | Human anti-target check |
+| [phmmer vs the Mtb proteome](#paralogs-functional-redundancy) | UniProt UP000001584 | CC BY 4.0 | Paralogs: is there a backup copy? |
+| [phmmer vs Mycobacteriaceae + RCSB](#orthologue-structures-a-structure-to-work-from) | UniProt taxon 1762 with a PDB entry, live RCSB | CC BY 4.0 / CC0 1.0 | A structure to work from that is not of this protein |
 | [ChEMBL drugs](#chembl-tb-drugs-and-mechanisms) | ChEMBL_37 | CC BY-SA 3.0 | TB drugs, phases, mechanisms (M6) |
 | [ClinicalTrials.gov](#clinicaltrialsgov) | API 2.0.5, data 2026-10-09 | US Government database; terms below | Interventional TB trials (M6) |
 
@@ -702,6 +704,92 @@ kasA/kasB at 66%, nrdF2/nrdF1 at 71%, glyA1/glyA2 at 68%, groEL2/groEL1 at
 62%. And the atlas can now answer a question it could not form before:
 **129 genes are essential, have no backup copy, have no close human homolog,
 and have a structure.**
+
+## Orthologue structures: a structure to work from
+
+**3,146 CDS genes have no experimental structure under their own accession, and
+that is reported as the absence it is. But "no structure" and "nothing to work
+from" are different claims**, and MmpL3 is the standing example: one Mtb entry
+at 3.0 Å with one ligand, against 18 *M. smegmatis* MmpL3 entries whose best is
+2.15 Å and eleven of which were solved with something bound. The ChEMBL
+orthologue bridge already reaches that protein for its *ligands*
+([above](#the-orthologue-bridge), via `UniRef50_A0QP27`); its *structures* were
+invisible, because `structures` is keyed on the Mtb accession and nothing
+mapped the neighbour back.
+
+One download (the 895 Mycobacteriaceae proteins, excluding H37Rv, that have a
+PDB cross-reference), 5.8 s of phmmer, and the entries themselves from RCSB
+through the same code path `structures` uses — so a borrowed entry gets the
+same chain-level ligand attribution, and a ligand on a neighbouring chain is
+not counted for it either.
+
+### Two findings, different strengths, not flattened
+
+`relation` says which claim a row makes.
+
+| relation | genes | means |
+|---|---|---|
+| `same_sequence` | 124 | the deposited sequence is **identical** to the Mtb one, filed under another accession |
+| `orthologue` | 721 | a related mycobacterial protein, with the identity and coverage on the row |
+
+**The `same_sequence` case is a key artefact, not a modelling exercise.** 34
+genes the atlas called structure-less have a 100%-identical structure deposited
+against a CDC 1551, H37Ra or *M. bovis* accession. folC (`Rv2447c`, `I6Y0R5`)
+has none of its own and two under `O53174` — 2VOR at 2.3 Å with ACP bound, 2VOS
+at 2.0 Å. The structure *is* of this protein; only the key hid it.
+
+**The `orthologue` case makes no claim beyond the numbers.** Whether a
+34%-identical structure is worth opening is the reader's judgement, so identity
+and coverage sit on every row and in the UI, and nothing here is described as a
+model, a template or a druggability signal.
+
+### Thresholds, and the one false positive worth a rule
+
+The floor is **≥ 30% identity over ≥ 70% of the query**, the same pair as
+[`close_paralog`](#paralogs-functional-redundancy) and for the same reason: a
+structure is only worth borrowing if it is of the same protein rather than of
+something that shares a domain. 30% is also the conventional floor for a usable
+homology model. Both numbers are on every row, so a stricter line can be drawn
+downstream.
+
+`same_sequence` needs no threshold — identity and coverage are exactly 1.0, and
+nothing in the data sits between 0.999 and 1.0. It does need one guard:
+`O07717` (398 aa) matches at 100% identity over its whole length *inside*
+`Q8VJU4` (766 aa), which is a different, longer protein that contains it. 3 of
+165 perfect pairs look like this, so a perfect match also has to span ≥ 80% of
+the *target*. When query coverage is already 1.0 that is the query/target
+length ratio, so it is the same measurement from the other end rather than a
+new rule.
+
+### What it does not touch
+
+**Nothing here feeds `n_pdb`, `has_structure` or `structural_gap`.** Those
+count structures of the gene's own protein and have to keep meaning that, or a
+zero in the column the atlas exists to answer stops meaning zero. The borrowed
+entries are also deliberately kept out of the 3D viewer: the residue numbering
+is the neighbour's, so overlaying a gene's WHO-graded residues on one would
+place them wrongly.
+
+### What it buys
+
+Of 3,146 genes with no structure of their own, **449 have a mycobacterial
+neighbour that does and 227 of those neighbours were solved with a ligand
+bound**. Among the 489 essential genes: 234 have no structure of their own, 44
+have a borrowed one, 22 of those with a ligand, and 6 are `same_sequence`
+rescues (folC, glgE, trpE, murC, ribA2, `Rv0543c`). trpE is the shape this was
+built for — essential, vulnerability −6.36, no structure under its own
+accession, and two entries at 1.7 Å with ligands under an identical sequence.
+
+### Freshness
+
+`orthologue-pdb` is **not** frozen, unlike the two phmmer siblings: the bridge
+is computed here, but the structures on the far end come from RCSB and move
+weekly. The probe replays the neighbour search and counts entries, the same
+detector as `rcsb-pdb`, and compares against `version_label()` — the single
+function that also stamps the table, so the probe cannot drift from the
+statement it is checking. A neighbour gaining its *first* structure arrives as
+a new sequence in the filtered UniProt stream, so the `uniprot` probe is what
+notices that.
 
 ## ChEMBL: TB drugs and mechanisms
 

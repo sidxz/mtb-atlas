@@ -30,6 +30,7 @@ upstream change and the test that names it should be updated deliberately.
 | `Rv1908c` (katG) | In the WHO catalogue but with no ChEMBL target — for M1 |
 | `Rv0667` (rpoB) | Ditto, the canonical rifampicin resistance gene |
 | `Rv0148` | Present **only** as a `promoter` row, to prove non-CDS rows are dropped |
+| `Rv2447c` (folC) | Essential, **zero** PDB entries of its own, and two under a CDC 1551 accession at 100% identity — the `same_sequence` case, which no other fixture locus has |
 
 `chembl_bioactivity.json` carries three whole-cell rows added for the potency
 layer, all on `CHEMBL1976041`: a censored `MIC > 128 uM` (must produce no
@@ -43,6 +44,14 @@ free consistency check on the unit handling.
 
 `chembl_uniprot_mapping.txt` additionally keeps `A0QP27` (*M. smegmatis* MmpL3,
 `CHEMBL5465372`) — the far side of the orthologue bridge.
+
+`extra_evidence.json` carries nine real `orthologue_structures` rows, chosen to
+be the three shapes rather than a sample: folC's two `same_sequence` entries
+(the rescue — no structure of its own), mmpL3's three *M. smegmatis* entries
+(all better than its own 3.0 Å, all liganded, so a borrowed structure can beat
+a real one), and dprE1's and inhA's, which sit beside 31 and 135 entries of
+their own and so must not read as a rescue. `Rv1908c` (katG) has none, which is
+how the zero gets tested.
 
 ## `bosch_vulnerability.xlsx`
 

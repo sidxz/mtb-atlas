@@ -36,6 +36,24 @@ export interface TargetSummary {
   required_in_vivo: boolean | null;
   n_pdb: number;
   best_resolution: number | null;
+  /**
+   * A structure to work from that is not of this protein: a mycobacterial
+   * neighbour's entry, reached by homology. Counted apart from `n_pdb`, which
+   * stays the number of entries on this gene's own accession, so a zero there
+   * still means "none of its own".
+   *
+   * `same_sequence_structure` is the stronger claim: an identical sequence
+   * deposited under another accession (CDC 1551, H37Ra, M. bovis), which the
+   * atlas missed only because the key is the H37Rv one.
+   */
+  n_orthologue_pdb: number;
+  n_orthologue_pdb_with_ligand: number;
+  best_orthologue_resolution: number | null;
+  closest_orthologue_gene: string | null;
+  closest_orthologue_organism: string | null;
+  closest_orthologue_identity: number | null;
+  closest_orthologue_coverage: number | null;
+  same_sequence_structure: boolean;
   has_predicted: boolean;
   plddt_mean: number | null;
   n_activities: number;
@@ -166,6 +184,28 @@ export interface Structure {
   ligand_ids_elsewhere: string[];
 }
 
+/** One mycobacterial neighbour's PDB entry, with the homology that reached it. */
+export interface OrthologueStructure {
+  via_acc: string;
+  via_gene: string | null;
+  via_organism: string | null;
+  via_taxon: string | null;
+  /** `same_sequence` is the protein itself under another accession; `orthologue` is a relative. */
+  relation: "same_sequence" | "orthologue";
+  identity: number;
+  coverage: number;
+  evalue: number | null;
+  bitscore: number | null;
+  pdb_id: string;
+  title: string | null;
+  method: string | null;
+  resolution: number | null;
+  released: string | null;
+  entity_description: string | null;
+  ligand_ids: string[];
+  n_ligands: number;
+}
+
 export interface ChemblTarget {
   target_id: string;
   target_type: string | null;
@@ -278,6 +318,7 @@ export interface TargetDetail extends TargetSummary {
   is_pseudogene: boolean;
   alphafold: PredictedStructure | null;
   structures: Structure[];
+  orthologue_structures: OrthologueStructure[];
   chembl_targets: ChemblTarget[];
   activities: Activity[];
   whole_cell: Activity[];

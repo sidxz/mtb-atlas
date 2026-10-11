@@ -52,6 +52,7 @@ TABLES = (
     "interactions",
     "homology",
     "paralogs",
+    "orthologue_structures",
     "chembl_targets",
     "ligands",
     "drugs",
@@ -71,6 +72,11 @@ TABLE_NOTES = {
     "compounds, which separates one real screening campaign from a dozen small follow-ups: "
     "genome-wide only two genes reach 1,000. `hn878_*` compares vulnerability against a "
     "clinical isolate; see strain_vulnerability for the sign convention. "
+    "**`n_pdb` counts structures of this gene's OWN protein; a borrowed one is in "
+    "`n_orthologue_pdb` and does NOT make `has_structure` or `structural_gap` true.** "
+    "3,146 CDS genes have no structure of their own and 449 of those have a mycobacterial "
+    "neighbour that does. `same_sequence_structure` is the stronger case: an identical "
+    "sequence deposited under another accession, true for 34 of them. "
     "`close_paralog` is whether a full-length second copy exists -- see the paralogs table "
     "for why it is stricter than `close_human_homolog`. `closest_paralog_gene` is NULL when "
     "there is no backup, while `nearest_relative_gene` is usually populated anyway, so "
@@ -198,6 +204,21 @@ TABLE_NOTES = {
     "filing the identical sequence under two accessions -- those are in "
     "crosswalk.shared_accession and are identity collapse, not paralogy. `identity` and "
     "`coverage` are FRACTIONS.",
+    "orthologue_structures": "A structure to work from that is NOT of this protein: phmmer "
+    "of each Mtb protein against the 895 Mycobacteriaceae proteins (excluding H37Rv) that "
+    "have a PDB entry, joined to those entries. **Keyed on uniprot_acc for the Mtb side and "
+    "via_acc for the neighbour; one row per (Mtb protein, neighbour's PDB entry), so count "
+    "DISTINCT pdb_id, not rows.** These entries are NOT in the `structures` table and must "
+    "never be added to `n_pdb`: that column answers 'has this protein been solved' and a "
+    "borrowed structure does not make it true. **`relation` carries two claims of very "
+    "different strength.** `same_sequence` means the deposited sequence is identical to the "
+    "Mtb one and merely filed under another accession (CDC 1551, H37Ra, M. bovis) -- the "
+    "structure IS of this protein, and 34 genes the atlas calls structure-less have one. "
+    "`orthologue` means a related mycobacterial protein, mostly M. smegmatis, down to the "
+    "floor of 30% identity over 70% of the query. `identity` and `coverage` are FRACTIONS "
+    "and belong in any answer: whether a 34%-identical structure is useful is the reader's "
+    "judgement, and this table makes no modelling claim. `n_ligands` counts only ligands on "
+    "the neighbour's own chains, the same chain-level rule as `structures`.",
     "drugs": "One row per ChEMBL parent molecule with a TUBERCULOSIS indication. "
     "`pref_name` is UPPER CASE ('ISONIAZID'), so match case-insensitively. "
     "`max_phase_tb` is the highest phase for TB; `max_phase` is for ANY indication, so an "

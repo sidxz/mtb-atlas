@@ -225,6 +225,20 @@ This is the rule that outranks completeness.
   neither of which has a backup. `closest_paralog_gene` is the nearest *backup*
   and is NULL when there is none; `nearest_relative_gene` is the nearest
   *relative* and usually is not. Do not read the second as redundancy.
+- **A borrowed structure is never one of the gene's own.** `n_pdb`,
+  `has_structure` and `structural_gap` count entries on the gene's own
+  accession and must keep meaning that; `orthologue_structures` holds the
+  3,146-gene question "is there anything to work from", and 449 of those genes
+  have a mycobacterial neighbour that has been solved. **`relation` carries two
+  claims of different strength.** `same_sequence` means an identical sequence
+  deposited under another accession -- 34 structure-less genes have one, folC
+  among them, and the structure *is* of this protein. `orthologue` means a
+  relative, with identity and coverage on every row, because whether a
+  34%-identical structure is useful is the reader's judgement and this atlas
+  makes no modelling claim. The borrowed entries stay out of the 3D viewer: the
+  numbering is the neighbour's, so a gene's resistance residues would land in
+  the wrong place. A perfect match must also span 80% of the *target*, or
+  `O07717` reads as solved because it sits inside a protein twice its length.
 - **Human homology is computed, not looked up, and always shown with its
   number.** UniRef co-membership was tried and returned zero homologs for all
   3,978 accessions, because UniRef50 clusters above the 25-40% range where
@@ -260,7 +274,7 @@ interesting shapes:
 |---|---|---|
 | DprE1 | `Rv3790` | Essential (`ES`), 31 structures, direct ChEMBL target, **no** WHO entry; macozinone and TBA-7371 (phase 2) by ChEMBL mechanism, while BTZ-043 and quabodepistat have none in ChEMBL and so reach no gene |
 | InhA | `Rv1484` | Essential (`ES`), 135 structures, best-studied chemistry, full WHO entry; isoniazid and ethionamide, approved |
-| MmpL3 | `Rv0206c` | Essential domain (`ESD`), 1 structure, ligands **only** via the *M. smegmatis* orthologue, no WHO entry, most vulnerable of the three (-11.0); SQ109 (phase 2) **only** through Bosch 2021, because ChEMBL records no mechanism for it |
+| MmpL3 | `Rv0206c` | Essential domain (`ESD`), 1 structure at 3.0 Å while the *M. smegmatis* orthologue has 18 (best 2.15 Å, 11 liganded), ligands **only** via that orthologue, no WHO entry, most vulnerable of the three (-11.0); SQ109 (phase 2) **only** through Bosch 2021, because ChEMBL records no mechanism for it |
 
 A fourth is worth keeping to hand: **GroEL2 (`Rv0440`)** is essential and highly
 vulnerable (-11.6) and would look like an excellent target, except that it is

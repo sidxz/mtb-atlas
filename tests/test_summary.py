@@ -368,3 +368,66 @@ def test_whole_cell_screens_are_not_protein_assays(rows: dict) -> None:
     for row in rows.values():
         if row["n_activities"] == 0:
             assert row["n_protein_assays"] == 0
+
+
+# --- is there a structure to work from, even if not of this protein? ----------------
+
+
+def test_a_borrowed_structure_does_not_become_one_of_its_own(rows: dict) -> None:
+    """The whole point of the separate column.
+
+    folC has no entry under its own accession and two under a CDC 1551 one.
+    If those were added to `n_pdb` the atlas could never again answer "has
+    this protein been solved", which is the question the column is for.
+    """
+    folc = rows["Rv2447c"]
+    assert folc["n_pdb"] == 0
+    assert folc["has_structure"] is False
+    assert folc["structural_gap"] is False
+    assert folc["n_orthologue_pdb"] == 2
+
+
+def test_an_identical_sequence_elsewhere_is_the_stronger_claim(rows: dict) -> None:
+    """folC's borrowed entries are of the same sequence, filed under another accession."""
+    folc = rows["Rv2447c"]
+    assert folc["same_sequence_structure"] is True
+    assert folc["closest_orthologue_identity"] == pytest.approx(1.0)
+    assert folc["closest_orthologue_gene"] == "folC"
+    assert "CDC 1551" in folc["closest_orthologue_organism"]
+
+
+def test_a_relative_does_not_set_the_same_sequence_flag(rows: dict) -> None:
+    """mmpL3's structures are *M. smegmatis* MmpL3 at 67%, which is not this protein."""
+    mmpl3 = rows["Rv0206c"]
+    assert mmpl3["same_sequence_structure"] is False
+    assert mmpl3["closest_orthologue_identity"] == pytest.approx(0.6741)
+    assert mmpl3["closest_orthologue_coverage"] == pytest.approx(0.9068)
+    assert "smegmatis" in mmpl3["closest_orthologue_organism"]
+
+
+def test_a_borrowed_structure_can_be_better_than_the_gene_s_own(rows: dict) -> None:
+    """The MmpL3 case: one Mtb entry at 3.0 A, the neighbour's at 2.6.
+
+    This is why the column is not restricted to genes with nothing of their
+    own -- "has a structure" and "has a structure worth working from" differ.
+    """
+    mmpl3 = rows["Rv0206c"]
+    assert mmpl3["n_pdb"] == 1
+    assert mmpl3["best_resolution"] == pytest.approx(3.0)
+    assert mmpl3["best_orthologue_resolution"] < mmpl3["best_resolution"]
+    assert mmpl3["n_orthologue_pdb_with_ligand"] == 3
+
+
+def test_entries_are_counted_distinctly_not_as_rows(rows: dict) -> None:
+    """One row per (protein, entry) pair, so a rows count would overstate."""
+    for row in rows.values():
+        assert row["n_orthologue_pdb_with_ligand"] <= row["n_orthologue_pdb"]
+
+
+def test_a_gene_with_no_mycobacterial_relative_reads_zero(rows: dict) -> None:
+    """Absence again: most of the genome has no neighbour with a structure."""
+    katg = rows["Rv1908c"]
+    assert katg["n_orthologue_pdb"] == 0
+    assert katg["same_sequence_structure"] is False
+    assert katg["closest_orthologue_gene"] is None
+    assert katg["best_orthologue_resolution"] is None

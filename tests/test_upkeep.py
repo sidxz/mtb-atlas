@@ -72,6 +72,7 @@ def test_every_source_is_registered_with_a_stage() -> None:
         "string-db",
         "phmmer-human",
         "phmmer-paralog",
+        "orthologue-pdb",
         "clinicaltrials-gov",
         "mtbtndb",
     }

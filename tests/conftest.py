@@ -171,6 +171,11 @@ def evidence_store(store: Path) -> Path:
         ("interactions", "string-db", "STRING v12.5"),
         ("homology", "phmmer-human", "phmmer vs reviewed human proteome"),
         ("paralogs", "phmmer-paralog", "phmmer vs the Mtb proteome itself"),
+        (
+            "orthologue_structures",
+            "orthologue-pdb",
+            "phmmer vs Mycobacteriaceae with a PDB entry; structures from RCSB",
+        ),
     ):
         write_parquet(
             name,

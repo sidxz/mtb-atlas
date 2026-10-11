@@ -136,6 +136,27 @@ struct AS (
     FROM structures s
     GROUP BY 1
 ),
+ortho AS (
+    -- A structure to work from that is not of this protein. Deliberately a
+    -- separate block from `struct`: `n_pdb` counts this gene's own entries and
+    -- has to keep meaning that, so nothing here feeds `has_structure` or
+    -- `structural_gap`.
+    SELECT o.uniprot_acc,
+           count(DISTINCT o.pdb_id)                                  AS n_orthologue_pdb,
+           min(o.resolution)                                         AS best_orthologue_resolution,
+           count(DISTINCT o.pdb_id) FILTER (WHERE o.n_ligands > 0)    AS n_orthologue_pdb_ligand,
+           -- Identical sequence, another accession: the structure *is* of this
+           -- protein and was missed only because the key is the Mtb accession.
+           bool_or(o.relation = 'same_sequence')                      AS same_sequence_structure,
+           -- The closest neighbour by bitscore, with its own numbers, the same
+           -- ranking `paralogs` uses for the nearest relative.
+           arg_max(o.via_gene, o.bitscore)      AS closest_orthologue_gene,
+           arg_max(o.via_organism, o.bitscore)  AS closest_orthologue_organism,
+           arg_max(o.identity, o.bitscore)      AS closest_orthologue_identity,
+           arg_max(o.coverage, o.bitscore)      AS closest_orthologue_coverage
+    FROM orthologue_structures o
+    GROUP BY 1
+),
 inter AS (
     -- Edges are stored once per unordered pair, so each gene has to be counted
     -- from both ends of the edge.
@@ -263,6 +284,20 @@ SELECT
     coalesce(st.ligand_ids, [])       AS ligand_ids,
     coalesce(st.methods, [])          AS methods,
 
+    -- Borrowed structures, counted apart from the gene's own. 3,094 accessions
+    -- have no entry of their own, and for 449 of them a mycobacterial
+    -- neighbour does; the identity and coverage that produced the link travel
+    -- with the number, because what a 34%-identical structure is good for is
+    -- the reader's call and not a claim this atlas makes.
+    coalesce(o.n_orthologue_pdb, 0)        AS n_orthologue_pdb,
+    coalesce(o.n_orthologue_pdb_ligand, 0) AS n_orthologue_pdb_with_ligand,
+    o.best_orthologue_resolution,
+    o.closest_orthologue_gene,
+    o.closest_orthologue_organism,
+    o.closest_orthologue_identity,
+    o.closest_orthologue_coverage,
+    coalesce(o.same_sequence_structure, false) AS same_sequence_structure,
+
     (w.alphafold_id IS NOT NULL) AS has_predicted,
     p.plddt_mean, p.plddt_very_low,
 
@@ -313,6 +348,7 @@ LEFT JOIN vuln v ON v.rv_id = w.rv_id
 LEFT JOIN strain_vuln sv ON sv.rv_id = w.rv_id
 LEFT JOIN hom  h ON h.uniprot_acc = w.uniprot_acc
 LEFT JOIN para pg ON pg.uniprot_acc = w.uniprot_acc
+LEFT JOIN ortho o ON o.uniprot_acc = w.uniprot_acc
 LEFT JOIN inter i ON i.rv_id = w.rv_id
 LEFT JOIN prot pr ON pr.uniprot_acc = w.uniprot_acc
 LEFT JOIN drug_link    dl ON dl.rv_id = w.rv_id
@@ -357,6 +393,10 @@ CLINICAL_COUNTS = ("with_clinical_drug", "drugs", "trials")
 # and `make summary` on it should report absence rather than fail. The columns
 # are nullable either way, so an empty view is the whole stand-in.
 EMPTY_OPTIONAL: dict[str, str] = {
+    "orthologue_structures": "SELECT NULL::VARCHAR AS uniprot_acc, NULL::VARCHAR AS via_acc,"
+    " NULL::VARCHAR AS via_gene, NULL::VARCHAR AS via_organism, NULL::VARCHAR AS relation,"
+    " NULL::DOUBLE AS identity, NULL::DOUBLE AS coverage, NULL::DOUBLE AS bitscore,"
+    " NULL::VARCHAR AS pdb_id, NULL::DOUBLE AS resolution, NULL::BIGINT AS n_ligands WHERE false",
     "strain_vulnerability": "SELECT NULL::VARCHAR AS rv_id, NULL::DOUBLE AS vulnerability_index,"
     " NULL::BOOLEAN AS certain, NULL::DOUBLE AS delta_vi, NULL::DOUBLE AS delta_vi_norm,"
     " NULL::BOOLEAN AS differential_reported WHERE false",
@@ -373,6 +413,7 @@ TABLES = {
     "strain_vuln": "strain_vulnerability",
     "hom": "homology",
     "para": "paralogs",
+    "orthologue_structures": "orthologue_structures",
     "interactions": "interactions",
     "cond": "conditional_fitness",
     "prot": "proteins",

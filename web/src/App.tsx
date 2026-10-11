@@ -81,6 +81,7 @@ const COLUMNS: [string, string, boolean][] = [
   ["essentiality", "Essentiality", false],
   ["vulnerability_index", "Vulnerability", true],
   ["n_pdb", "PDB", true],
+  ["n_orthologue_pdb", "Relative's PDB", true],
   ["plddt_mean", "pLDDT", true],
   ["n_compounds", "Compounds", true],
   ["n_protein_assays", "Assays", true],
@@ -98,7 +99,7 @@ const COLUMNS: [string, string, boolean][] = [
 const COLUMN_GROUPS = [
   { label: "Gene identity", keys: ["rv_id", "gene_name"] },
   { label: "Target biology", keys: ["essentiality", "vulnerability_index", "n_close_paralogs"] },
-  { label: "Structures", keys: ["n_pdb", "plddt_mean"] },
+  { label: "Structures", keys: ["n_pdb", "n_orthologue_pdb", "plddt_mean"] },
   {
     label: "Chemical evidence",
     keys: [
@@ -215,6 +216,30 @@ function cell(gene: TargetSummary, key: string): React.ReactNode {
       );
     case "n_pdb":
       return gene.n_pdb ?? "—";
+    // A structure to work from that is not of this protein. Separate from PDB
+    // on purpose: 3,146 genes have no entry of their own, and reading a
+    // borrowed one into that column would make the zero mean nothing.
+    case "n_orthologue_pdb":
+      return gene.n_orthologue_pdb ? (
+        <span
+          title={
+            gene.same_sequence_structure
+              ? `identical sequence deposited under another accession (${gene.closest_orthologue_organism})`
+              : `closest: ${gene.closest_orthologue_gene} of ${gene.closest_orthologue_organism}, ` +
+                `${Math.round((gene.closest_orthologue_identity ?? 0) * 100)}% identity over ` +
+                `${Math.round((gene.closest_orthologue_coverage ?? 0) * 100)}% of the protein`
+          }
+        >
+          {gene.n_orthologue_pdb}
+          {gene.same_sequence_structure && (
+            <span className="chip ok" style={{ marginLeft: 4 }}>
+              =
+            </span>
+          )}
+        </span>
+      ) : (
+        "—"
+      );
     case "plddt_mean":
       return gene.plddt_mean?.toFixed(0) ?? "—";
     case "n_compounds":

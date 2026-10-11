@@ -191,8 +191,12 @@ def test_the_schema_warns_about_every_screens_trap() -> None:
             "not a hit rate",  # 25 Active of 302 IC50 SIDs in AID 1671178, not of 66,592
             "deliberate under-claim",  # the campaign-level veto is a choice, not an error
             "any ingested AID",  # an AID below the floor has no stage row to reach
-            "Four deposits reach no locus",  # a 104,781-compound MbtI screen reads 0 on mbtI
-            "104,781",  # ... and the number must travel with the warning
+            "Four deposits reach no locus, for three different reasons",  # not one phenomenon
+            "104,781",  # a 104,781-compound MbtI screen reads 0 on mbtI: the number travels
+            "356,486",  # ... as does the BioA screen
+            "355,326",  # ... and the fadD28 one, a false absence
+            "UDA_1568",  # UT205 only looks like Rv1568: the near-match not to bridge
+            "a false absence",  # fadD28's CAB06100 IS H37Rv, and is a defect, not a boundary
             "`outcome_stated` can be true",  # a NULL count is not 'no calls', even with calls ...
             "n_stages > 1",  # ... and a campaign of several assays is the second NULL
             "0 for AID 1626",  # n_unspecified is PubChem's own count, not n_tested

@@ -176,6 +176,12 @@ def evidence_store(store: Path) -> Path:
             "orthologue-pdb",
             "phmmer vs Mycobacteriaceae with a PDB entry; structures from RCSB",
         ),
+        # Real ChEMBL mechanism rows for the fixture loci's own Pfam domains,
+        # chosen so every reading of them is covered: inhA's fold carries both
+        # its own two approved drugs and the FabI inhibitors from three other
+        # organisms, while atpE and rpoB/rpoC carry bedaquiline and the
+        # rifamycins against a COMPLEX, which must never be counted.
+        ("drug_precedent", "chembl", "ChEMBL_37 (2026-05-01)"),
     ):
         write_parquet(
             name,

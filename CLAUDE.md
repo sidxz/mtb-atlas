@@ -246,7 +246,22 @@ This is the rule that outranks completeness.
   30% "close" threshold is this atlas's convention, so the identity sits next to
   the flag.
 - No druggability claim without a source. Nothing public supplies one today; see
-  the open question in `docs/data-sources.md`.
+  the open question in `docs/data-sources.md`. **Drug precedent is not a
+  druggability score**, and the columns are worded so it cannot be read as one:
+  `n_precedent_approved` counts approved drugs ChEMBL files against *another
+  single protein* carrying one of this gene's Pfam domains, which is a count of
+  database records. Three guards keep it honest, and removing any one of them
+  turns it into a claim. **A gene is not its own precedent** -- rows on its own
+  accession are dropped, or dprE1's own macozinone comes back as evidence that
+  dprE1 can be drugged. **Only `SINGLE PROTEIN` targets count**, the same rule
+  `n_complex_drugs` follows: ChEMBL files the ribosome's 45 approved drugs
+  against a complex naming every subunit, so 4,485 of the 9,603 rows would hand
+  chloramphenicol to rplC's fold; they are shown in `n_precedent_complex` and
+  never counted. **A shared domain is not a shared binding site**, so
+  `precedent_pfam_name`, `precedent_domain_genes` (37 genes carry PF00005, one
+  carries the median domain) and `n_precedent_human_target` (39% of rows are
+  human targets, and for 340 genes every approved precedent is) travel with the
+  number. It is NULL, not zero, for the 500 genes with no Pfam annotation.
 - **TB phase is not overall phase.** `drugs.max_phase_tb` is the highest phase
   ChEMBL records for a tuberculosis indication. `max_phase` is for any
   indication: linezolid is approved, and phase 3 for TB. The drug set is
@@ -274,7 +289,7 @@ interesting shapes:
 |---|---|---|
 | DprE1 | `Rv3790` | Essential (`ES`), 31 structures, direct ChEMBL target, **no** WHO entry; macozinone and TBA-7371 (phase 2) by ChEMBL mechanism, while BTZ-043 and quabodepistat have none in ChEMBL and so reach no gene |
 | InhA | `Rv1484` | Essential (`ES`), 135 structures, best-studied chemistry, full WHO entry; isoniazid and ethionamide, approved |
-| MmpL3 | `Rv0206c` | Essential domain (`ESD`), 1 structure at 3.0 Å while the *M. smegmatis* orthologue has 18 (best 2.15 Å, 11 liganded), ligands **only** via that orthologue, no WHO entry, most vulnerable of the three (-11.0); SQ109 (phase 2) **only** through Bosch 2021, because ChEMBL records no mechanism for it |
+| MmpL3 | `Rv0206c` | Essential domain (`ESD`), 1 structure at 3.0 Å while the *M. smegmatis* orthologue has 18 (best 2.15 Å, 11 liganded), ligands **only** via that orthologue, no WHO entry, most vulnerable of the three (-11.0), and **zero drug precedent for its fold** — no drug in ChEMBL is filed against any MmpL protein anywhere; SQ109 (phase 2) **only** through Bosch 2021, because ChEMBL records no mechanism for it |
 
 A fourth is worth keeping to hand: **GroEL2 (`Rv0440`)** is essential and highly
 vulnerable (-11.6) and would look like an excellent target, except that it is

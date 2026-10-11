@@ -53,6 +53,7 @@ TABLES = (
     "homology",
     "paralogs",
     "orthologue_structures",
+    "drug_precedent",
     "chembl_targets",
     "ligands",
     "drugs",
@@ -77,6 +78,11 @@ TABLE_NOTES = {
     "3,146 CDS genes have no structure of their own and 449 of those have a mycobacterial "
     "neighbour that does. `same_sequence_structure` is the stronger case: an identical "
     "sequence deposited under another accession, true for 34 of them. "
+    "`n_precedent_approved` counts approved drugs filed against ANOTHER protein sharing one "
+    "of this gene's Pfam domains -- precedent that the fold can be bound, **not a "
+    "druggability score and not a drug that acts on this gene** (that is `n_drugs`). It is "
+    "NULL where UniProt annotates no domain, which is not zero. Always report "
+    "`precedent_pfam_name` and `precedent_domain_genes` with it. "
     "`close_paralog` is whether a full-length second copy exists -- see the paralogs table "
     "for why it is stricter than `close_human_homolog`. `closest_paralog_gene` is NULL when "
     "there is no backup, while `nearest_relative_gene` is usually populated anyway, so "
@@ -219,6 +225,22 @@ TABLE_NOTES = {
     "and belong in any answer: whether a 34%-identical structure is useful is the reader's "
     "judgement, and this table makes no modelling claim. `n_ligands` counts only ligands on "
     "the neighbour's own chains, the same chain-level rule as `structures`.",
+    "drug_precedent": "Has a drug ever been filed against this FOLD? Every ChEMBL "
+    "drug-target mechanism, keyed on the Pfam domain of the protein it acts on, restricted "
+    "to the 325 domains Mtb proteins carry. **There is no rv_id: join through "
+    "proteins.pfam_ids** -- `FROM proteins p, UNNEST(p.pfam_ids) AS d(pfam_id) JOIN "
+    "drug_precedent USING (pfam_id)` -- and **exclude rows where `accession` is the gene's "
+    "own accession**, or a gene becomes its own precedent (dprE1's only PF04030 compounds "
+    "are macozinone and TBA-7371, against dprE1). `target_summary.n_precedent_approved` is "
+    "that roll-up already done. **This is NOT a druggability score and nothing in the store "
+    "is** -- it counts database records, not pockets. `max_phase` is 4 for approved, 1-3 "
+    "clinical, -1 means ChEMBL does not know (neither approved nor clinical). "
+    "**A shared domain is not a shared binding site**, so an answer needs the domain name "
+    "and how broadly it is shared: `target_summary.precedent_domain_genes` is how many Mtb "
+    "genes carry it (37 for PF00005 ABC transporter, 1 for the median domain). 39% of rows "
+    "are human targets (tax_id 9606), where tractable chemistry and a selectivity problem "
+    "are the same fact -- `n_precedent_human_target` counts those. One row per (pfam_id, "
+    "mec_id, accession), so count DISTINCT molecule_chembl_id, not rows.",
     "drugs": "One row per ChEMBL parent molecule with a TUBERCULOSIS indication. "
     "`pref_name` is UPPER CASE ('ISONIAZID'), so match case-insensitively. "
     "`max_phase_tb` is the highest phase for TB; `max_phase` is for ANY indication, so an "

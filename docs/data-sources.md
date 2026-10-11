@@ -25,6 +25,7 @@ All sources are public. No consortium data, ever.
 | [phmmer vs the Mtb proteome](#paralogs-functional-redundancy) | UniProt UP000001584 | CC BY 4.0 | Paralogs: is there a backup copy? |
 | [phmmer vs Mycobacteriaceae + RCSB](#orthologue-structures-a-structure-to-work-from) | UniProt taxon 1762 with a PDB entry, live RCSB | CC BY 4.0 / CC0 1.0 | A structure to work from that is not of this protein |
 | [ChEMBL drugs](#chembl-tb-drugs-and-mechanisms) | ChEMBL_37 | CC BY-SA 3.0 | TB drugs, phases, mechanisms (M6) |
+| [ChEMBL mechanisms by Pfam](#drug-precedent-has-this-fold-ever-been-drugged) | ChEMBL_37 | CC BY-SA 3.0 | Has a drug ever been filed against this fold? |
 | [ClinicalTrials.gov](#clinicaltrialsgov) | API 2.0.5, data 2026-10-09 | US Government database; terms below | Interventional TB trials (M6) |
 
 Licences differ, so they are tracked per source rather than rolled up. The code
@@ -790,6 +791,138 @@ function that also stamps the table, so the probe cannot drift from the
 statement it is checking. A neighbour gaining its *first* structure arrives as
 a new sequence in the filtered UniProt stream, so the `uniprot` probe is what
 notices that.
+
+## Drug precedent: has this fold ever been drugged?
+
+`docs/data-sources.md` has carried an open question since M1 —
+[druggable pockets](#druggable-pockets--unresolved), which no public source
+answers. **This is not that answer.** It is the one sourced thing in its
+neighbourhood: a count of the drugs ChEMBL records against *some other* protein
+that carries the same Pfam domain as this gene. "Twenty-one approved drugs are
+filed against proteins with this domain" is a fact about a database. Whether
+that makes the gene druggable is the reader's call, which is why every row
+names the drug, its phase, the protein it actually acts on, and that protein's
+organism.
+
+### Pfam, not ChEMBL's own protein classification
+
+ChEMBL publishes a protein family tree and assigns every target component to
+it, which looks like the obvious key. It is not: **only 199 of the 4,031 CDS
+genes are a ChEMBL target component at all**, and those are the genes that
+already have chemistry — precisely the ones a precedent signal is least needed
+for. Pfam is annotated on **3,531** of them, in the UniProt stream the atlas
+already downloads, and ChEMBL publishes a Pfam cross-reference on its own
+components (2,215 of 2,283 carry one). So both ends of the bridge are a domain
+accession rather than a name match, and the reach is 18× wider.
+
+### The fetch
+
+Four sequential steps, each page cached like the rest of the drug layer, ~110
+requests in all:
+
+| Step | Endpoint | Count |
+|---|---|---|
+| Every drug–target mechanism in ChEMBL | `mechanism.json` | 7,561 |
+| The targets those point at | `target.json?target_chembl_id__in=` | 1,518 |
+| Those targets' components, for their Pfam xrefs | `target_component.json?accession__in=` | 2,283 |
+| Names for the drugs that survive the filter | `molecule.json?molecule_chembl_id__in=` | 1,159 |
+
+`mechanism.json` carries `max_phase` itself, so the phase of a precedent costs
+no extra request. Rows are then restricted to the **325** domains Mtb proteins
+actually carry, which takes the table from 34,561 rows over 1,403 domains to
+**9,603 over 325** and loses nothing that could ever reach a gene.
+
+One row per distinct claim — (domain, protein, drug, target, mechanism) — with
+`mec_id` naming the earliest ChEMBL record that states it. Not one row per
+`mec_id`: ChEMBL files a mechanism per salt, so folding salts into their parent
+the way the drug layer does would otherwise print daunorubicin, its
+hydrochloride and its citrate as three identical rows about human topoisomerase
+II.
+
+### Two exclusions, and both are the difference between a number and a misreading
+
+**A gene is not its own precedent.** The roll-up drops rows whose component
+accession is the gene's own. dprE1 is the case: its PF04030 rows are macozinone
+and TBA-7371, which are phase 2 *against dprE1*. They are already in `n_drugs`;
+counting them again as evidence that dprE1's fold can be drugged would make the
+column self-confirming. It changes 8 genes genome-wide, and those 8 are exactly
+the ones where it would have been circular.
+
+**Only `SINGLE PROTEIN` targets count.** This is the rule `n_complex_drugs`
+already follows, applied one level out. ChEMBL files the ribosome's approved
+drugs against a `PROTEIN NUCLEIC-ACID COMPLEX` that names every subunit, so
+counting those hands chloramphenicol to rplC's fold as precedent; 4,485 of the
+9,603 rows are that one complex. `PROTEIN FAMILY` is the same problem in
+another shape — cobicistat is filed against "Cytochrome P450 3A", which names
+several accessions and attributes the drug to none of them. The rows are kept
+and shown, never counted, and `n_precedent_complex` is how many there are:
+**200 genes have no precedent except through a complex or a family**, and
+reading them as drugged folds would be the single biggest error this table
+could cause.
+
+| `target_type` | rows | counted |
+|---|---|---|
+| `PROTEIN NUCLEIC-ACID COMPLEX` | 4,485 | no |
+| `PROTEIN FAMILY` | 1,547 | no |
+| `PROTEIN COMPLEX GROUP` | 1,526 | no |
+| `SINGLE PROTEIN` | 1,153 | **yes** |
+| `PROTEIN COMPLEX` | 888 | no |
+| `SELECTIVITY GROUP` | 4 | no |
+
+### A shared domain is not a shared binding site
+
+The same caveat UniRef50 carries in `CLAUDE.md`, and it is answered the same
+way: by showing the numbers rather than by building them into the count.
+
+- **The domain is named.** `precedent_pfam_name` is on the gene row and on
+  every detail row.
+- **Its breadth is named.** `precedent_domain_genes` is how many Mtb genes
+  carry it. The median precedented domain covers **one** gene, the 90th
+  percentile seven, and `PF00005` (ABC transporter) covers **37** — a precedent
+  there is a statement about a superfamily, and four essential genes read 7
+  approved drugs from it, every one a CFTR modulator.
+- **The human share is named.** `n_precedent_human_target` counts the approved
+  drugs whose target is human (tax 9606). 39% of rows are, and for **340 genes
+  every approved precedent is human** — where tractable chemistry and a
+  selectivity problem are the same fact, next to the `close_human_homolog`
+  column that says the same thing from the sequence end.
+
+PIKfyve is the worked example of why the row detail matters: it is a human
+lipid kinase that genuinely carries `PF00118` (Cpn60_TCP1), so apilimod shows
+up as clinical precedent for groEL2's fold. The annotation is correct and the
+inference would be absurd — which the reader can see, because the row says
+"APILIMOD · phase 2 · 1-phosphatidylinositol 3-phosphate 5-kinase · *Homo
+sapiens*".
+
+### What it buys
+
+**519 of the 4,031 CDS genes have at least one approved drug filed against
+another single protein that shares a domain with them**, and 475 have one in
+clinical phases. **479 of those 519 have no ChEMBL target of their own**, so
+for them this is information the atlas could not previously produce at all, and
+487 have no ligand of their own. 3,012 genes have a domain and a precedent of
+exactly zero, which is a measured zero; 500 have no Pfam annotation and read
+NULL, because nothing to look up is not nothing found.
+
+Among the 489 essential genes, 88 have approved precedent, 75 of those have no
+ligand of their own, and 61 of the 88 have precedent only from human proteins.
+
+The reference genes behave as a TB chemist would predict:
+
+| Gene | Domain | Approved | Clinical | What the precedent is |
+|---|---|---|---|---|
+| inhA | `PF13561` adh_short_C2, 19 Mtb genes | 2 | 3 | Triclosan and hexachlorophene on *E. coli* FabI; afabicin, AFN-1252 and CG-400549 in phase 2 on the *S. aureus* and *B. pseudomallei* enzymes. Isoniazid and ethionamide are excluded — they are on inhA itself |
+| dprE1 | `PF01565` FAD_binding_4, 13 Mtb genes | 1 | 0 | Triparanol on human Δ24-sterol reductase. All of it human, which is a selectivity warning as much as a precedent |
+| mmpL3 | `PF03176` MMPL, 14 Mtb genes | **0** | **0** | Nothing. No drug in ChEMBL is filed against any MmpL protein, anywhere — a measured zero on the most vulnerable of the three reference genes |
+| folP1 | `PF00809` Pterin_bind, 3 Mtb genes | 21 | 1 | The entire sulfonamide and sulfone class, on dihydropteroate synthases of other organisms. Essential, no ligand of its own |
+
+### Freshness
+
+No new probe. Every fact in the table is ChEMBL's and the table is stamped with
+ChEMBL's release, which is the version the existing `chembl` probe already
+checks; `atlas refresh chembl` runs from the identity stage and rebuilds this
+with the rest. The Mtb side of the bridge is `proteins.pfam_ids`, so a
+Mycobrowser or UniProt release moves it through those sources' own probes.
 
 ## ChEMBL: TB drugs and mechanisms
 

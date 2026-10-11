@@ -43,6 +43,7 @@ KEYS: dict[str, tuple[str, ...]] = {
     "homology": ("uniprot_acc",),
     "paralogs": ("uniprot_acc",),
     "orthologue_structures": ("uniprot_acc", "via_acc", "pdb_id"),
+    "drug_precedent": ("pfam_id", "mec_id", "accession"),
     "drugs": ("molecule_chembl_id",),
     "drug_mechanisms": ("molecule_chembl_id", "target_chembl_id"),
     "trials": ("nct_id",),

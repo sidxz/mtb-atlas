@@ -54,6 +54,31 @@ export interface TargetSummary {
   closest_orthologue_identity: number | null;
   closest_orthologue_coverage: number | null;
   same_sequence_structure: boolean;
+  /**
+   * Has a drug ever been filed against this fold? Drugs ChEMBL records against
+   * another single protein carrying one of this gene's Pfam domains.
+   *
+   * Not a druggability score -- nothing public supplies one -- and not a drug
+   * that acts on this gene, which is `n_drugs`. `null` where UniProt annotates
+   * no domain: nothing to look up is not nothing found.
+   *
+   * `n_precedent_human_target` is how many of the approved ones act on a human
+   * protein, where tractable chemistry and a selectivity problem are the same
+   * fact. `n_precedent_complex` is filings against a complex or protein family
+   * containing such a protein -- shown, never counted, because ChEMBL files
+   * the ribosome's 45 approved drugs against every subunit.
+   *
+   * `precedent_domain_genes` is how many Mtb genes share the domain, because a
+   * shared domain is not a shared binding site.
+   */
+  n_precedent_approved: number | null;
+  n_precedent_clinical: number | null;
+  n_precedent_human_target: number | null;
+  n_precedent_complex: number | null;
+  precedent_pfam: string | null;
+  precedent_pfam_name: string | null;
+  precedent_domain_genes: number | null;
+  precedent_example: string | null;
   has_predicted: boolean;
   plddt_mean: number | null;
   n_activities: number;
@@ -206,6 +231,26 @@ export interface OrthologueStructure {
   n_ligands: number;
 }
 
+/** One ChEMBL drug-target mechanism, reached by a Pfam domain this gene shares. */
+export interface DrugPrecedent {
+  pfam_id: string;
+  pfam_name: string | null;
+  /** The protein the drug was actually filed against, never this gene's own. */
+  accession: string | null;
+  molecule_chembl_id: string;
+  molecule_name: string | null;
+  /** 4 approved, 1-3 clinical, -1 ChEMBL does not know. */
+  max_phase: number | null;
+  target_chembl_id: string;
+  target_name: string | null;
+  /** Only `SINGLE PROTEIN` is counted; a complex or family is shown and not. */
+  target_type: string | null;
+  organism: string | null;
+  tax_id: number | null;
+  action_type: string | null;
+  mechanism_of_action: string | null;
+}
+
 export interface ChemblTarget {
   target_id: string;
   target_type: string | null;
@@ -319,6 +364,7 @@ export interface TargetDetail extends TargetSummary {
   alphafold: PredictedStructure | null;
   structures: Structure[];
   orthologue_structures: OrthologueStructure[];
+  drug_precedent: DrugPrecedent[];
   chembl_targets: ChemblTarget[];
   activities: Activity[];
   whole_cell: Activity[];

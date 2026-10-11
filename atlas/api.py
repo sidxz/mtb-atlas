@@ -39,6 +39,7 @@ LICENCES = {
     "tnseq_screens": ("MtbTnDB screen annotation, Jinich 2025", "CC BY 4.0"),
     "ligands": ("RCSB PDB chemical components", "CC0 1.0"),
     "drugs": ("ChEMBL drug indications and mechanisms", "CC BY-SA 3.0"),
+    "drug_precedent": ("ChEMBL mechanisms by Pfam domain", "CC BY-SA 3.0"),
     # The terms ask for attribution, the processing date (carried in the
     # version) and a statement of modifications (docs/data-sources.md).
     "trials": ("ClinicalTrials.gov", "US Government database; attribution required"),
@@ -96,6 +97,8 @@ SORTABLE = {
     "best_resolution",
     "n_orthologue_pdb",
     "closest_orthologue_identity",
+    "n_precedent_approved",
+    "n_precedent_clinical",
     "cholesterol_log2_ratio",
     "hn878_vulnerability_index",
     "hn878_delta_vi",
@@ -202,6 +205,26 @@ class TargetSummary(BaseModel):
     closest_orthologue_identity: float | None = None
     closest_orthologue_coverage: float | None = None
     same_sequence_structure: bool = False
+    # Has a drug ever been filed against this FOLD? Approved and clinical-phase
+    # drugs ChEMBL records against another single protein carrying one of this
+    # gene's Pfam domains. Not a druggability score, and not a drug that acts
+    # on this gene -- that is `n_drugs`. NULL where UniProt annotates no
+    # domain, which is not the same as none found.
+    n_precedent_approved: int | None = None
+    n_precedent_clinical: int | None = None
+    # Of the approved ones, how many act on a human protein: tractable
+    # chemistry and a selectivity problem are the same fact here.
+    n_precedent_human_target: int | None = None
+    # Filed against a complex or protein family containing such a protein.
+    # Shown, never counted -- ChEMBL files the ribosome's 45 approved drugs
+    # against every subunit.
+    n_precedent_complex: int | None = None
+    precedent_pfam: str | None = None
+    precedent_pfam_name: str | None = None
+    # How many Mtb genes share that domain. A precedent on a domain 37 genes
+    # carry is a statement about a superfamily, not about this protein.
+    precedent_domain_genes: int | None = None
+    precedent_example: str | None = None
     has_predicted: bool = False
     plddt_mean: float | None = None
     n_activities: int = 0
@@ -309,6 +332,7 @@ class TargetDetail(TargetSummary):
     alphafold: dict[str, Any] | None = None
     structures: list[dict[str, Any]] = Field(default_factory=list)
     orthologue_structures: list[dict[str, Any]] = Field(default_factory=list)
+    drug_precedent: list[dict[str, Any]] = Field(default_factory=list)
     chembl_targets: list[dict[str, Any]] = Field(default_factory=list)
     activities: list[dict[str, Any]] = Field(default_factory=list)
     whole_cell: list[dict[str, Any]] = Field(default_factory=list)
@@ -377,6 +401,12 @@ def meta() -> Meta:
             "Whole-cell potency is attached to a gene only through a compound "
             "that already has protein-level activity on it.",
             "No druggability or pocket call is made: no public source provides one.",
+            "Drug precedent is not that call. `n_precedent_approved` counts approved drugs "
+            "ChEMBL files against *another* single protein carrying one of this gene's Pfam "
+            "domains, which is a count of database records. A gene's own protein is excluded, "
+            "complex and family targets are shown but never counted, and a shared domain is "
+            "not a shared binding site -- so the domain, how many Mtb genes carry it, and how "
+            "much of the precedent is against human proteins travel with the number.",
             "CRISPRi vulnerability is on a negative scale; more negative is more "
             "vulnerable. Only ~600 genes carry the study's own `certain` flag.",
             "Human homology is computed here with phmmer against the reviewed human "
@@ -533,6 +563,22 @@ def target(rv_id: str) -> TargetDetail:
         " FROM orthologue_structures WHERE uniprot_acc = ?"
         " ORDER BY identity DESC, n_ligands DESC, resolution NULLS LAST LIMIT 200",
         [accession],
+    )
+    # Drug precedent for the fold, joined through this protein's own Pfam
+    # domains and with its own accession excluded. The counted rows -- ChEMBL
+    # `SINGLE PROTEIN` targets -- come first, because the complex and
+    # protein-family filings below them are shown and never counted.
+    drug_precedent = _query(
+        connection,
+        "SELECT pfam_id, pfam_name, accession, molecule_chembl_id, molecule_name, max_phase,"
+        " target_chembl_id, target_name, target_type, organism, tax_id, action_type,"
+        " mechanism_of_action"
+        " FROM drug_precedent"
+        " WHERE pfam_id IN (SELECT unnest(pfam_ids) FROM proteins WHERE uniprot_acc = ?)"
+        "   AND accession IS DISTINCT FROM ?"
+        " ORDER BY (target_type = 'SINGLE PROTEIN') DESC, max_phase DESC NULLS LAST,"
+        " pfam_id, molecule_name LIMIT 200",
+        [accession, accession],
     )
     predicted = _query(
         connection, "SELECT * FROM predicted_structures WHERE uniprot_acc = ?", [accession]
@@ -763,13 +809,55 @@ def target(rv_id: str) -> TargetDetail:
             "No drug with a TB indication in ChEMBL acts on this gene by ChEMBL's mechanism "
             "or Bosch 2021's annotation."
         )
-    absences.append("No druggability or pocket call: no public source provides one.")
+    # The one open question in docs/data-sources.md that no source closes. The
+    # precedent counts are the nearest sourced thing to it and are deliberately
+    # worded as what they are: records in a database, not a pocket.
+    pocket = "No druggability or pocket call: no public source provides one."
+    approved = record.get("n_precedent_approved")
+    shared = record.get("precedent_domain_genes") or 0
+    carry = f"{shared} Mtb gene{'s carry' if shared != 1 else ' carries'} that domain"
+    if approved:
+        human = record.get("n_precedent_human_target") or 0
+        warning = ", which is as much a selectivity warning as a precedent"
+        whose = (
+            (
+                ", against a human protein"
+                if approved == 1
+                else ", all of them against human proteins"
+            )
+            + warning
+            if human == approved
+            else f", {human} of them against a human protein"
+            if human
+            else ", none of them against a human protein"
+        )
+        pocket += (
+            f" What is sourced is precedent for the fold: {approved} approved "
+            f"drug{'s are' if approved != 1 else ' is'} filed against another protein "
+            f"carrying {record.get('precedent_pfam_name')} "
+            f"({record.get('precedent_pfam')}){whose}. {carry}, and a shared domain is not "
+            f"a shared binding site."
+        )
+    elif approved == 0:
+        pocket += (
+            " No approved drug is filed against any other protein carrying this gene's "
+            "Pfam domains either, which is a measured zero rather than an untested one."
+        )
+        if record.get("n_precedent_complex"):
+            pocket += (
+                f" {record['n_precedent_complex']} "
+                f"{'is' if record['n_precedent_complex'] == 1 else 'are'} filed against a "
+                f"complex or protein family that contains one, which is not evidence about "
+                f"this fold."
+            )
+    absences.append(pocket)
 
     return TargetDetail(
         **record,
         alphafold=predicted[0] if predicted else None,
         structures=structures,
         orthologue_structures=orthologue_structures,
+        drug_precedent=drug_precedent,
         chembl_targets=chembl_targets,
         activities=activities,
         whole_cell=whole_cell,

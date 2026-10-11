@@ -16,6 +16,7 @@ from pathlib import Path
 import duckdb
 
 from .clinical import TARGET_LINK_SQL
+from .sources.chembl import HUMAN
 from .store import STORE, built, provenance, read, write_parquet
 
 # Whole-cell potency is attributed to a gene only through a compound that
@@ -156,6 +157,87 @@ ortho AS (
            arg_max(o.coverage, o.bitscore)      AS closest_orthologue_coverage
     FROM orthologue_structures o
     GROUP BY 1
+),
+gene_domain AS (
+    SELECT w.rv_id, w.uniprot_acc, d.pfam_id
+    FROM walk w
+    JOIN prot pr ON pr.uniprot_acc = w.uniprot_acc, UNNEST(pr.pfam_ids) AS d(pfam_id)
+),
+domain_genes AS (
+    -- How many Mtb genes share each domain. The caveat that travels with every
+    -- precedent count: PF00005 covers 37 of them, so a drug filed against an
+    -- ABC transporter somewhere is a statement about a superfamily.
+    SELECT pfam_id, count(DISTINCT rv_id) AS n_genes FROM gene_domain GROUP BY 1
+),
+borrowed_drug AS (
+    -- A drug on another SINGLE PROTEIN that carries one of this gene's domains.
+    --
+    -- Two exclusions, and both are the difference between a number and a
+    -- misreading. The gene's own accession is out, because a drug against this
+    -- very protein is already counted in n_drugs and n_ligands and would make
+    -- dprE1 its own evidence. And only `SINGLE PROTEIN` targets count, the same
+    -- rule n_complex_drugs follows: ChEMBL files the 45 approved ribosome drugs
+    -- against a PROTEIN NUCLEIC-ACID COMPLEX naming every subunit, so counting
+    -- those would hand chloramphenicol to rplC's fold as precedent. 4,485 of
+    -- the 9,603 rows are that one complex, and 200 genes have no precedent
+    -- except through a complex or a protein family.
+    SELECT g.rv_id, g.pfam_id, p.pfam_name, p.molecule_chembl_id, p.molecule_name,
+           p.max_phase, p.tax_id
+    FROM gene_domain g
+    JOIN precedent p USING (pfam_id)
+    WHERE p.accession IS DISTINCT FROM g.uniprot_acc
+      AND p.target_type = 'SINGLE PROTEIN'
+),
+precedent_group AS (
+    -- The complex and protein-family filings, kept visible and uncounted.
+    SELECT g.rv_id, count(DISTINCT p.molecule_chembl_id) FILTER (WHERE p.max_phase >= 4)
+               AS n_approved
+    FROM gene_domain g
+    JOIN precedent p USING (pfam_id)
+    WHERE p.accession IS DISTINCT FROM g.uniprot_acc
+      AND p.target_type <> 'SINGLE PROTEIN'
+    GROUP BY 1
+),
+precedent_counts AS (
+    SELECT rv_id,
+           count(DISTINCT molecule_chembl_id) FILTER (WHERE max_phase >= 4)
+               AS n_approved,
+           count(DISTINCT molecule_chembl_id) FILTER (WHERE max_phase BETWEEN 1 AND 3)
+               AS n_clinical,
+           -- Of the approved ones, how many act on a human protein. Tractable
+           -- chemistry and a selectivity problem are the same fact here, and
+           -- 39% of the rows are human targets, so the split has to be visible.
+           count(DISTINCT molecule_chembl_id) FILTER (WHERE max_phase >= 4 AND tax_id = {human})
+               AS n_human
+    FROM borrowed_drug
+    GROUP BY 1
+),
+precedent_domain AS (
+    -- Which of the gene's domains carries the precedent, with one drug name
+    -- worth printing. Ranked on approved drugs first, so a domain with an
+    -- approved drug beats one with ten preclinical compounds.
+    SELECT rv_id, pfam_id, pfam_name, example FROM (
+        SELECT *, row_number() OVER (
+                   PARTITION BY rv_id ORDER BY approved DESC, mols DESC, pfam_id
+               ) AS pick
+        FROM (
+            SELECT rv_id, pfam_id,
+                   any_value(pfam_name) AS pfam_name,
+                   count(DISTINCT molecule_chembl_id) FILTER (WHERE max_phase >= 4) AS approved,
+                   count(DISTINCT molecule_chembl_id) AS mols,
+                   -- An approved name if there is one. `min`, not
+                   -- `arg_max(name, max_phase)`: four drugs tie at phase 4 on
+                   -- inhA's domain, and an arbitrary winner would flip between
+                   -- builds and show up in `atlas diff` as an upstream change.
+                   coalesce(
+                       min(molecule_name) FILTER (WHERE max_phase >= 4),
+                       min(molecule_name)
+                   ) AS example
+            FROM borrowed_drug
+            GROUP BY 1, 2
+        )
+    )
+    WHERE pick = 1
 ),
 inter AS (
     -- Edges are stored once per unordered pair, so each gene has to be counted
@@ -298,6 +380,29 @@ SELECT
     o.closest_orthologue_coverage,
     coalesce(o.same_sequence_structure, false) AS same_sequence_structure,
 
+    -- Drug precedent for the fold: drugs ChEMBL records against *another*
+    -- protein carrying one of this gene's Pfam domains. Not a druggability
+    -- score -- `docs/data-sources.md` still has that as an open question --
+    -- and a shared domain is not a shared binding site, which is why the
+    -- domain and how many genes share it are columns rather than footnotes.
+    -- NULL, not 0, where UniProt annotates no domain at all: nothing to look
+    -- up is not nothing found.
+    CASE WHEN len(coalesce(pr.pfam_ids, [])) = 0 THEN NULL
+         ELSE coalesce(dp.n_approved, 0) END AS n_precedent_approved,
+    CASE WHEN len(coalesce(pr.pfam_ids, [])) = 0 THEN NULL
+         ELSE coalesce(dp.n_clinical, 0) END AS n_precedent_clinical,
+    CASE WHEN len(coalesce(pr.pfam_ids, [])) = 0 THEN NULL
+         ELSE coalesce(dp.n_human, 0) END    AS n_precedent_human_target,
+    -- Approved drugs filed against a complex or protein family that contains a
+    -- protein with this domain. Shown, never counted, for the reason in
+    -- `borrowed_drug` above.
+    CASE WHEN len(coalesce(pr.pfam_ids, [])) = 0 THEN NULL
+         ELSE coalesce(pgp.n_approved, 0) END AS n_precedent_complex,
+    pdm.pfam_id    AS precedent_pfam,
+    pdm.pfam_name  AS precedent_pfam_name,
+    dg.n_genes     AS precedent_domain_genes,
+    pdm.example    AS precedent_example,
+
     (w.alphafold_id IS NOT NULL) AS has_predicted,
     p.plddt_mean, p.plddt_very_low,
 
@@ -349,6 +454,10 @@ LEFT JOIN strain_vuln sv ON sv.rv_id = w.rv_id
 LEFT JOIN hom  h ON h.uniprot_acc = w.uniprot_acc
 LEFT JOIN para pg ON pg.uniprot_acc = w.uniprot_acc
 LEFT JOIN ortho o ON o.uniprot_acc = w.uniprot_acc
+LEFT JOIN precedent_counts dp ON dp.rv_id = w.rv_id
+LEFT JOIN precedent_group pgp ON pgp.rv_id = w.rv_id
+LEFT JOIN precedent_domain pdm ON pdm.rv_id = w.rv_id
+LEFT JOIN domain_genes dg ON dg.pfam_id = pdm.pfam_id
 LEFT JOIN inter i ON i.rv_id = w.rv_id
 LEFT JOIN prot pr ON pr.uniprot_acc = w.uniprot_acc
 LEFT JOIN drug_link    dl ON dl.rv_id = w.rv_id
@@ -397,6 +506,10 @@ EMPTY_OPTIONAL: dict[str, str] = {
     " NULL::VARCHAR AS via_gene, NULL::VARCHAR AS via_organism, NULL::VARCHAR AS relation,"
     " NULL::DOUBLE AS identity, NULL::DOUBLE AS coverage, NULL::DOUBLE AS bitscore,"
     " NULL::VARCHAR AS pdb_id, NULL::DOUBLE AS resolution, NULL::BIGINT AS n_ligands WHERE false",
+    "drug_precedent": "SELECT NULL::VARCHAR AS pfam_id, NULL::VARCHAR AS pfam_name,"
+    " NULL::VARCHAR AS accession, NULL::VARCHAR AS molecule_chembl_id,"
+    " NULL::VARCHAR AS molecule_name, NULL::DOUBLE AS max_phase, NULL::BIGINT AS tax_id,"
+    " NULL::VARCHAR AS target_type WHERE false",
     "strain_vulnerability": "SELECT NULL::VARCHAR AS rv_id, NULL::DOUBLE AS vulnerability_index,"
     " NULL::BOOLEAN AS certain, NULL::DOUBLE AS delta_vi, NULL::DOUBLE AS delta_vi_norm,"
     " NULL::BOOLEAN AS differential_reported WHERE false",
@@ -414,6 +527,7 @@ TABLES = {
     "hom": "homology",
     "para": "paralogs",
     "orthologue_structures": "orthologue_structures",
+    "precedent": "drug_precedent",
     "interactions": "interactions",
     "cond": "conditional_fitness",
     "prot": "proteins",
@@ -440,7 +554,9 @@ def build(*, store: Path | None = None) -> Path:
         SUMMARY_SQL.replace(
             "    -- CLINICAL COLUMNS\n",
             UNBUILT_CLINICAL_COLUMNS if missing else CLINICAL_COLUMNS,
-        ).replace("{target_links}", TARGET_LINK_SQL)
+        )
+        .replace("{target_links}", TARGET_LINK_SQL)
+        .replace("{human}", str(HUMAN))
     )
     columns = rows.columns
     records = [dict(zip(columns, row, strict=True)) for row in rows.fetchall()]

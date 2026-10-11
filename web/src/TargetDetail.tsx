@@ -33,6 +33,7 @@ const SOURCES = {
   paralogs: "phmmer vs the Mtb proteome itself (UniProt) · CC BY 4.0",
   orthologueStructures:
     "phmmer vs Mycobacteriaceae with a PDB entry (UniProt · CC BY 4.0) · RCSB PDB · CC0 1.0",
+  precedent: "ChEMBL 37 mechanisms by Pfam domain (UniProt · CC BY 4.0) · CC BY-SA 3.0",
   identity: "Mycobrowser release 5 (licence not stated) · UniProt · CC BY 4.0",
   clinical: "ChEMBL TB indications and mechanisms · Bosch 2021 · ClinicalTrials.gov",
   uniprot: "UniProt · CC BY 4.0",
@@ -662,6 +663,10 @@ function Evidence({ detail }: { detail: Detail }) {
         )}
       </Row>
 
+      <Row label="Drug precedent (fold)" source={SOURCES.precedent}>
+        <Precedent detail={detail} />
+      </Row>
+
       <Row label="Clinical stage" source={SOURCES.clinical}>
         {detail.n_drugs ? (
           <>
@@ -935,6 +940,143 @@ function Borrowed({ detail }: { detail: Detail }) {
   );
 }
 
+/**
+ * Drug precedent for the fold, in the one sentence it can honestly carry.
+ *
+ * `docs/data-sources.md` keeps "druggable pockets" as an open question because
+ * nothing public answers it, and this is not an answer either -- it counts
+ * ChEMBL records against *other* proteins that share a Pfam domain with this
+ * gene. So the domain is named, the human share is named (tractable chemistry
+ * and a selectivity problem are the same fact), and how many Mtb genes share
+ * the domain is named, because a shared domain is not a shared binding site.
+ */
+function Precedent({ detail }: { detail: Detail }) {
+  const approved = detail.n_precedent_approved;
+  const clinical = detail.n_precedent_clinical ?? 0;
+  if (approved === null) {
+    return <span className="absent">no Pfam domain annotated, so nothing to look up</span>;
+  }
+  const human = detail.n_precedent_human_target ?? 0;
+  const shared = detail.precedent_domain_genes ?? 0;
+  const domain = (
+    <>
+      <b>{detail.precedent_pfam_name ?? detail.precedent_pfam}</b>
+      {detail.precedent_pfam_name && detail.precedent_pfam && (
+        <span className="faint mono"> {detail.precedent_pfam}</span>
+      )}
+    </>
+  );
+  if (!approved && !clinical) {
+    return (
+      <>
+        <span className="absent">none</span>
+        <div className="note" style={{ marginTop: 5 }}>
+          No drug is filed against any other protein carrying this gene&apos;s domains. A measured
+          zero, not an untested one.
+          {detail.n_precedent_complex ? (
+            <>
+              {" "}
+              {detail.n_precedent_complex} approved drug
+              {detail.n_precedent_complex === 1 ? " is" : "s are"} filed against a complex or
+              protein family containing one, which says nothing about this fold.
+            </>
+          ) : null}
+        </div>
+      </>
+    );
+  }
+  return (
+    <>
+      <span className="big">{approved}</span>{" "}
+      <span className="dim">
+        approved{clinical > 0 && `, ${clinical} clinical`} on another protein with {domain}
+      </span>
+      {human > 0 && (
+        <span className="chip" style={{ marginLeft: 6 }}>
+          {human === approved ? "all human targets" : `${human} human`}
+        </span>
+      )}
+      <div className="note" style={{ marginTop: 5 }}>
+        {detail.precedent_example && (
+          <>
+            e.g. <b>{detail.precedent_example}</b>.{" "}
+          </>
+        )}
+        {shared} Mtb gene{shared === 1 ? "" : "s"} carr{shared === 1 ? "ies" : "y"} that domain, and
+        a shared domain is not a shared binding site.
+        {detail.n_precedent_complex ? (
+          <>
+            {" "}
+            {detail.n_precedent_complex} more against a complex or protein family, not counted.
+          </>
+        ) : null}{" "}
+        <span className="faint">Not a druggability call: no source provides one.</span>
+      </div>
+    </>
+  );
+}
+
+/**
+ * The rows behind the count. `SINGLE PROTEIN` filings first and the complex or
+ * protein-family ones after, labelled, because the second kind is shown and
+ * never counted: ChEMBL files the ribosome's approved drugs against a target
+ * that names all fifty subunits.
+ */
+function DrugPrecedentTable({ detail }: { detail: Detail }) {
+  const rows = detail.drug_precedent ?? [];
+  if (rows.length === 0) return null;
+  const phase = (value: number | null) =>
+    value === null || value < 0 ? "—" : value >= 4 ? "approved" : `phase ${value}`;
+  return (
+    <>
+      <h4 style={{ margin: "18px 0 0" }}>
+        Drugs on this fold{" "}
+        <span className="faint" style={{ fontWeight: 400 }}>
+          · not on this protein
+        </span>
+      </h4>
+      <p className="note" style={{ margin: "4px 0 0" }}>
+        Every ChEMBL mechanism against another protein that shares a Pfam domain with this gene.
+        This is not a druggability score and nothing public provides one; it is a count of
+        database records, and whether a fold in common means a pocket in common is your call.
+      </p>
+      <div className="scroller" style={{ marginTop: 10 }}>
+        <table>
+          <thead>
+            <tr>
+              <th>Drug</th>
+              <th>Phase</th>
+              <th>Acts on</th>
+              <th>Organism</th>
+              <th>Domain</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={`${r.pfam_id}-${r.molecule_chembl_id}-${r.target_chembl_id}-${r.accession}`}>
+                <td>
+                  {r.molecule_name ?? <span className="mono">{r.molecule_chembl_id}</span>}
+                  {r.target_type !== "SINGLE PROTEIN" && (
+                    <span className="chip" style={{ marginLeft: 6 }} title={r.target_type ?? ""}>
+                      not counted
+                    </span>
+                  )}
+                </td>
+                <td className="dim">{phase(r.max_phase)}</td>
+                <td title={r.mechanism_of_action ?? ""}>{r.target_name}</td>
+                <td className="dim">{r.organism}</td>
+                <td className="mono faint" title={r.pfam_id}>
+                  {r.pfam_name ?? r.pfam_id}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
 function OrthologueStructureTable({ detail }: { detail: Detail }) {
   const rows = detail.orthologue_structures ?? [];
   if (rows.length === 0) return null;
@@ -1161,6 +1303,7 @@ function Chemistry({ detail, onOpen }: { detail: Detail; onOpen: (focus: Focus) 
           No ChEMBL activity against this gene. If it is essential and has a structure, that is
           the interesting kind of nothing.
         </p>
+        <DrugPrecedentTable detail={detail} />
       </>
     );
   }
@@ -1263,6 +1406,7 @@ function Chemistry({ detail, onOpen }: { detail: Detail; onOpen: (focus: Focus) 
           </tbody>
         </table>
       </div>
+      <DrugPrecedentTable detail={detail} />
     </>
   );
 }

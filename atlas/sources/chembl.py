@@ -448,12 +448,15 @@ DRUG_MOLECULE_FIELDS = (
 )
 
 
-def _batches(ids: Sequence[str]) -> list[str]:
+def batches(ids: Sequence[str]) -> list[str]:
     return [",".join(ids[i : i + ID_BATCH]) for i in range(0, len(ids), ID_BATCH)]
 
 
-def _pages(endpoint: str, query: str, key: str, dest: str, *, force: bool) -> list[dict[str, Any]]:
-    """Every record of one ChEMBL list query, each page cached as `<dest>-<offset>.json`."""
+def pages(endpoint: str, query: str, key: str, dest: str, *, force: bool) -> list[dict[str, Any]]:
+    """Every record of one ChEMBL list query, each page cached as `<dest>-<offset>.json`.
+
+    Public because `precedent.py` walks the whole mechanism table the same way.
+    """
     records: list[dict[str, Any]] = []
     offset = 0
     while True:
@@ -482,7 +485,7 @@ def fetch_drugs(*, force: bool = False) -> tuple[dict[str, list[dict[str, Any]]]
     status = fetch(
         f"{API}/status.json", "drugs/status.json", source=SOURCE, force=force, json_body=True
     )
-    indications = _pages(
+    indications = pages(
         "drug_indication", TB_INDICATIONS, "drug_indications", "drugs/indications", force=force
     )
     ids = sorted(
@@ -491,15 +494,15 @@ def fetch_drugs(*, force: bool = False) -> tuple[dict[str, list[dict[str, Any]]]
     )
     molecules: list[dict[str, Any]] = []
     mechanisms: list[dict[str, Any]] = []
-    for n, batch in enumerate(_batches(ids)):
-        molecules += _pages(
+    for n, batch in enumerate(batches(ids)):
+        molecules += pages(
             "molecule",
             f"molecule_chembl_id__in={batch}&only={DRUG_MOLECULE_FIELDS}",
             "molecules",
             f"drugs/molecules-{n}",
             force=force,
         )
-        mechanisms += _pages(
+        mechanisms += pages(
             "mechanism",
             f"molecule_chembl_id__in={batch}",
             "mechanisms",
@@ -508,8 +511,8 @@ def fetch_drugs(*, force: bool = False) -> tuple[dict[str, list[dict[str, Any]]]
         )
     target_ids = sorted({m["target_chembl_id"] for m in mechanisms if m["target_chembl_id"]})
     targets: list[dict[str, Any]] = []
-    for n, batch in enumerate(_batches(target_ids)):
-        targets += _pages(
+    for n, batch in enumerate(batches(target_ids)):
+        targets += pages(
             "target", f"target_chembl_id__in={batch}", "targets", f"drugs/targets-{n}", force=force
         )
     payloads = {

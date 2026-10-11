@@ -89,15 +89,18 @@ The screening record, from the first build (2026-10-11):
 999 campaigns · 17,530 stages · 5,422,604 compound results
     27 PubChem campaigns (28 AIDs) · 972 ChEMBL papers
 4,620,129 results are "tested, inactive" · 28,172 active · 37,197 inconclusive
-    737,106 carry no call because the source states none
+    737,106 carry no call recorded
 71 genes have been screened · 34 of the 489 essential genes among them
-    pks13, CoaBC and TrpRS each read a 65,000-compound screen, through PubChem only
+    pks13, CoaBC and TrpRS each read a 65,000 to 67,000-compound screen, through PubChem only
 ```
 
 A screen can read zero for a good reason, and the atlas says which. `aspS` has an 8,841-compound
 assay and reads no screen, because that deposit is below the 10,000-substance floor; `pks13`
-reads nine screens and a NULL count of actives, because none of the nine states a call. A
-zero is a count and a NULL is "nobody said". ChEMBL's half covers 972 of the 1,926
+reads nine screens and a NULL count of actives, because none of the nine has an outcome that
+counts. A zero is a count and a NULL is "nobody said". A gene can also read small beside a large
+screen the atlas could not place on an H37Rv locus: `mbtI` reads none beside a 104,781-compound
+MbtI screen, because that deposit names UniProt's CDC 1551 accession and the atlas is keyed to
+H37Rv. ChEMBL's half covers 972 of the 1,926
 publications that have a whole-cell Mtb assay: it holds the papers in which a compound that
 hits an Mtb protein was also tested on cells, and says so in `docs/data-sources.md`.
 

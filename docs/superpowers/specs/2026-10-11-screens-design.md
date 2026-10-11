@@ -122,7 +122,12 @@ claim from a screen result and needs its own traps.
 - **GSK TCAMS beyond what ChEMBL already holds** — ChEMBL-NTD sets 9 and 17
   are CC0 but are the 177- and 50-compound *hit* sets. The ~2M-compound parent
   screen was never released, so a zero in TCAMS cannot mean "tested and
-  inactive". Nothing to add beyond the ChEMBL records.
+  inactive". Nothing to add beyond the ChEMBL records. *Correction from the first
+  build: those records (`CHEMBL2095176`, 1,406 activities) are a DATASET document,
+  and the campaign builder keeps publications only, so GSK's TB set is in the
+  potency layer for whichever compounds also hit an Mtb protein and is not in
+  `screens`. Likewise the Malaria Box and Pathogen Box sets. See
+  `docs/data-sources.md`.*
 - **Portfolio and post-portfolio stages.** Public data does not support them.
   Said plainly in the UI rather than approximated from trials.
 - **Any screen or hit scoring.** Not a data gap — a deliberate omission.
@@ -366,7 +371,7 @@ The nav becomes the pipeline, early to late:
 
 ```
 [ Genome ]   [ Screens ]   [ Hit profiling ]   [ Drugs & trials ]
-   4,031        ~200             9,602            112 / 1,137
+   4,031         999             9,602            112 / 1,137
    genes      campaigns        compounds         drugs / trials
 
  target selection ──▶ screening ──▶ hit assessment ──▶ the clinic

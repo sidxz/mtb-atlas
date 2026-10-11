@@ -290,24 +290,36 @@ This is the rule that outranks completeness.
   4,620,129 `inactive` rows, 209,843 of them AID 1626's -- so "tested and
   inactive" is a real answer. Measured on the first build (2026-10-11), three
   rules keep it honest. **An outcome call is recorded only where the source
-  states one**: ChEMBL files values and no calls (none of its 144,826 rows
-  carries an outcome), and the eight Dundee/GHDDI AIDs file 584,494
-  percent-effect rows and 7,786 IC50 rows with no cutoff, so `outcome` is NULL
-  there and a threshold this pipeline picked would be this pipeline's finding.
-  Row level can still say more than campaign level: 218 IC50 rows in those AIDs
-  are `Active` in PubChem's own table while the campaign states no outcome.
-  That is what PubChem states of those rows, and the two are not reconciled.
+  states one**: this pipeline reads none from ChEMBL (none of its 144,826 rows
+  carries an outcome; the 6,265 free-text `activity_comment`s, including 410
+  calls such as `Toxic` and `Not Active`, are kept and deliberately not read),
+  and the eight Dundee/GHDDI AIDs file 584,494 percent-effect rows and 7,786
+  IC50 rows with no call, so `outcome` is NULL there and a threshold this
+  pipeline picked would be this pipeline's finding. **`outcome_stated` false
+  means the deposit does not split its tested set into called outcomes, not
+  that no call was made.** Six of those eight state the depositor's own
+  one-sided rule in their PubChem Comment ("activity <= 10uM ... flagged as
+  active"), and 218 IC50 rows (relation `=`, under 10,000 nM; none of the 7,786
+  is) are `Active`. The campaign reads false anyway, because
+  `SIDCountUnspecified == SIDCountAll` holds by construction whenever every SID
+  also has an unspecified Percent Effect row. That veto is a deliberate
+  under-claim. **The Active set is a follow-up potency flag, not a hit rate**:
+  in AID 1671178 it is 25 of the 302 SIDs with an IC50 row (8%), not 25 of its
+  66,592, and dividing by `n_tested` is out by two orders of magnitude. No row of
+  these deposits is ever `Inactive`; anything over 10 uM stays unspecified.
   **`n_active = 0` is never written where no call was stated** -- PubChem's own
   summary endpoint reports 0 actives for AID 1671170, a 65,366-compound screen
-  that simply has no threshold, which reads as a screen that found nothing.
+  that has no threshold at all, which reads as a screen that found nothing.
   **`n_tested` is the deposited set, not the screened library**: AID 1533
   states 200,000 screened and deposits 158,970, AID 2060911 states 100,639 and
   deposits 93,270; the prose figure lives in `library_size_stated` and the two
   are never summed.
 - **`n_screen_actives` NULL is not zero, and it is the most misreadable number
   in the layer.** pks13 has nine screens over 66,592 compounds and the actives
-  column reads NULL: none of the nine states a call (eight are ChEMBL papers,
-  the ninth is AID 1671178 with every substance `Unspecified`). Only six genes
+  column reads NULL: none of the nine has an outcome that counts (eight are
+  ChEMBL papers, from which no call is read, and the ninth is AID 1671178,
+  whose campaign reads `outcome_stated` false despite 25 Active IC50 SIDs).
+  Only six genes
   carry a count; inhA, with 41 screens, does not. `screens.n_active` is NULL
   for a second reason as well, a campaign of several assays whose per-stage
   counts overlap (`fba`), so the column cannot say which NULL it is.
@@ -335,16 +347,22 @@ This is the rule that outranks completeness.
   deposit naming two proteins is the complex. A target accession must reach a
   locus or be recorded unmatched, never guessed: 14 of the 18 across 16 AIDs
   did, and AID 493033 names `P9WFX0`, the CDC 1551 entry, where the crosswalk has
-  `P9WFX1`, so mbtI reads no PubChem screen. This atlas is keyed to H37Rv and
-  mapping one strain's accession to its sibling would let that strain's data
-  stand in for another's, so an unresolved target is recorded, not bridged. The 199 publications that report
+  `P9WFX1`, so mbtI reads `n_target_screens = 0` beside a **104,781-compound
+  screen** in the store (`screens.targets` is the only trace). This atlas is
+  keyed to H37Rv and mapping one strain's accession to its sibling would let
+  that strain's data stand in for another's, so an unresolved target is
+  recorded, not bridged. Three more screens reach no gene, for EMBL and PDB
+  accessions: 356,486 (bioA), 355,326 (fadD28) and 10,011 SIDs (panC), so
+  fadD28 reads a largest screen of 47 compounds beside an unplaced 355,326. The 199 publications that report
   both a protein assay and a whole-cell MIC have reported both -- that is not
   target deconvolution, and calling it that would invent the resistant-mutant
   experiment nobody deposited.
 - **Hit profiling is coverage, not a score.** Of 23,730 compounds in the ChEMBL
-  campaigns, 9,602 have a tier beyond potency (cytotoxicity, ADME, animal) and
-  12,449 have potency only, 10,695 of them a MIC and nothing else, which is the
-  answer and not a low grade. No column is ranked, weighted or combined with
+  campaigns, 9,602 have a tier beyond potency (cytotoxicity, ADME, animal),
+  12,449 have potency (a MIC or a protein assay) and no tier, and 1,679 have
+  neither -- their only modality is another pathogen or `other` -- so the three
+  partition the 23,730. 10,695 of the 12,449 have a MIC and no protein assay,
+  and 6,443 of those nothing else at all, which is the answer and not a low grade. No column is ranked, weighted or combined with
   another. A derived selectivity index is labelled `derived`: ChEMBL computes
   it from two other rows, so it is a number but not a measurement.
 - **The bridge is incomplete, and a gap is recorded rather than patched.**

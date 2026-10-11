@@ -317,7 +317,9 @@ from 431 to 434 while the census gave eight others their first.
 **The screening layer, read back (first build, 2026-10-11).** `max_screen_compounds` is the
 largest screen the gene's own protein was in, from `screens` and `screen_stages`, and 71
 genes read at least one own screen. It sits beside `max_assay_compounds` and the two
-disagree for 18 genes in both directions, because they see different sources. PubChem
+disagree for 18 genes where both are above zero (5 with the screen larger, 13 with the
+census larger), and for 70 overall once a gene with a screen and no census assay, or the
+reverse, is counted. They see different sources. PubChem
 campaigns are not in the ChEMBL census: recA's `max_assay_compounds` is 2,118 and its
 `max_screen_compounds` 293,466 (AID 2221), and five genes (`fba`, `glf`, `recA`, `glmU`,
 `menB`) read 100,000 to 359,484 compounds against 18 to 2,118 in the census. The largest is `fba`
@@ -338,14 +340,16 @@ Of 489 essential genes, 34 read at least one own screen.
 
 `n_screen_actives` reads NULL on all of `dfp`, `pks13` and `trpS`, and it must not be read as
 zero. **pks13 has nine screens over 66,592 compounds and the actives column reads NULL**:
-none of the nine states an outcome call. Eight are ChEMBL papers, which state none, and the
-ninth is AID 1671178, a deposit whose 66,592 substances are all `Unspecified`. Only 6 genes
+none of the nine has an outcome that counts. Eight are ChEMBL papers, from which this pipeline
+reads no call, and the ninth is AID 1671178, whose campaign reads `outcome_stated` false:
+no partition of its 66,592 substances into called outcomes, although it does carry a
+one-sided rule and 25 Active IC50 SIDs (below). Only 6 genes
 carry a count, and `inhA` (41 screens) and `dprE1` (16) are not among them. `screens.n_active` is
 NULL for two different reasons and the column cannot say which: "no source stated a call"
 (these) and "a campaign of several assays, whose per-stage counts overlap" (`fba`'s project,
-whose stages are on `screen_stages`). Of the
-pks13 deposit's rows, 29 `IC50` rows are `Active` in `screen_results` while the campaign
-reports no outcome (below).
+whose stages are on `screen_stages`). pks13's AID has 29 `IC50` rows `Active` in
+`screen_results` (25 SIDs) while the campaign reports no outcome: see below, and do not
+divide that 25 by 66,592.
 
 ### Screens and hit profiling
 
@@ -379,8 +383,10 @@ one reads a complete-looking table as the universe: here, the `screens` note and
 prompt in `atlas/agent.py` (each pinned by a test), and `CLAUDE.md`. Widening the enumeration
 is a named extension with a cost, under *Follow-ups the first build named* at the end of this
 file.
-The 38,335 assays (on 1,949 documents) the design spec quotes are this wider universe;
-37,988 over 1,932 today. They are not what the build holds, and the 11,686 assays on Mtb
+The 38,335 assays (on 1,949 documents) the design spec quotes are this wider universe,
+counted under a different definition of "whole-cell Mtb data": an assay on the two
+whole-cell targets gives 37,988 over 1,932 documents in this fixed release (ChEMBL_37), and
+the difference is definitional and not ChEMBL moving. They are not what the build holds, and the 11,686 assays on Mtb
 targets are not reproducible against the 977 either (6,822 of the 17,502 stages name an
 *M. tuberculosis* target).
 
@@ -416,14 +422,26 @@ how much the classifiers fall back: 1,266 of 16,516 non-derived stages with a mo
 starts high because genuine primaries are most of the base; it is a signal only as a change
 between builds.
 
-ChEMBL states **no outcome call**, on any of the 144,826 result rows, so `screen_results.outcome`
-is NULL on all of them and `screens.outcome_stated` is false on all 972. `activity_comment` is
-kept (6,265 rows) and is not read as one. Every ChEMBL campaign's `depositor` is the string
+This pipeline **reads no outcome call from ChEMBL**, on any of the 144,826 result rows, so
+`screen_results.outcome` is NULL on all of them and `screens.outcome_stated` is false on all
+972. That is a decision, not a property of ChEMBL's data: 6,265 rows carry an
+`activity_comment`, kept verbatim and not read. 5,211 are `Not Determined` and 257 more are
+`ND`, `NA`, `NE`, `Not Evaluated` or an insolubility note (failed measurements, no value); 343 are
+unit-conversion notes on rows that do carry a value; 410 are free-text calls
+(`Dose-dependent effect` 125, `Toxic`, `Non-Toxic` and `Non-toxic` 243, `Not Active` 36,
+`Resistant` 4, `Sensitive` 2); and 44 are shorthand (`Tde`, `Dde`, `Stable`, `No Degradation
+Was Observed`). Reading the calls would be this pipeline choosing a vocabulary for depositors
+who used none. Every ChEMBL campaign's `depositor` is the string
 `Scientific Literature`, which is ChEMBL's own label and not a licence.
 
 **Hit profiling is coverage, not a score.** Of the 23,730 compounds in these campaigns,
-9,602 have a tier beyond potency (mammalian cytotoxicity, ADME or an animal model) and 12,449
-have potency only, 10,695 of them a whole-cell MIC and nothing else. 199 publications report
+9,602 have a tier beyond potency (`modality` in mammalian cytotoxicity, ADME or an animal
+model), 12,449 have potency (a whole-cell MIC or a protein assay) and no tier, and **1,679 have
+neither**: their only ChEMBL modality is `other_pathogen` or `other`, so they were tested against
+something else entirely. The three are a partition of the 23,730 (distinct `molecule_chembl_id`
+on non-derived ChEMBL stages). Of the 12,449, 10,695 have a whole-cell MIC and no protein
+assay and no tier, and 6,443 of those have no `other_pathogen` or `other` measurement either:
+6,443 is the strict "a MIC and nothing else". 199 publications report
 both a protein assay and a whole-cell MIC (171 with the protein stage on a `SINGLE PROTEIN`
 target), 141 of those also a profiling tier. Having reported both is not target
 deconvolution, and nothing here ranks, weights or combines a tier.
@@ -543,12 +561,13 @@ with a 429. See *What the first build found* below for the numbers.
 
 **`SIDCountActive: 0` is not a finding.** PubChem's summary reports 0 actives for
 AID 1671170 (Mt-TrpRS, 65,366 SIDs), which read literally is a screen that found
-nothing. The depositor never stated a cutoff: all 65,366 SIDs are `Unspecified`. So
+nothing. That deposit states no cutoff at all: all 65,366 SIDs are `Unspecified`. So
 `screens.outcome_stated` is stored, `n_active`, `n_inactive` and `n_inconclusive` are
-NULL wherever it is false, and `screen_results.outcome` is NULL, never `inactive`, on
-every such row. The zero is not always a zero either: six of the eight ChEMBL
-deposits report 1 to 90 actives beside an all-`Unspecified` set, which are the IC50
-rows, so `SIDCountUnspecified` equal to `SIDCountAll` is what vetoes the calls.
+NULL wherever it is false, and `screen_results.outcome` is NULL, never `inactive`, on the
+rows of such a deposit that carry no call. **False does not always mean no call was made**:
+six of the eight ChEMBL deposits report 1 to 90 actives beside `SIDCountUnspecified`
+equal to `SIDCountAll`, and they do state a rule (below, in *What the first build found*).
+The veto reads the equality, which holds by construction, and so under-claims.
 
 **Three numbers for one screen, and only one is `n_tested`.** AID 1626 deposits
 215,397 SIDs (`SIDCountAll`) over 215,098 CIDs, and its own description says 216,163
@@ -609,21 +628,40 @@ read back from the store.
 | `screen_stages` | 17,530: 28 PubChem, 17,502 ChEMBL |
 | `screen_results` | 5,422,604 rows: 5,277,778 PubChem, 144,826 ChEMBL, 5,422,604 distinct `(stage_id, result_tag, activity_id)` keys |
 | compounds | 479,023 distinct ChEMBL ids; 818,532 distinct CIDs on the PubChem rows |
-| campaigns that state an outcome | 19 of 27 PubChem; **none** of the 972 ChEMBL papers |
+| campaigns with `outcome_stated` | 19 of 27 PubChem; **none** of the 972 ChEMBL papers (no call is read from them) |
 | substances in the PubChem deposits | 4,883,972 summed over the 27 campaigns' `n_tested` |
 
 The outcome split, over all 5,422,604 rows: **4,620,129 `inactive`** (85.2%), 737,106 with no
-call stated (13.6%: 592,280 PubChem and all 144,826 ChEMBL), 37,197 `inconclusive` and 28,172
+call recorded (13.6%: 592,280 PubChem and all 144,826 ChEMBL), 37,197 `inconclusive` and 28,172
 `active`. AID 1626 is as the summary says: 209,843 inactive, 2,044 active, 3,510 inconclusive.
 
-**`outcome` can be non-NULL inside a campaign that states no outcome.** The eight
-ChEMBL-deposited AIDs report every substance `Unspecified` at the summary level
-(`outcome_stated` false, `n_active` NULL), yet 218 of their `IC50` rows are `Active` in
-PubChem's own table. Row level is faithful to what PubChem states for that row and campaign
-level is the veto the summary's `SIDCountUnspecified` gives; the two are not reconciled.
-`count(*) WHERE outcome = 'active'` therefore returns 28,172, of which 27,954 are in campaigns
-that state their calls. The other 592,280 rows of those eight are `Percent Effect` (584,494)
-and `IC50` (7,786) rows with no call.
+**`outcome` can be `active` inside a campaign whose `outcome_stated` is false, and there is a
+stated rule behind it.** Six of the eight ChEMBL-deposited AIDs (1671154, 1671161, 1671162,
+1671178, 1671184, 1671185) carry the depositor's own cutoff in the summary `Comment`:
+*"Compounds with activity <= 10uM or explicitly reported as active by ChEMBL are flagged as
+active in this PubChem assay presentation."* It is absent on 1671170 and 1671174, the two with
+no actives. It is a **one-sided** rule, and it separates exactly: all 218 `Active` rows are
+`IC50`, relation `=`, 183 to 9,966 nM, and none of the 7,786 `IC50` rows left without a call is
+under 10,000 nM (the lowest is 10,024 nM; the censored `>` ones start at 18,621 nM). AID
+1671170's `IC50` values begin at 31.4 uM, which is why it has no actives. `SIDCountActive` matches
+the store on all six (1, 68, 90, 25, 24 and 2 SIDs; 175 distinct SIDs, since a compound recurs
+across AIDs).
+
+The campaign still reads `outcome_stated` false, with `n_active` NULL, because
+`SIDCountUnspecified == SIDCountAll` holds **by construction** whenever every SID also has a
+`Percent Effect` row, and a `Percent Effect` row is always `Unspecified`: the flag cannot see a
+one-sided call on a sub-series. So `outcome_stated` false means *the deposit does not split its
+tested set into called outcomes*, and not *no call was made*. That veto is a **deliberate
+under-claim**, not an error, and row level and campaign level are not reconciled.
+
+Three consequences. **The `Active` set is a follow-up potency flag, not a hit rate.** AID
+1671178 has 25 `Active` of the 302 SIDs that have an `IC50` row (8%), not 25 of its 66,592
+(0.04%): dividing by `n_tested` is wrong by two orders of magnitude. The same denominators for
+the other five are 1 of 439, 68 of 2,466, 90 of 2,468, 24 of 200 and 2 of 674. **No row of these
+deposits is ever `Inactive`**: anything over 10 uM stays unspecified, so there is no
+denominator of non-hits. And `count(*) WHERE outcome = 'active'` returns 28,172, of which
+27,954 are in campaigns that state their calls. The other 592,280 rows of those eight are
+`Percent Effect` (584,494) and `IC50` (7,786) rows with no call recorded.
 
 **Every check held on the real data.** The completeness check (distinct SIDs equal
 `SIDCountAll`) passed for all 28 AIDs, not only the two verified before; both key assertions
@@ -641,8 +679,22 @@ name; `mbtI` reads no PubChem screen, and the sibling accession is not guessed. 
 the point of recording an unresolved target rather than bridging it: this atlas is keyed to
 H37Rv, and silently mapping a CDC 1551 accession to its H37Rv sibling is a convenience that
 would let one strain's data stand in for another's. (Whether the two proteins are identical is
-a separate question nothing here has asked.) The four unmatched are CCE37082 (`bioA`), CAB06100 (`fadD28`), `2A88_A` (a PDB chain of pantothenate
-synthetase) and `P9WFX0`.
+a separate question nothing here has asked.)
+
+**The cost of recording rather than bridging is genes that read small or zero beside a large
+screen, and it is the most misleading cell this layer can produce.** Four campaigns are in the
+store and reach no gene: `pubchem:project:602481` (356,486 SIDs, target `CCE37082`, named
+`bioA`), `pubchem:project:588549` (355,326, `CAB06100`, named `FADD28`), `pubchem:493033`
+(**104,781, MbtI, `P9WFX0`**, 931 actives and 103,850 inactives) and `pubchem:375` (10,011,
+`2A88_A`, pantothenate synthetase). So `mbtI` (Rv2386c) reads `n_target_screens = 0`,
+`max_screen_compounds` NULL and `n_protein_assays = 0`; `bioA` reads 0 screens; `fadD28`
+reads 3 with a largest of 47 compounds beside an unplaced 355,326, and `panC` 12 with a
+largest of 42 beside an unplaced 10,011. Nothing on `target_summary` says
+why; the only trace is `screens.targets`, where `rv_ids` is empty. The rule is right (a name
+is never matched to a gene, an EMBL id or PDB chain is not looked up, a strain is not
+bridged) but the reading has to change: `n_target_screens = 0` means *no screen the atlas
+could place on this H37Rv locus*, and an unplaced accession in `screens.targets` has to be
+checked before saying a protein was never screened.
 
 **One campaign, one source.** No ChEMBL publication is also a PubChem AID: the eight
 ChEMBL-deposited AIDs all belong to the one DATASET document the builder skips
@@ -652,7 +704,8 @@ a heuristic, not a proof, for the 20 AIDs not deposited by ChEMBL; 7,138 of the 
 ChEMBL stages share some compound with a PubChem AID, which is expected of follow-ups of a
 screen.
 
-**What the roll-up reads.** 71 genes read an own screen (11 of them a PubChem one), 14 read a
+**What the roll-up reads.** 71 genes read an own screen (10 of them a PubChem one: `pstP`, `fba`, `menB`, `glmU`, `dfp`,
+`recA`, `trpS`, `Rv3671c`, `pks13`, `glf`), 14 read a
 complex screen and 12 of those read nothing else (`gyrA` and `rmlD` read both); the largest
 `max_screen_compounds` is 359,484. `Rv3800c` (pks13), `Rv3336c` (trpS) and `Rv1391` (dfp) read
 9, 1 and 1 own screens, all three of the large ones reachable only through PubChem.

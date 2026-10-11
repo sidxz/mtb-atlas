@@ -166,8 +166,8 @@ screens differently — that is what proves `annotated = false` and a NULL
 
 Hand-written in ChEMBL's response shapes, with synthetic ids (`CHEMBL1`...`CHEMBL5`,
 `CHEMBL_DOC1`, `CHEMBL_VERO`). Nothing in either is a real record except the two assay ids
-`CHEMBL4649965` (Pks13) and `CHEMBL4105939` (its target), borrowed so that the first can
-be recognised.
+`CHEMBL4649965` (Pks13's assay) and `CHEMBL4105939` (its target, not an assay), borrowed so
+that the first can be recognised.
 
 `chembl_assay_census.json` is eight activity rows, as `census_rows` pulls them:
 
@@ -223,7 +223,7 @@ states the library size. Nothing is synthetic.
 |---|---|
 | `1626` | The TAACF primary screen: real calls (2,044 / 209,843 / 3,510), `Method` is `confirmatory` though it is a single-concentration primary, no `Target` key (whole-cell), prose says 216,163 compounds against 215,397 SIDs deposited (215,098 CIDs) |
 | `1671170` | `SIDCountActive: 0` and `SIDCountUnspecified` equal to `SIDCountAll`: no cutoff was deposited. Neither its title (`Mt-TrpRS`) nor its target name says *tuberculosis* |
-| `1671178` | The other all-`Unspecified` shape: 25 actives (the IC50 rows) beside `SIDCountUnspecified` equal to `SIDCountAll`. Six of the eight ChEMBL deposits among the 28 large AIDs look like this |
+| `1671178` | The other shape: 25 actives (IC50 rows, under 10 uM) beside `SIDCountUnspecified` equal to `SIDCountAll`, which holds by construction whenever each SID also has an unspecified Percent Effect row. The real record states the depositor's one-sided rule ("activity <= 10uM ... flagged as active") in its `Comment`; the fixture drops `Comment`. Six of the eight ChEMBL deposits among the 28 large AIDs look like this (`1671170` and `1671174` do not state the rule and have no actives) |
 | `2060911` | `SourceName` is the bare string `11908`; a prose library of 100,639 compounds against 93,270 SIDs deposited; a UniProt target accession |
 | `2253871` | A **partial** deposit: 13 actives and 2 `Unspecified` of 15 SIDs, so `0 < SIDCountUnspecified < SIDCountAll`. A small ChEMBL deposit, far below the 10,000 floor, kept only for the shape (1,912 small AIDs in Task 6's census look like this; none of the 28 large ones do) |
 

@@ -11,6 +11,7 @@ import { CATEGORIES, GenomeCanvas, RINGS, colourOf, type ColourBy } from "./Geno
 import { TargetDetailPanel } from "./TargetDetail";
 import { Ask } from "./Ask";
 import { DrugsAndTrials, phaseLabel, type Focus } from "./Clinical";
+import { Screens } from "./Screens";
 import { Search } from "./Search";
 import { TableControls, useTablePreferences } from "./TableControls";
 import { cellFormatting, scaleRanges, type Rule, type Range } from "./table-formatting";
@@ -374,7 +375,7 @@ export function App() {
     order: "asc",
   });
 
-  const [view, setView] = useState<"genome" | "clinical">("genome");
+  const [view, setView] = useState<"genome" | "screens" | "clinical">("genome");
   const [focus, setFocus] = useState<Focus>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<TargetDetail | null>(null);
@@ -530,6 +531,11 @@ export function App() {
           <button type="button" aria-pressed={view === "genome"} onClick={() => setView("genome")}>
             <InterfaceIcon name="genome" /> Genome
           </button>
+          {/* The nav is the early discovery pipeline, in order: target selection,
+              screening, hit assessment, then the clinic. */}
+          <button type="button" aria-pressed={view === "screens"} onClick={() => setView("screens")}>
+            <InterfaceIcon name="clinical" /> Screens
+          </button>
           <button type="button" aria-pressed={view === "clinical"} onClick={() => setView("clinical")}>
             <InterfaceIcon name="clinical" /> Drugs &amp; trials
           </button>
@@ -549,7 +555,9 @@ export function App() {
 
       <Ask base={import.meta.env.VITE_API_BASE ?? "/api"} />
 
-      {view === "clinical" ? (
+      {view === "screens" ? (
+        <Screens onSelectGene={openGene} />
+      ) : view === "clinical" ? (
         <DrugsAndTrials meta={meta} focus={focus} onFocus={setFocus} onSelectGene={openGene} />
       ) : (
         <div className={`body${selected ? " detail-open" : ""}`}>

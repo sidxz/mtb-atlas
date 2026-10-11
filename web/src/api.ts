@@ -707,8 +707,125 @@ async function get<T>(path: string, params?: Record<string, unknown>): Promise<T
   return (await response.json()) as T;
 }
 
+/** A gene a campaign reaches. `own` is its own protein; `via_complex` is shown, never counted. */
+export interface ScreenGene {
+  rv_id: string;
+  gene_name: string | null;
+  own: boolean;
+  via_complex: boolean;
+}
+
+export interface ScreenTarget {
+  accession: string | null;
+  name: string | null;
+  accession_kind: string | null;
+  rv_ids: string[];
+}
+
+export interface ScreenSummary {
+  screen_id: string;
+  aid: string | null;
+  title: string | null;
+  depositor: string | null;
+  source: string;
+  year: number | null;
+  n_stages: number;
+  /** Deposited: SIDs for PubChem, distinct compounds for ChEMBL. Not `library_size_stated`. */
+  n_tested: number | null;
+  library_size_stated: number | null;
+  /** False where the source stated no activity call at all. Then the counts below are NULL. */
+  outcome_stated: boolean;
+  n_active: number | null;
+  n_inactive: number | null;
+  modalities: string[];
+  genes: ScreenGene[];
+  /** Proteins this atlas could not key to a locus: another strain, a GenBank id, a PDB chain. */
+  unplaced_targets: ScreenTarget[];
+}
+
+export interface ScreenStage {
+  stage_id: string;
+  stage: string | null;
+  modality: string | null;
+  description: string | null;
+  derived: boolean;
+  strain: string | null;
+  assay_condition: string | null;
+  n_tested: number | null;
+  n_active: number | null;
+  n_rows: number | null;
+  n_compounds: number | null;
+  n_active_rows: number | null;
+  n_inactive_rows: number | null;
+  n_no_call_rows: number | null;
+  endpoints: string[] | null;
+}
+
+export interface ScreenDetail extends ScreenSummary {
+  stages: ScreenStage[];
+  genes: (ScreenGene & { product: string | null; essentiality: string | null })[];
+}
+
+export interface ScreenPage {
+  total: number;
+  items: ScreenSummary[];
+  /** How many stages carry the classifier's default label, so a funnel can say so. */
+  stage_labels: {
+    n_stages: number;
+    n_primary: number;
+    n_modality_other: number;
+    n_modality_unclassified: number;
+  };
+  n_unplaced: number;
+  not_ingested: string[];
+}
+
+/** One compound and what was measured on it. A NULL count is unmeasured, never zero. */
+export interface HitProfile {
+  molecule_chembl_id: string;
+  pref_name: string | null;
+  smiles: string | null;
+  n_papers: number;
+  first_year: number | null;
+  latest_year: number | null;
+  n_mtb_whole_cell: number | null;
+  n_mtb_protein: number | null;
+  n_other_pathogen: number | null;
+  n_cytotox: number | null;
+  n_adme: number | null;
+  n_in_vivo: number | null;
+  n_other: number | null;
+  /** The authors' own cytotox/potency ratio. Bounds are counted apart, never averaged. */
+  n_selectivity: number | null;
+  selectivity_min: number | null;
+  selectivity_max: number | null;
+  n_selectivity_censored: number | null;
+  /** Always read together: only 25 campaigns state calls at all. */
+  n_call_campaigns: number | null;
+  n_active_campaigns: number | null;
+}
+
+export interface HitPage {
+  total: number;
+  items: HitProfile[];
+  population: {
+    compounds: number;
+    beyond_potency: number;
+    potency_only: number;
+    elsewhere_only: number;
+    whole_cell_and_nothing_else: number;
+    with_selectivity: number;
+    n_cytotox: number;
+    n_adme: number;
+    n_in_vivo: number;
+  };
+}
+
 export const api = {
   meta: () => get<Meta>("/meta"),
+  screens: (query: Record<string, unknown> = {}) => get<ScreenPage>("/screens", { limit: 1000, ...query }),
+  screen: (id: string) => get<ScreenDetail>(`/screens/${encodeURIComponent(id)}`),
+  hits: (query: Record<string, unknown> = {}) => get<HitPage>("/hits", { limit: 300, ...query }),
   targets: (query: TargetQuery) =>
     get<{ total: number; limit: number; offset: number; items: TargetSummary[] }>(
       "/targets",

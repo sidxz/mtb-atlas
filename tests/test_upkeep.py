@@ -124,6 +124,25 @@ def test_unichem_is_not_asked_not_called_frozen_and_shows_no_borrowed_version(
     assert not freshness.any_stale([report])
 
 
+def test_a_search_the_server_could_not_run_reads_unknown_and_not_stale(monkeypatch) -> None:
+    """E-utilities answers HTTP 200 with `count: "0"` and an `errorlist` for a search it could
+    not run. Taken as a count that is "0 AIDs", which differs from the stored 28 and reads
+    `stale`: a failed probe wearing a verdict. It has to read `unknown`."""
+    label = _as_if_built(monkeypatch)
+    error = {
+        "count": "0",
+        "idlist": [],
+        "errorlist": {"phrasesnotfound": ["txid1773[ORGN]"], "fieldsnotfound": []},
+    }
+    monkeypatch.setattr(
+        freshness,
+        "_get",
+        lambda url, **kw: type("R", (), {"json": lambda s: {"esearchresult": error}})(),
+    )
+    (report,) = freshness.check(only="pubchem")
+    assert (report.state, report.stored, report.upstream) == ("unknown", label, None)
+
+
 def test_a_probed_source_whose_probe_fails_still_shows_its_own_version(monkeypatch) -> None:
     """The line above must not spread: a source that stamps its own table keeps its version
     when its probe cannot be answered, and reads `unknown` rather than `current`."""
@@ -135,6 +154,27 @@ def test_a_probed_source_whose_probe_fails_still_shows_its_own_version(monkeypat
     monkeypatch.setattr(freshness, "_get", refused)
     (report,) = freshness.check(only="pubchem")
     assert (report.state, report.stored) == ("unknown", label)
+
+
+def test_the_summary_line_does_not_call_unconfirmed_sources_current(
+    monkeypatch, capsys: pytest.CaptureFixture
+) -> None:
+    """ "Everything in the store is the current release" was printed even beside rows reading
+    `unknown` or `unbuilt`, and with UniChem registered that is true of every run."""
+    from atlas import cli
+
+    _as_if_built(monkeypatch)
+    assert cli.main(["check", "unichem"]) == 0
+    said = capsys.readouterr().out
+    assert "Not confirmed current: unichem" in said
+    assert "current release" not in said
+    # Where everything asked is current (or cannot move), the sentence is still true.
+    assert cli.main(["check", "griffin-2011"]) == 0
+    assert "Everything in the store is the current release." in capsys.readouterr().out
+    # A table that is not there is not current either.
+    monkeypatch.setattr(freshness, "built", lambda table: False)
+    assert cli.main(["check", "griffin-2011"]) == 0
+    assert "Not confirmed current: griffin-2011" in capsys.readouterr().out
 
 
 def test_the_pubchem_probe_asks_for_the_count_and_not_the_ids(monkeypatch) -> None:
@@ -306,3 +346,17 @@ def test_every_table_the_agent_can_query_has_a_diff_key() -> None:
     from atlas import agent, storediff
 
     assert set(agent.TABLES) == set(storediff.KEYS)
+
+
+def test_every_table_the_agent_can_query_has_a_note() -> None:
+    """The coupling above is how the three screen tables got into `TABLES` with no notes.
+
+    The notes are the only place a wrong join is silent, so a table added to the list must
+    arrive with its trap. `genes` and `chembl_targets` predate the rule and are named here:
+    the list can only shrink, and writing one of their notes means removing the name.
+    """
+    from atlas import agent
+
+    unnoted = set(agent.TABLES) - set(agent.TABLE_NOTES)
+    assert unnoted == {"genes", "chembl_targets"}
+    assert set(agent.TABLE_NOTES) <= set(agent.TABLES)  # and a note names a table that exists

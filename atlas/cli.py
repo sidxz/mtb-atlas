@@ -44,7 +44,14 @@ def _check(expensive: bool, only: str | None, as_json: bool, exit_code: bool) ->
         for report in stale:
             print(f"  uv run atlas refresh {report.source}")
     else:
-        print("Everything in the store is the current release.")
+        # `unknown` (a probe that failed, a source not asked, UniChem for ever) and `unbuilt`
+        # are not `current`, and a summary that says everything is would be claiming it.
+        unconfirmed = [r.source for r in reports if r.state in ("unknown", "unbuilt")]
+        if unconfirmed:
+            names = ", ".join(unconfirmed)
+            print(f"Nothing that was asked has moved. Not confirmed current: {names}.")
+        else:
+            print("Everything in the store is the current release.")
     return 1 if exit_code and stale_found else 0
 
 

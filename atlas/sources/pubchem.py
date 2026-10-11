@@ -103,6 +103,27 @@ def version_label(n_aids: int | str) -> str:
     return f"E-utilities {SEARCH_TERM}, {n_aids} AIDs"
 
 
+def esearch_count(result: Mapping[str, Any], hint: str = "") -> int:
+    """How many hits an esearch reply states, after checking it is an answer.
+
+    E-utilities answers HTTP 200 for a search it could not run, with `count: "0"` and an
+    `errorlist` naming what it could not find, so a failed query parses like an empty
+    result. A genuine zero has no `errorlist` and a numeric count; anything else raises,
+    for the build and the freshness probe alike (the probe would otherwise report "0 AIDs"
+    as a verdict, when a probe that fails is `unknown`).
+    """
+    problems = result.get("ERROR") or {
+        k: v for k, v in (result.get("errorlist") or {}).items() if v
+    }
+    count = str(result.get("count", ""))
+    if problems or not count.isdigit():
+        raise ValueError(
+            f"E-utilities gave no count for the search ({problems or 'no count in the reply'})."
+            + (f" {hint}" if hint else "")
+        )
+    return int(count)
+
+
 def fetch_aids(*, force: bool = False) -> list[str]:
     """Every Mtb-tagged AID with at least `MIN_TESTED` SIDs, in the order Entrez gives them."""
     page = fetch(
@@ -115,13 +136,12 @@ def fetch_aids(*, force: bool = False) -> list[str]:
     )
     result = json.loads(page.text)["esearchresult"]
     aids = [str(aid) for aid in result["idlist"]]
+    cached = f"The response is cached already, so a re-run reads it back: {_REMEDY}"
+    count = esearch_count(result, cached)
     # esearch returns at most `retmax` ids and says how many matched; a shorter
     # list would silently drop campaigns.
-    if int(result["count"]) != len(aids):
-        raise ValueError(
-            f"esearch matched {result['count']} AIDs but returned {len(aids)}. The response "
-            f"is cached already, so a re-run reads it back: {_REMEDY}"
-        )
+    if count != len(aids):
+        raise ValueError(f"esearch matched {count} AIDs but returned {len(aids)}. {cached}")
     return aids
 
 
@@ -369,10 +389,11 @@ def normalize_results(
             }
 
 
-# What a `screen_results` row is known by, and what `atlas diff` compares it on. A
-# PubChem row has a `result_tag` and no `activity_id`; a ChEMBL row has the reverse.
-# `storediff` compares keys with EXCEPT, which treats two NULLs as equal, so a key with
-# one NULL per source is sound there.
+# What a `screen_results` row is known by at build time. `atlas diff` compares on this
+# plus `pubchem_sid` (`storediff.KEYS`, which says why), so this is the shorter key and the
+# check below, that it is unique, is the stricter one. A PubChem row has a `result_tag`
+# and no `activity_id`; a ChEMBL row has the reverse. `storediff` compares keys with
+# EXCEPT, which treats two NULLs as equal, so a key with one NULL per source is sound there.
 #
 # Not the compound and not the SID. A CID sits under several SIDs that can disagree, and
 # a SID can be measured twice for one endpoint: 21 pairs in AID 1671170 (6 replicate
@@ -383,7 +404,8 @@ RESULT_KEY = ("stage_id", "result_tag", "activity_id")
 
 
 def check_unique(table: str, rows: Iterable[Mapping[str, Any]], key: Sequence[str]) -> None:
-    """Raise unless no two rows share `key`, which `atlas diff` compares the table on.
+    """Raise unless no two rows share `key`, which `atlas diff` compares the table on
+    (`screen_results`: on this plus the SID, so a repeat here is stricter than the diff needs).
 
     A repeat would otherwise reach the diff as a row that appears to change when it does
     not, or as one of two rows that disappears without a count noticing.

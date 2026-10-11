@@ -184,9 +184,14 @@ def test_the_schema_warns_about_every_screens_trap() -> None:
     """
     traps = {
         "screens": (
+            "A call count that is NULL is not a zero",  # the headline ...
+            "stated no activity call",  # ... first meaning: no cutoff deposited (the common one)
             "`outcome_stated` can be true",  # a NULL count is not 'no calls', even with calls ...
             "n_stages > 1",  # ... and a campaign of several assays is the second NULL
+            "0 for AID 1626",  # n_unspecified is PubChem's own count, not n_tested
             "lowest member",  # a declared project is ONE row, named for it
+            "`aid` is NULL on a project row",  # so `WHERE aid = ...` misses a declared project ...
+            "stage_id = 'pubchem:<AID>'",  # ... and an AID reaches its campaign this way
             "library_size_stated",  # the depositor's figure is not n_tested
             "outcome_method",  # PubChem's Method is not a stage
             "project_declared",  # false is not "had no follow-up"
@@ -194,10 +199,12 @@ def test_the_schema_warns_about_every_screens_trap() -> None:
         ),
         "screen_stages": (
             "Join screen_results on stage_id",
+            "`evidence = 'direct'`",  # an orthologue's target is another organism's protein
             "SINGLE PROTEIN",  # a complex is not the subunit's screen
             "screens.targets",  # PubChem stages have no ChEMBL target: the other route
             "derived",  # an index ChEMBL computed has no funnel position
-            "default",  # 'primary' is what a description matching nothing falls to
+            "defaults to `primary`",  # `stage`'s fallback, for a description matching nothing
+            "falls back to `other`",  # `modality`'s, and it reads the target record too
         ),
         "screen_results": (
             "outcome = 'inactive'",  # the non-hits ...

@@ -374,6 +374,46 @@ def test_a_truncated_aid_list_raises_instead_of_dropping_campaigns(monkeypatch):
         pubchem.fetch_aids()
 
 
+def test_a_search_the_server_could_not_run_is_an_error_and_not_an_empty_list(monkeypatch):
+    """E-utilities answers HTTP 200, `count: "0"` and an `errorlist` for a search it could not
+    run, which parses like a campaign list with no campaigns: the build would write empty
+    tables stamped "0 AIDs". The response is cached before the check runs."""
+    body = {
+        "esearchresult": {
+            "count": "0",
+            "idlist": [],
+            "errorlist": {"phrasesnotfound": ["txid1773[ORGN]"], "fieldsnotfound": []},
+        }
+    }
+    monkeypatch.setattr(pubchem, "fetch", lambda url, dest, **kw: _Page(json.dumps(body)))
+    with pytest.raises(ValueError, match=r"no count.*txid1773.*atlas refresh pubchem.*force=True"):
+        pubchem.fetch_aids()
+
+
+@pytest.mark.parametrize(
+    ("reply", "says"),
+    [
+        ({"count": "0", "errorlist": {"phrasesnotfound": ["x"], "fieldsnotfound": []}}, "'x'"),
+        ({"count": "0", "errorlist": {"phrasesnotfound": [], "fieldsnotfound": ["TSC"]}}, "TSC"),
+        # An error text beside a count is still an error, and its reason is what gets shown.
+        ({"count": "5", "ERROR": "Invalid db name specified"}, "Invalid db name"),
+        ({"idlist": []}, "no count in the reply"),
+        ({"count": "many"}, "no count in the reply"),
+    ],
+)
+def test_a_reply_that_is_not_a_count_raises(reply, says):
+    with pytest.raises(ValueError, match=f"no count.*{says}"):
+        pubchem.esearch_count(reply)
+
+
+def test_a_genuine_zero_is_a_count():
+    """The elink guard's rule, here too: an empty answer has no error beside it. NCBI sends
+    the `errorlist` keys with empty lists when nothing is wrong."""
+    clean = {"count": "0", "errorlist": {"phrasesnotfound": [], "fieldsnotfound": []}}
+    assert pubchem.esearch_count(clean) == 0
+    assert pubchem.esearch_count({"count": "28"}) == 28
+
+
 def test_aids_come_back_as_strings_in_the_order_pubchem_gave_them(monkeypatch):
     seen = {}
 

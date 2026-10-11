@@ -6,8 +6,8 @@ have changed. Neither answers the question actually worth asking, which is
 whether any source has released since the store was built.
 
 Each source is asked by the cheapest route it offers, and the answer is
-compared to the `source_version` already stamped on its table. Six small
-requests, seconds, no writes.
+compared to the `source_version` already stamped on its table. A handful of
+small requests, seconds, no writes.
 
 **A probe that fails reports `unknown`, never `current`.** An endpoint being
 down says nothing about the data behind it, and "current" is the one answer
@@ -16,6 +16,12 @@ that would be actively misleading.
 Sources that cannot move are marked frozen rather than left unknown: a paper's
 supplementary table is the same file forever, so a permanent question mark
 beside four of them would be noise that trains you to ignore the report.
+
+There is one deliberate permanent `unknown`, UniChem. It can move, so it cannot
+be frozen, and no table stores a version of it, so it cannot be probed; it is
+registered so that `refresh unichem` works, shows no stored version (the table's
+belongs to PubChem), and says why on its row. Every other `unknown` is a probe
+that failed, which is a reason to look.
 """
 
 from __future__ import annotations
@@ -169,7 +175,9 @@ def _pubchem() -> str:
         "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
         f"?db=pcassay&term={pubchem.SEARCH_TERM}&retmax=0&retmode=json"
     )
-    return pubchem.version_label(response.json()["esearchresult"]["count"])
+    # A reply that is not an answer raises here (see `esearch_count`) and reads `unknown`,
+    # where "0 AIDs" would read `stale`: an error shaped like a measurement.
+    return pubchem.version_label(pubchem.esearch_count(response.json()["esearchresult"]))
 
 
 @dataclass(frozen=True)

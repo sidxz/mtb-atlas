@@ -406,9 +406,39 @@ tbody tr[aria-selected="true"] td:first-child { box-shadow: inset 3px 0 var(--ac
   border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 11.5px; text-align: left;
 }
 .askexamples button:hover { color: var(--fg); border-color: var(--line-strong); }
-.askresult { margin-top: 12px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 420px); gap: 16px; }
+.askpanel { margin-top: 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.askpanel-head { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 4px 6px 4px 4px; }
+.askpanel-toggle {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; padding: 5px 8px;
+  background: none; border: 0; border-radius: 6px; color: var(--fg); font: inherit; font-size: 12px;
+  text-align: left; cursor: pointer;
+}
+.askpanel-toggle:hover { background: var(--surface-2); }
+.askpanel-toggle .chev {
+  width: 6px; height: 6px; margin: 0 3px 0 1px; flex-shrink: 0; color: var(--fg-dim);
+  border-right: 1.5px solid; border-bottom: 1.5px solid; transform: rotate(-45deg); transition: transform .15s;
+}
+.askpanel-toggle[aria-expanded="true"] .chev { transform: rotate(45deg); }
+.askpanel-question { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.askpanel-time { font-size: 11px; white-space: nowrap; }
+.askpanel-body { border-top: 1px solid var(--line); padding: 12px; }
+.askloading { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; }
+.askloading .note { margin: 2px 0 0; }
+.spinner {
+  width: 14px; height: 14px; margin-top: 3px; flex-shrink: 0; border-radius: 50%;
+  border: 2px solid var(--line-strong); border-top-color: var(--accent); animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.askresult { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 420px); gap: 16px; }
 @media (max-width: 900px) { .askresult { grid-template-columns: 1fr; } }
-.askresult .answer { white-space: pre-wrap; font-size: 13.5px; line-height: 1.6; max-width: 80ch; text-wrap: pretty; }
+.askresult .answer { font-size: 13.5px; line-height: 1.6; min-width: 0; }
+/* The measure caps the prose, not the answer: a table may use the width. */
+.askresult .answer :is(p, ul, ol, blockquote) { max-width: 80ch; text-wrap: pretty; margin: 0 0 10px; }
+.askresult .answer :is(ul, ol) { padding-left: 20px; }
+.askresult .answer table { display: block; width: max-content; max-width: 100%; overflow-x: auto; margin: 0 0 10px; }
+.askresult .answer thead { position: static; }
+.askresult .answer td { white-space: normal; }
+.askresult .answer code { font-family: var(--mono); font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-radius: 4px; }
 .askresult details { font-size: 12px; min-width: 0; }
 .askresult summary { cursor: pointer; color: var(--fg-dim); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
 .askquery { margin-top: 7px; border-left: 2px solid var(--counter); padding-left: 9px; }

@@ -6,7 +6,9 @@
  * having, and the query is the shortest way to check one.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { InterfaceIcon } from "./InterfaceIcon";
 
 const EXAMPLES = [
@@ -25,15 +27,35 @@ interface Result {
 
 export function Ask({ base }: { base: string }) {
   const [question, setQuestion] = useState("");
+  // The question the panel answers; the input may have moved on since.
+  const [asked, setAsked] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
   const [state, setState] = useState<"idle" | "asking" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(true);
+  const [seconds, setSeconds] = useState(0);
+  const inflight = useRef<AbortController | null>(null);
   // The examples are onboarding. Shown always they cost 85px of every session
   // forever, which on a laptop is three rows of the gene table.
   const [focused, setFocused] = useState(false);
 
+  // A broad question runs for a minute of model turns; a static "querying" line
+  // for that long reads as a hang. Frozen when the answer lands, so it doubles as
+  // the time taken.
+  useEffect(() => {
+    if (state !== "asking") return;
+    const start = Date.now();
+    setSeconds(0);
+    const timer = setInterval(() => setSeconds(Math.floor((Date.now() - start) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [state]);
+
   const submit = async (text: string) => {
     if (!text.trim()) return;
+    const controller = new AbortController();
+    inflight.current = controller;
+    setAsked(text);
+    setOpen(true);
     setState("asking");
     setResult(null);
     setError(null);
@@ -42,15 +64,28 @@ export function Ask({ base }: { base: string }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: text }),
+        signal: controller.signal,
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.detail ?? `${response.status}`);
       setResult(body as Result);
       setState("idle");
     } catch (caught: unknown) {
+      if (controller.signal.aborted) return;
       setError(String(caught instanceof Error ? caught.message : caught));
       setState("error");
     }
+  };
+
+  // Cancels a question still running too, or its answer would reappear after
+  // the panel was cleared. The server finishes the call regardless.
+  const clear = () => {
+    inflight.current?.abort();
+    setAsked(null);
+    setResult(null);
+    setError(null);
+    setState("idle");
+    setQuestion("");
   };
 
   return (
@@ -96,34 +131,73 @@ export function Ask({ base }: { base: string }) {
         </div>
       )}
 
-      {state === "asking" && <p className="note">Querying the store…</p>}
+      {asked !== null && (
+        <section className="askpanel" aria-label="Answer">
+          <div className="askpanel-head">
+            <button
+              type="button"
+              className="askpanel-toggle"
+              aria-expanded={open}
+              aria-controls="ask-answer"
+              title={asked}
+              onClick={() => setOpen(!open)}
+            >
+              <span className="chev" aria-hidden="true" />
+              <span className="askpanel-question">{asked}</span>
+            </button>
+            <span className="faint askpanel-time">
+              {state === "asking" ? `${seconds} s` : result ? `took ${seconds} s` : ""}
+            </span>
+            <button type="button" className="iconbtn" onClick={clear}>
+              Clear
+            </button>
+          </div>
+          {open && (
+            <div id="ask-answer" className="askpanel-body">
+              {state === "asking" && (
+                <div className="askloading">
+                  <span className="spinner" aria-hidden="true" />
+                  <div>
+                    <span role="status">Querying the store</span>
+                    <span aria-hidden="true"> · {seconds} s</span>
+                    <p className="note">Broad questions take up to a minute.</p>
+                  </div>
+                </div>
+              )}
 
-      {error && (
-        <div className="caveat">
-          {error.includes("credentials")
-            ? "The agent needs Anthropic credentials. Set ANTHROPIC_API_KEY where the API runs; everything else in the atlas works without it."
-            : error}
-        </div>
-      )}
+              {error && (
+                <div className="caveat">
+                  {error.includes("credentials")
+                    ? "The agent needs Anthropic credentials. Set ANTHROPIC_API_KEY where the API runs; everything else in the atlas works without it."
+                    : error}
+                </div>
+              )}
 
-      {result && (
-        <div className="askresult">
-          <div className="answer">{result.answer}</div>
-          <details open>
-            <summary>
-              {result.queries.length} quer{result.queries.length === 1 ? "y" : "ies"} behind this
-              answer
-            </summary>
-            {result.queries.map((query, index) => (
-              <div className="askquery" key={index}>
-                {query.sql ? <pre>{query.sql}</pre> : <span className="dim">{query.tool}</span>}
-                <span className="faint">
-                  {query.error ? `error: ${query.error}` : `${query.rows ?? 0} rows`}
-                </span>
-              </div>
-            ))}
-          </details>
-        </div>
+              {result && (
+                <div className="askresult">
+                  {/* The model answers in markdown, tables included (GFM). No raw HTML is rendered. */}
+                  <div className="answer">
+                    <Markdown remarkPlugins={[remarkGfm]}>{result.answer}</Markdown>
+                  </div>
+                  <details open>
+                    <summary>
+                      {result.queries.length} quer{result.queries.length === 1 ? "y" : "ies"} behind this
+                      answer
+                    </summary>
+                    {result.queries.map((query, index) => (
+                      <div className="askquery" key={index}>
+                        {query.sql ? <pre>{query.sql}</pre> : <span className="dim">{query.tool}</span>}
+                        <span className="faint">
+                          {query.error ? `error: ${query.error}` : `${query.rows ?? 0} rows`}
+                        </span>
+                      </div>
+                    ))}
+                  </details>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
       )}
     </div>
   );

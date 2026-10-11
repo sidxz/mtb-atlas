@@ -36,6 +36,8 @@ KEYS: dict[str, tuple[str, ...]] = {
     "vulnerability": ("rv_id",),
     "strain_vulnerability": ("rv_id",),
     "conditional_fitness": ("rv_id",),
+    "conditional_tnseq": ("rv_id", "screen_id"),
+    "tnseq_screens": ("screen_id",),
     "resistance": ("gene", "mutation", "drug"),
     "interactions": ("rv_id", "partner_rv_id"),
     "homology": ("uniprot_acc",),

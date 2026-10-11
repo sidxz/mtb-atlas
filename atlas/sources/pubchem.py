@@ -25,7 +25,10 @@ So `depositor` is recorded on every campaign and no blanket licence is claimed.
 The zero that means "no call". A deposit with no stated activity threshold
 reports `SIDCountActive: 0` against a full tested set, which read literally says
 a screen of 65,366 SIDs found nothing. The depositor never stated a cutoff, so
-`outcome_stated` is stored and `n_active` is NULL where it is false. A count
+`outcome_stated` is stored and `n_active` is NULL where it is false. (False also
+covers six ChEMBL deposits that do state a one-sided `activity <= 10uM` rule in their
+Comment: it means the deposit does not split its tested set, not that no call was made;
+see docs/data-sources.md.) A count
 PubChem does not send is an error, never a 0: every count a row reports is one
 PubChem stated, and `n_unspecified` is stored beside the three call counts so
 that a deposit which called only some of its SIDs shows the gap.

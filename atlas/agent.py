@@ -130,7 +130,7 @@ TABLE_NOTES = {
     "`screens` for what that leaves out), not that nobody screened it. **`n_screen_actives` "
     "sums `n_active` over only the screens "
     "that stated a countable call, and `n_target_screens` is the denominator for neither**: "
-    "ChEMBL states none, and a campaign of several assays carries no campaign-level count, "
+    "none is read from ChEMBL, and a campaign of several assays carries no campaign-level count, "
     "so one PubChem deposit stating 120 actives beside one ChEMBL paper reads 120 actives "
     "with `n_target_screens` = 2. NULL means no own screen stated a count; 0 means calls were "
     "stated and none was active. `max_screen_compounds` is the largest single `n_tested` of "
@@ -322,23 +322,37 @@ TABLE_NOTES = {
     "coverage and not a screen that found nothing. **`aid` is NULL on every ChEMBL row and on "
     "a campaign of several assays (`n_stages > 1`)**, so `WHERE aid = '588726'` finds nothing "
     "for an AID that is one of them (it sits in `pubchem:project:588335`); a declared project "
-    "with only one ingested assay keeps its `aid`. Reach a campaign from any AID through "
+    "with only one ingested assay keeps its `aid`. Reach a campaign from any ingested AID through "
     "`screen_stages.stage_id = 'pubchem:<AID>'` and its `screen_id`. Rows carry their own "
     "`source` and `source_version`; the "
     "version in this header is PubChem's. **A call count that is NULL is not a zero, and "
     "NULL has two meanings.** `n_active`, `n_inactive` and `n_inconclusive` are NULL (1) where "
-    "the depositor stated no activity call, `outcome_stated` false -- PubChem's own summary "
-    "reports 0 actives for a 65,366-SID deposit that simply has no cutoff, and ChEMBL states "
-    "no calls on any campaign -- and (2) for a campaign of SEVERAL assays, because the "
+    "`outcome_stated` is false, meaning the deposit does not split its tested set into called "
+    "outcomes -- PubChem's own summary reports 0 actives for a 65,366-SID deposit (AID "
+    "1671170) that has no cutoff at all, and this pipeline reads no call from ChEMBL's papers "
+    "(their free-text `activity_comment` is kept, not read) -- and (2) for a campaign of "
+    "SEVERAL assays, because the "
     "per-stage counts overlap (a primary hit that fails confirmation is active in one stage "
     "and inactive in another). So `outcome_stated` can be true while the counts are NULL: "
     "when `n_stages > 1`, read `screen_stages.n_active`. Never read that NULL as 'no calls "
-    "were made' or 'no hits'. `n_unspecified` is PubChem's own count of SIDs with no call: "
-    "0 for AID 1626, where all 215,397 were called, and `n_tested` for a deposit with no "
-    "cutoff. For ChEMBL it is `n_tested`, because no call is ever stated. For a PubChem "
+    "were made' or 'no hits'. **`outcome_stated` false does not always mean no call was "
+    "made.** Six of the eight ChEMBL-deposited AIDs (1671154, 1671161, 1671162, 1671178, "
+    "1671184, 1671185) state a one-sided rule in their PubChem Comment, 'activity <= 10uM "
+    "... flagged as active': 218 `IC50` rows (relation '=', under 10,000 nM) are `Active` "
+    "in screen_results while the campaign reads `outcome_stated` false and `n_active` NULL. "
+    "That Active set is a follow-up potency flag on the SIDs that have an IC50 row, not a "
+    "hit rate: AID 1671178 has 25 Active of the 302 SIDs with an IC50 row (about 8%), not "
+    "25 of its 66,592, and dividing by `n_tested` is wrong by two orders of magnitude. No "
+    "row of these deposits is ever `Inactive` (above 10 uM stays unspecified), and the "
+    "campaign-level veto is a deliberate under-claim, not an error. `n_unspecified` is "
+    "PubChem's own count of SIDs with no call: 0 for AID 1626, where all 215,397 were "
+    "called, and `n_tested` where every SID is unspecified -- which holds by construction "
+    "whenever each SID also has an unspecified percent-effect row, so it holds for those six "
+    "too. For ChEMBL it is `n_tested`, because no call is read. For a PubChem "
     "project of several assays it is `n_tested` only where every stage is wholly "
     "unspecified, and NULL otherwise. So on a single deposit `n_tested` minus `n_unspecified` "
-    "is the SIDs that carry a call. **`n_tested` is what was deposited -- SIDs (substances) for "
+    "is the SIDs that carry a call, except for those six, where it is 0 beside 175 Active "
+    "SIDs. **`n_tested` is what was deposited -- SIDs (substances) for "
     "PubChem, distinct compounds for ChEMBL, and for a project the distinct SID union, not "
     "the sum of its stages. `library_size_stated` is the figure the depositor's prose names:** "
     "AID 1626 deposits 215,397 SIDs and its prose says 216,163 compounds. They differ, "
@@ -381,8 +395,9 @@ TABLE_NOTES = {
     "screen whose actives belong to neither; `target_summary.n_target_screens` has both "
     "routes done (its note has the one boundary: a target the crosswalk cannot place). "
     "`n_tested` is SIDs for PubChem and distinct compounds "
-    "for ChEMBL. `n_active` is NULL on every ChEMBL stage (no calls are stated) and on a "
-    "PubChem stage with no cutoff; 0 means calls were stated and none was active.",
+    "for ChEMBL. `n_active` is NULL on every ChEMBL stage (no call is read) and on a "
+    "PubChem stage whose `outcome_stated` is false; 0 means calls were stated and none was "
+    "active.",
     "screen_results": "One row per RESULT ROW a source deposited, keyed on (stage_id, "
     "result_tag, activity_id, pubchem_sid): a PubChem row has a `result_tag` and no "
     "`activity_id`, a ChEMBL row the reverse. A row is a SID (PubChem) or an activity "
@@ -393,13 +408,17 @@ TABLE_NOTES = {
     "silent: count DISTINCT, and join to a stage on stage_id. Millions of rows -- "
     "aggregate, never dump. **The inactives are here**, which is what makes 'tested and "
     "did nothing' answerable. **`outcome` NULL is not inactive**: it means the source stated "
-    "no call (every ChEMBL row, and every row of a deposit with no cutoff), so filter on "
-    "outcome = 'inactive' to find non-hits and never on outcome IS NULL. A compound carries "
-    "`pubchem_cid` (PubChem rows) or `molecule_chembl_id` or both; the bridge between them is "
-    "UniChem and it is incomplete, so a NULL molecule_chembl_id on a PubChem row means "
-    "unmapped, not untested. There is no target column: a ChEMBL result's target is its "
-    "stage's, a PubChem result's is on `screens.targets`. `activity_comment` is ChEMBL's own "
-    "words, including 'Not Determined' -- a measurement that failed, with no value. "
+    "no call was recorded (every ChEMBL row, and the rows of a deposit above or without a "
+    "cutoff), so filter on outcome = 'inactive' to find non-hits and never on outcome IS NULL. "
+    "`outcome = 'active'` on an `IC50` row of a campaign whose `outcome_stated` is false is "
+    "a one-sided potency flag (<= 10 uM) and not a hit rate over `n_tested` (see `screens`). "
+    "A compound carries `pubchem_cid` (PubChem rows) or `molecule_chembl_id` or both; the "
+    "bridge between them is UniChem and it is incomplete, so a NULL molecule_chembl_id on a "
+    "PubChem row means unmapped, not untested. There is no target column: a ChEMBL result's "
+    "target is its stage's, a PubChem result's is on `screens.targets`. `activity_comment` "
+    "is ChEMBL's own words, including 'Not Determined' -- a measurement that failed, with no "
+    "value -- and free-text calls ('Not Active', 'Toxic', 'Resistant') that this pipeline "
+    "keeps and does not read as an `outcome`. "
     "`endpoint`, `standard_value`, `standard_units` and `standard_relation` are the typed "
     "value where the source gave one and NULL otherwise; a '>' or '<' relation is a bound, "
     "not a measurement.",
@@ -462,9 +481,11 @@ Rv0678 is a regulator. A co-crystal is physical evidence the two meet, not a mec
 Say which link an answer rests on.
 - Trials link to drugs through ChEMBL's own trial references or an exact \
 intervention-name match. An unlinked trial may still have tested a drug.
-- Screens: `outcome` NULL is not `inactive` -- it means the source stated no call (every \
-ChEMBL row, and every row of a deposit with no cutoff); only `outcome = 'inactive'` is a \
-non-hit. A screen filed against a complex is not a screen of either subunit: shown, not \
+- Screens: `outcome` NULL is not `inactive` -- it means no call was recorded (every \
+ChEMBL row, and the rows of a deposit above or without a cutoff); only `outcome = \
+'inactive'` is a non-hit, and an `Active` IC50 row in a campaign with `outcome_stated` false \
+is a potency flag (<= 10 uM) on the SIDs measured, not a hit rate over `n_tested`. A \
+screen filed against a complex is not a screen of either subunit: shown, not \
 counted. `stage` and `modality` are different axes (a primary screen can be phenotypic or \
 biochemical), and `n_screen_actives` counts only the screens that stated calls, so it shares \
 no denominator with `n_target_screens`. `screens` holds the campaigns the atlas ingested, \

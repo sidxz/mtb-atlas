@@ -185,7 +185,12 @@ def test_the_schema_warns_about_every_screens_trap() -> None:
     traps = {
         "screens": (
             "A call count that is NULL is not a zero",  # the headline ...
-            "stated no activity call",  # ... first meaning: no cutoff deposited (the common one)
+            "does not split its tested set into called outcomes",  # ... first meaning ...
+            "does not always mean no call was made",  # ... not 'no cutoff': six AIDs state one
+            "activity <= 10uM",  # the depositor's own one-sided rule, quoted from its Comment
+            "not a hit rate",  # 25 Active of 302 IC50 SIDs in AID 1671178, not of 66,592
+            "deliberate under-claim",  # the campaign-level veto is a choice, not an error
+            "any ingested AID",  # an AID below the floor has no stage row to reach
             "`outcome_stated` can be true",  # a NULL count is not 'no calls', even with calls ...
             "n_stages > 1",  # ... and a campaign of several assays is the second NULL
             "0 for AID 1626",  # n_unspecified is PubChem's own count, not n_tested
@@ -216,6 +221,8 @@ def test_the_schema_warns_about_every_screens_trap() -> None:
             "outcome IS NULL",  # ... and the filter that is not them
             "not a compound",  # a row is a SID or an activity
             "unmapped",  # NULL molecule_chembl_id is not untested
+            "potency flag",  # Active IC50 in an outcome_stated=false campaign: not a hit rate
+            "does not read as an `outcome`",  # ChEMBL's free-text calls are kept, not read
             "Not Determined",  # ChEMBL's failed measurement
         ),
         "target_summary": (
@@ -239,6 +246,7 @@ def test_system_prompt_states_the_screening_rules() -> None:
         "different axes",
         "shares no denominator with `n_target_screens`",
         "a count from it is a count of ingested campaigns",
+        "not a hit rate over `n_tested`",
     ):
         assert phrase in agent.SYSTEM, phrase
 

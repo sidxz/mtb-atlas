@@ -138,7 +138,8 @@ def build_evidence(*, force: bool = False) -> list[Path]:
         if accession:
             rv_by_acc[accession].append(rv_id)
     # Publications only, and the filter runs inside `build_campaigns` before any activity
-    # is fetched. Deposited datasets reach the store through PubChem instead.
+    # is fetched. Of the datasets and patents among them, only Dundee's reaches the store
+    # (through PubChem); GSK's TB set, the Malaria Box, the Pathogen Box and a patent do not.
     whole_cell = [
         {"evidence": "whole_cell", "document_chembl_id": document}
         for (document,) in read("activities")

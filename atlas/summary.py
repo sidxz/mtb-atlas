@@ -156,7 +156,7 @@ screen_reach AS (
     -- drops the stage from both columns without an error.
     --
     -- `n_active` is cast because a column that is NULL in every row is stored as
-    -- JSON, which `sum` refuses, and ChEMBL states no calls: a store with no
+    -- JSON, which `sum` refuses, and no call is read from ChEMBL: a store with no
     -- PubChem deposit with calls in it has exactly that column.
     SELECT gt.rv_id, st.screen_id, st.n_tested, st.n_active::BIGINT AS n_active, sc.year,
            st.target_type IS NOT DISTINCT FROM 'SINGLE PROTEIN' AS own
@@ -203,7 +203,7 @@ screen_scale AS (
     --
     -- `n_screen_actives` is NULL unless a source stated calls. A 0 would read as
     -- a screen that found nothing, which is what PubChem's own summary endpoint
-    -- says for a deposit with no cutoff; ChEMBL states no calls at all.
+    -- says for a deposit with no cutoff; no call is read from ChEMBL at all.
     SELECT rv_id,
            count(DISTINCT screen_id) FILTER (WHERE own)     AS n_target_screens,
            max(n_tested)             FILTER (WHERE own)     AS max_screen_compounds,

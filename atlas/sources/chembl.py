@@ -545,18 +545,20 @@ def classify_stage(
 # A campaign's cytotoxicity, microsome and animal assays are filed against
 # CELL-LINE, ADMET and non-molecular targets, so a target-keyed query cannot
 # see them: the documents with whole-cell Mtb data hold 11,686 assays on Mtb targets and
-# 38,335 in total (1,949 documents when the spec was written, 37,988 over 1,932 now). The
-# build takes the 977 that `activities` holds, with 17,633 assays. The document is
-# therefore the unit of the second fetch.
+# 38,335 in total (the spec's 1,949 documents are a different definition of "whole-cell
+# Mtb data"; an assay on the two whole-cell targets gives 1,932 documents and 37,988 assays
+# in this fixed release, ChEMBL_37). The build takes the 977 that `activities` holds, with
+# 17,633 assays. The document is therefore the unit of the second fetch.
 #
 # Only publications are campaigns here. ChEMBL also files whole-cell activity
 # under DATASET documents, which are deposited screening libraries rather than
 # papers: CHEMBL3988442 (Dundee's Small-Polar-MMV library) alone holds 1,413,047
 # activity rows, a 1,414-page walk that would also make one deposit's non-Mtb
 # assays most of `screen_results`. Of the 977 documents behind whole-cell
-# activity, 972 are publications, 4 are datasets and 1 is a patent. Nothing is
-# lost by the filter: a campaign with a PubChem AID is ingested from PubChem,
-# and that deposit is there as AIDs 1671154-1671185.
+# activity, 972 are publications, 4 are datasets and 1 is a patent. The filter does
+# lose something: only the Dundee dataset reaches PubChem (8 of its AIDs 1671154-1671185
+# are Mtb-tagged and reach the 10,000-SID floor). The other three datasets (GSK's TB set,
+# the Malaria Box, the Pathogen Box) and the patent are in neither source.
 
 CAMPAIGN_ASSAY_FIELDS = (
     "assay_chembl_id,document_chembl_id,target_chembl_id,description,assay_strain"
@@ -779,7 +781,7 @@ def unplaced(
 def stamp_stage_counts(
     stages: Sequence[dict[str, Any]], activities: Iterable[Mapping[str, Any]]
 ) -> list[dict[str, Any]]:
-    """Fill each stage's `n_tested`. `n_active` stays None: ChEMBL states no calls.
+    """Fill each stage's `n_tested`. `n_active` stays None: no call is read from ChEMBL.
 
     Left unset by `normalize_campaign_assays`, which has not seen the activities yet.
     A stage with no activity on record has tested no compound that ChEMBL knows of: 0.
@@ -859,7 +861,8 @@ def campaign_results(
 ) -> list[dict[str, Any]]:
     """One row per activity ChEMBL records in a campaign's assay.
 
-    ChEMBL states no outcome, so `outcome` is NULL. The key set is
+    This pipeline reads no outcome from ChEMBL, so `outcome` is NULL (`activity_comment`
+    is kept, and not read). The key set is
     `pubchem.normalize_results`'s, the PubChem columns empty, and a row is told from its
     neighbours by `activity_id`. `standard_value` is converted: the API sends a string.
     """
@@ -899,10 +902,10 @@ def build_campaigns(
 
     `activities` are rows with `evidence` and `document_chembl_id`; the documents that
     reported whole-cell activity are the candidates. Publications only, and the filter
-    runs before any activity is fetched: a dataset can hold 1.4 million rows. The
-    rest are PubChem's to bring in. The rows are stamped here, not by the table's
-    writer, because `screens` is shared with PubChem and one stamp would be wrong for
-    one of them.
+    runs before any activity is fetched: a dataset can hold 1.4 million rows. Of the
+    rest only Dundee's reaches the store, through PubChem. The rows are stamped here, not
+    by the table's writer, because `screens` is shared with PubChem and one stamp would be
+    wrong for one of them.
     """
     candidates = campaign_documents(activities)
     meta = campaign_document_meta(candidates)

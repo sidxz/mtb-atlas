@@ -123,13 +123,16 @@ def evidence_store(store: Path) -> Path:
         for target_id, target_rows in sorted(by_target.items())
         for row in chembl.aggregate_sizes(target_id, target_rows)
     ]
-    # Two cases the live store has and this fixture otherwise cannot show.
+    # Three cases the live store has and this fixture otherwise cannot show.
     # First, a primary screen: it reports percent inhibition, so the census
     # counts it and `activities` (potency rows only) never held it. Without
     # this row nothing distinguishes the census from the potency rows.
     # Second, a screen filed against a two-subunit complex, which must not
     # become either subunit's own assay. ClpP1P2 is the real example
     # (CLAUDE.md's complex rule), and 3 compounds is enough to tell it apart.
+    # Third, a screen on a target whose type is unknown: CHEMBL5629 reaches
+    # Rv3545c only through UniProt's cross-reference, so the crosswalk has no
+    # `target_type` for it. It must be shown as not-a-single-protein, never lost.
     sizes += [
         {
             "target_chembl_id": "CHEMBL3804751",
@@ -144,6 +147,14 @@ def evidence_store(store: Path) -> Path:
             "assay_chembl_id": "CHEMBL4649972",
             "n_compounds": 3,
             "n_measurements": 3,
+            "endpoint_types": ["Percent Effect"],
+            "latest_year": 2021,
+        },
+        {
+            "target_chembl_id": "CHEMBL5629",
+            "assay_chembl_id": "CHEMBL9000002",
+            "n_compounds": 4,
+            "n_measurements": 4,
             "endpoint_types": ["Percent Effect"],
             "latest_year": 2021,
         },

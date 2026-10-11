@@ -117,6 +117,9 @@ assay_scale AS (
     -- SINGLE PROTEIN only, the same rule n_complex_drugs follows. The
     -- crosswalk maps the ClpP1P2 complex target to clpP1 AND clpP2, so
     -- without the filter each subunit is credited with a screen of the pair.
+    -- A target of unknown type (NULL: it reached the gene only through a
+    -- UniProt cross-reference) is not a confirmed single protein, so it goes
+    -- to the shown-not-counted side; `<>` would drop it from both columns.
     SELECT gt.rv_id,
            count(DISTINCT s.assay_chembl_id)
                FILTER (WHERE gt.target_type = 'SINGLE PROTEIN') AS n_protein_assays,
@@ -125,9 +128,11 @@ assay_scale AS (
            max(s.latest_year)
                FILTER (WHERE gt.target_type = 'SINGLE PROTEIN') AS latest_protein_assay_year,
            count(DISTINCT s.assay_chembl_id)
-               FILTER (WHERE gt.target_type <> 'SINGLE PROTEIN') AS n_complex_assays,
+               FILTER (WHERE gt.target_type IS DISTINCT FROM 'SINGLE PROTEIN')
+               AS n_complex_assays,
            max(s.n_compounds)
-               FILTER (WHERE gt.target_type <> 'SINGLE PROTEIN') AS max_complex_assay_compounds
+               FILTER (WHERE gt.target_type IS DISTINCT FROM 'SINGLE PROTEIN')
+               AS max_complex_assay_compounds
     FROM gene_target gt
     JOIN sizes s ON s.target_chembl_id = gt.target_id
     WHERE gt.evidence = 'direct'

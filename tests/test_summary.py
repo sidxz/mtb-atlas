@@ -191,6 +191,23 @@ def test_a_complex_screen_is_not_either_subunits_protein_assay(rows: dict) -> No
         assert rows[rv_id]["max_complex_assay_compounds"] == 3, rv_id
 
 
+def test_a_target_of_unknown_type_is_reported_not_lost(rows: dict, evidence_store: Path) -> None:
+    """A screen whose target has no `target_type` is not counted as a single protein.
+
+    Rv3545c reaches CHEMBL5629 only through UniProt's cross-reference, so the
+    crosswalk carries no type for it. `= 'SINGLE PROTEIN'` and `<> 'SINGLE
+    PROTEIN'` are both NULL there, which dropped the assay from both columns
+    without an error: neither a protein assay nor a shown-not-counted one.
+    """
+    walk = {r["rv_id"]: r for r in records("crosswalk", store=evidence_store)}
+    (target,) = walk["Rv3545c"]["chembl_targets"]
+    assert target["target_type"] is None, "the fixture no longer carries an untyped target"
+    assert rows["Rv3545c"]["n_protein_assays"] == 0
+    assert rows["Rv3545c"]["max_assay_compounds"] == 0
+    assert rows["Rv3545c"]["n_complex_assays"] == 1
+    assert rows["Rv3545c"]["max_complex_assay_compounds"] == 4
+
+
 def test_a_store_without_the_census_still_summarises(
     evidence_store: Path, tmp_path_factory: pytest.TempPathFactory
 ) -> None:

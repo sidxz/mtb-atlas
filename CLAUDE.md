@@ -153,12 +153,17 @@ This is the rule that outranks completeness.
   protein-level link invents an association that is not in the data.
 - **"Is there an assay" is not "is there a hit."** `n_protein_assays` counts
   distinct ChEMBL assays on the gene's own protein (`evidence = 'direct'`), and
-  431 essential genes have none. Never read `assay_type = 'F'` as a protein
+  434 essential genes have none. Never read `assay_type = 'F'` as a protein
   assay: ChEMBL files whole-cell MICs that way against the organism, so the
   genome holds 3,083 of them over two "targets". And **an assay count is not a
   screen**: `max_assay_compounds` is the biggest single campaign, which is why
-  only `recA` and `dnaB` have a public Mtb assay reaching 1,000 compounds while
-  inhA tops out at 52.
+  six genes have a public Mtb assay reaching 1,000 compounds (three of them
+  above 60,000) while inhA's largest is 76, across 205 assays. The scarcity is
+  still the finding, but it is a scarcity of campaigns rather than of compounds.
+  These numbers come from the unfiltered `assay_sizes` census: reading them from
+  `activities` counted only rows carrying a `pchembl_value`, and a primary
+  screen reports percent inhibition, so pks13 read 143 against a 66,592-compound
+  screen.
 - **Whole-cell potency is `pmic`, not `pchembl_value`.** ChEMBL computes
   `pchembl_value` for affinity endpoints only, so it is NULL on all 3,870 MIC
   rows; reading it gave a whole-cell number for 12 genes out of the 71 that

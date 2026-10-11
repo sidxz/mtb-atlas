@@ -1,7 +1,8 @@
 # Data sources
 
 Every endpoint, format and licence below was checked against the live service on
-**2026-10-09** (the clinical sources on **2026-10-10**). Nothing here is from
+**2026-10-09** (the clinical sources on **2026-10-10**, PubChem and UniChem on
+**2026-10-11**). Nothing here is from
 memory or documentation alone — where a claim could not be verified, it says so.
 
 All sources are public. No consortium data, ever.
@@ -14,6 +15,7 @@ All sources are public. No consortium data, ever.
 | [UniProt](#uniprot) | 2026_03 (2026-09-02) | CC BY 4.0 | Accessions, cross-references |
 | [ChEMBL](#chembl) | ChEMBL_37 (2026-05-01) | CC BY-SA 3.0 | Targets, bioactivity (M1) |
 | [UniChem](#unichem-the-chembl-to-pubchem-bridge) | `unknown`: no release stated, fetched 2026-10-11 | CC BY-SA 3.0, inherited from ChEMBL | ChEMBL to PubChem compound bridge |
+| [PubChem BioAssay](#pubchem-bioassay) | E-utilities `txid1773[ORGN] AND 10000:100000000[TSC]`, 28 AIDs on 2026-10-11 | **per depositor**; see below | Screening campaigns, with their inactives |
 | [RCSB PDB](#rcsb-pdb) | live | CC0 1.0 | Experimental structures (M1) |
 | [AlphaFold DB](#alphafold-db) | v6 (2025-08-24) | CC BY 4.0 | Predicted structures (M1) |
 | [DeJesus 2017](#essentiality-dejesus-2017) | mBio, Table S3 | CC BY 4.0 | Essentiality (M1) |
@@ -358,8 +360,8 @@ compound. Its `SIDCountAll` is 215,397 tested SIDs, checked live on 2026-10-11
 SRMLSC, "High Throughput Screen to Identify Inhibitors of Mycobacterium
 tuberculosis H37Rv"). Its own description says 216,163 compounds were screened, so
 the SID count is the figure used here. The alternative is a PubChem lookup per
-compound. This file is fetched once and covers the whole mapping. Nothing reads it
-yet; the PubChem ingester will be its first consumer.
+compound. This file is fetched once and covers the whole mapping. `pubchem.build`
+reads it, keeping only the CIDs the screens contain rather than all 2.8M pairs.
 
 **Fan-out, measured on the full file** (2,832,793 pairs, 2,800,246 distinct ChEMBL ids):
 
@@ -370,6 +372,103 @@ yet; the PubChem ingester will be its first consumer.
 
 The file states no release, so its `source_version` is recorded as `unknown`,
 with its retrieval date.
+
+## PubChem BioAssay
+
+The only public source that states an outcome per compound at screening scale.
+AID 1626 deposits 209,843 `Inactive` SIDs beside 2,044 `Active` and 3,510
+`Inconclusive`, which is what makes "tested and did nothing" a provable answer
+rather than an absence.
+
+**Membership is a search, and it is reproducible.** `db=pcassay` through
+E-utilities, counted on **2026-10-11**:
+
+| term | AIDs |
+|---|---|
+| `txid1773[ORGN]` | 12,519 |
+| `txid1773[ORGN] NOT ChEMBL[SNME]` | 172 |
+| `txid1773[ORGN] AND 10000:100000000[TSC]` | 28 (20 not deposited by ChEMBL) |
+
+The third is the term `fetch_aids` sends. The 10,000-SID floor is this atlas's
+choice and it is in the search, not applied afterwards: the 12,519 summaries are 501
+requests, and PubChem answered 429 from the 337th and kept answering it. Below the
+floor sit BindingDB's re-postings of PDB affinities, which are measurements and not
+screens. The taxonomy tag is the only Mtb test, since the summary carries no taxonomy.
+
+**Routes, and why not PUG-REST for the rows.**
+
+- AID list and project links: E-utilities (`esearch`, and `elink` with
+  `linkname=pcassay_pcassay_same_assay_project_list`). E-utilities allows 3 requests a
+  second without an API key, PUG-REST 5, so every request is paced at 0.34 s.
+- Counts and targets: PUG-REST `assay/aid/<aids>/summary/JSON`, 25 AIDs a request.
+- Rows: `pubchem.ncbi.nlm.nih.gov/assay/pcget.cgi?query=download&record_type=datatable&actvty=all&response_type=save&aid=N`,
+  uncapped (AID 1626 is all 215,397 rows in a 30 MB CSV). **Not PUG-REST**, whose
+  `concise/JSON` refuses above 10,000 SIDs with `PUGREST.BadRequest: Too many SIDs`.
+  `actvty=all` is what returns the inactives; `actvty=active` would cut AID 1626 to
+  about 2,000 rows.
+
+All of this was checked on 2026-10-11, before PubChem began refusing requests from
+the build machine that day. The first full build is pending, and `data/raw/pubchem/`
+is empty until it runs.
+
+**`SIDCountActive: 0` is not a finding.** PubChem's summary reports 0 actives for
+AID 1671170 (Mt-TrpRS, 65,366 SIDs), which read literally is a screen that found
+nothing. The depositor never stated a cutoff: all 65,366 SIDs are `Unspecified`. So
+`screens.outcome_stated` is stored, `n_active`, `n_inactive` and `n_inconclusive` are
+NULL wherever it is false, and `screen_results.outcome` is NULL, never `inactive`, on
+every such row. The zero is not always a zero either: six of the eight ChEMBL
+deposits report 1 to 90 actives beside an all-`Unspecified` set, which are the IC50
+rows, so `SIDCountUnspecified` equal to `SIDCountAll` is what vetoes the calls.
+
+**Three numbers for one screen, and only one is `n_tested`.** AID 1626 deposits
+215,397 SIDs (`SIDCountAll`) over 215,098 CIDs, and its own description says 216,163
+compounds were screened. `n_tested` is the SID count, the deposited set;
+`library_size_stated` keeps the prose figure; neither is substituted for the other.
+A CID can sit under several SIDs that disagree (11 CIDs in AID 1626 are `Active` as
+one SID and `Inconclusive` as another), so a result row is a SID, not a compound.
+
+**A row is told from its neighbours by its number in PubChem's table.**
+`PUBCHEM_RESULT_TAG`, stored as `screen_results.result_tag`, is 1 to N and unique in
+both AIDs checked. The SID is not enough: AID 1671170 has 65,646 rows over 65,366
+SIDs, because a SID can be measured twice for one endpoint (6 replicate `Percent
+Effect` rows and 15 SIDs with two `IC50`), and for 15 of those the value repeats too.
+Every build asserts the key `(stage_id, result_tag, activity_id)` is unique, and
+that each download holds exactly as many distinct SIDs as the summary counts, since
+a truncated download parses as a smaller screen.
+
+**A declared project is one campaign.** PubChem's project links give the funnel the
+depositor stated (AID 449775 groups 39 AIDs); 10 of the 20 largest non-ChEMBL
+campaigns declare one, and the other 10 declare nothing, which is not the same as
+having had no follow-up. A project is one `screens` row named for its lowest member
+AID. On 2026-10-11, AIDs 588335 and 588726 both reach 10,000 SIDs and share one.
+PubChem does not state the funnel stage: its `Method` is how the outcome was called
+(AID 1626, the 215,397-SID primary screen, says `confirmatory`), so the stage is read
+from the title and `stages_source` is `from_prose`.
+
+**Where a campaign comes from.** One campaign has exactly one source. A ChEMBL
+document that is a publication is ingested from ChEMBL; a deposited dataset (ChEMBL
+files Dundee's 1,413,047-row library as a `DATASET`) is ingested from PubChem as
+AIDs 1671154 to 1671185. Each row carries its own `source`, `source_version` and
+`retrieved_at`, because `screens` is fed by both.
+
+### Licence
+
+Per depositor, not per database. NCBI's policy puts US-government material in the
+public domain and then carves PubChem out by name:
+
+> NOTE: This site contains resources which incorporate material contributed or
+> licensed by individuals, companies, or organizations that may be protected by U.S.
+> and foreign copyright laws. These include, but are not limited to PubMed Central
+> (PMC) (see PMC Copyright Notice), Bookshelf (see Bookshelf Copyright Notice), OMIM
+> (see OMIM Copyright Status), and PubChem. All persons reproducing, redistributing,
+> or making commercial use of this information are expected to adhere to the terms
+> and conditions asserted by the copyright holder.
+
+(<https://www.ncbi.nlm.nih.gov/home/about/policies/>, read 2026-10-11.) So
+`screens.depositor` is recorded on every campaign and no blanket licence is claimed.
+Nothing is redistributed: the pipeline fetches at build time and `data/raw` is
+gitignored. `depositor` is stored as PubChem gives it, and is not resolved to a
+licence: AID 2060911's is the bare string `11908`.
 
 ## RCSB PDB
 

@@ -193,6 +193,15 @@ Relation`, `Standard Value` and `Standard Units`:
 | `2227`, `2228` | One SID (`312400166`) measured twice, `Percent Effect` `-1.988` and `1.19`. 280 SIDs are on two rows (259 `IC50` beside `Percent Effect`, 15 two IC50s, 6 two replicates), so 65,646 rows cover 65,366 SIDs |
 | `65639` | The only row with no CID (and no SMILES): its SID is all there is |
 
+The first four of those rows are why `screen_results` is keyed on `result_tag` and not
+on the SID: SID and endpoint repeat (21 pairs in the full file, 15 of them with the
+same value too), and the tag does not. A re-keying on the SID or the value fails
+`test_the_sid_and_endpoint_do_not_tell_two_rows_apart_but_the_row_number_does`.
+
+The summary counts in `tests/test_screens.py`'s build tests are trimmed to these five
+rows (AID 1626: 5 SIDs; AID 1671170: 3), because the completeness check compares the
+file to the summary and a trimmed file would otherwise fail it.
+
 ## `pubchem_projects.json`
 
 Three real E-utilities eLink answers (`retmode=json`,

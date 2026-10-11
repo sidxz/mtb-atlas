@@ -70,7 +70,7 @@ _LIBRARY_SIZE = re.compile(r"(\d[\d,]{3,})\s*-?\s*compound", re.I)
 
 
 def fetch_aids(*, force: bool = False) -> list[str]:
-    """Every AID the taxonomy search returns, in the order Entrez gives them."""
+    """Every Mtb-tagged AID with at least `MIN_TESTED` SIDs, in the order Entrez gives them."""
     page = fetch(
         f"{EUTILS}/esearch.fcgi?db=pcassay&term={SEARCH_TERM}&retmax=100000&retmode=json",
         "aids.json",

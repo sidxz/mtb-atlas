@@ -126,8 +126,9 @@ TABLE_NOTES = {
     "`n_complex_screens` is campaigns of a complex or of several proteins that include it: "
     "shown, never counted, so a ClpP subunit reads 0 own screens beside the pair's. Both are "
     "NULL if the screening layer was never built; built, 0 means no campaign in that table "
-    "(PubChem deposits of 10,000+ SIDs, ChEMBL papers that reported whole-cell activity), "
-    "not that nobody screened it. **`n_screen_actives` sums `n_active` over only the screens "
+    "(PubChem deposits of 10,000+ SIDs, ChEMBL papers reachable from `activities`; see "
+    "`screens` for what that leaves out), not that nobody screened it. **`n_screen_actives` "
+    "sums `n_active` over only the screens "
     "that stated a countable call, and `n_target_screens` is the denominator for neither**: "
     "ChEMBL states none, and a campaign of several assays carries no campaign-level count, "
     "so one PubChem deposit stating 120 actives beside one ChEMBL paper reads 120 actives "
@@ -309,10 +310,19 @@ TABLE_NOTES = {
     "screens": "One row per screening CAMPAIGN, keyed on screen_id: `pubchem:1626` (one "
     "deposit), `pubchem:project:435019` (a project the depositor declared: ONE row for all "
     "its member AIDs, named for the lowest member by integer, so 435019 and not 449762) or "
-    "`chembl:CHEMBL...` (a paper). **`aid` is NULL on every ChEMBL row and on a campaign of "
-    "several assays (`n_stages > 1`)**, so `WHERE aid = '588726'` finds nothing for an AID that "
-    "is one of them (it sits in `pubchem:project:588335`); a declared project with only one "
-    "ingested assay keeps its `aid`. Reach a campaign from any AID through "
+    "`chembl:CHEMBL...` (a paper). **This table holds the campaigns the atlas INGESTED, not "
+    "every campaign that exists, so a count from it is a count of ingested campaigns.** "
+    "PubChem: only deposits of 10,000+ substances (AspRS, AID 1671160, has 8,841 and is "
+    "absent). ChEMBL: only papers reachable from `activities`, which holds whole-cell data "
+    "for compounds that already have protein-level activity -- ChEMBL has 1,932 documents "
+    "with a whole-cell Mtb assay and 977 are candidates, of which 972 papers are here, so "
+    "954 publications with such an assay are not. 'How many ChEMBL screening campaigns are "
+    "there?' cannot be answered from this table, and neither can 'is the GSK TB set, the "
+    "Malaria Box or the Pathogen Box in the atlas?': they are not, which is an absence of "
+    "coverage and not a screen that found nothing. **`aid` is NULL on every ChEMBL row and on "
+    "a campaign of several assays (`n_stages > 1`)**, so `WHERE aid = '588726'` finds nothing "
+    "for an AID that is one of them (it sits in `pubchem:project:588335`); a declared project "
+    "with only one ingested assay keeps its `aid`. Reach a campaign from any AID through "
     "`screen_stages.stage_id = 'pubchem:<AID>'` and its `screen_id`. Rows carry their own "
     "`source` and `source_version`; the "
     "version in this header is PubChem's. **A call count that is NULL is not a zero, and "
@@ -457,7 +467,8 @@ ChEMBL row, and every row of a deposit with no cutoff); only `outcome = 'inactiv
 non-hit. A screen filed against a complex is not a screen of either subunit: shown, not \
 counted. `stage` and `modality` are different axes (a primary screen can be phenotypic or \
 biochemical), and `n_screen_actives` counts only the screens that stated calls, so it shares \
-no denominator with `n_target_screens`.
+no denominator with `n_target_screens`. `screens` holds the campaigns the atlas ingested, \
+not every campaign that exists, so a count from it is a count of ingested campaigns.
 
 Be concise and quantitative. Prefer a short table to a paragraph when the answer is \
 a list of genes."""

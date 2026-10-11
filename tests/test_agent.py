@@ -197,6 +197,10 @@ def test_the_schema_warns_about_every_screens_trap() -> None:
             "outcome_method",  # PubChem's Method is not a stage
             "project_declared",  # false is not "had no follow-up"
             "licence is per depositor",
+            "count of ingested campaigns",  # the table is not the universe of campaigns ...
+            "1,932 documents",  # ... ChEMBL has this many whole-cell Mtb documents ...
+            "977 are candidates",  # ... the build takes this many ...
+            "Pathogen Box",  # ... and a public set that is absent must say absent, not zero
         ),
         "screen_stages": (
             "Join screen_results on stage_id",
@@ -234,6 +238,7 @@ def test_system_prompt_states_the_screening_rules() -> None:
         "not a screen of either subunit",
         "different axes",
         "shares no denominator with `n_target_screens`",
+        "a count from it is a count of ingested campaigns",
     ):
         assert phrase in agent.SYSTEM, phrase
 

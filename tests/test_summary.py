@@ -307,6 +307,35 @@ def test_stated_actives_reach_every_locus_of_a_shared_accession(rows: dict) -> N
         assert rows[rv_id]["shared_accession"] is True
 
 
+def test_a_protein_named_twice_beside_an_unresolved_chain_is_still_one_protein(
+    rows: dict,
+) -> None:
+    """Counting target entries read this deposit as a complex, and the real screen landed in
+    `n_complex_screens` beside `n_target_screens` 0: a false zero. A PDB chain reaches no locus
+    and a protein named twice is one protein, so it is the loci each target reaches that count."""
+    assert rows["Rv1908c"]["n_target_screens"] == 1
+    assert rows["Rv1908c"]["n_complex_screens"] == 0
+
+
+def test_a_stated_call_that_found_no_actives_is_zero_not_null(rows: dict) -> None:
+    """The other side of the NULL rule: 11,000 SIDs called inactive and none active is a screen
+    that found nothing, and that has to be sayable as a 0."""
+    assert rows["Rv2879c"]["n_target_screens"] == 1
+    assert rows["Rv2879c"]["n_screen_actives"] == 0
+
+
+def test_a_gene_screened_through_both_sources_keeps_each_aggregate_as_it_is(rows: dict) -> None:
+    """Pins what the aggregates do across sources, so a change is deliberate. cyp144 has a
+    dated ChEMBL paper that states no call and an undated PubChem deposit that states 120:
+    the actives are the stated ones alone (120 beside two screens), and the year is the dated
+    paper's, because PubChem has none to compare."""
+    row = rows["Rv1777"]
+    assert row["n_target_screens"] == 2
+    assert row["n_screen_actives"] == 120
+    assert row["latest_screen_year"] == 2019
+    assert row["max_screen_compounds"] == 12000
+
+
 def test_a_screen_of_an_orthologue_is_not_a_screen_of_this_protein(
     evidence_store: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -339,12 +368,13 @@ def test_a_screen_of_an_orthologue_is_not_a_screen_of_this_protein(
 def test_the_unclassified_share_leaves_out_derived_rows_and_missing_modalities(
     evidence_store: Path,
 ) -> None:
-    """Of 11 non-derived stages, 6 have a modality (the ChEMBL ones: PubChem's title names no
-    measurement) and 3 of those are `other`; 10 sit at the default stage. The computed ratio is
-    `other` by design and stageless, so counted it would hold both shares up for good."""
+    """Of 15 non-derived stages (7 ChEMBL, 8 PubChem), 7 have a modality (PubChem's title names
+    no measurement) and 3 of those are `other`; 14 sit at the default stage, all but the one
+    confirmation. The computed ratio is `other` by design and stageless, so counted it would
+    hold both shares up for good."""
     assert unclassified(store=evidence_store) == {
-        "stages with modality 'other'": (3, 6),
-        "stages at the default 'primary'": (10, 11),
+        "stages with modality 'other'": (3, 7),
+        "stages at the default 'primary'": (14, 15),
     }
 
 
@@ -365,8 +395,8 @@ def test_the_summary_command_prints_the_unclassified_share(
     monkeypatch.setattr(store_module, "STORE", evidence_store)
     assert cli.main(["summary"]) == 0
     printed = capsys.readouterr().out
-    assert "3  stages with modality 'other' (50.0% of 6)" in printed
-    assert "10  stages at the default 'primary' (90.9% of 11)" in printed
+    assert "3  stages with modality 'other' (42.9% of 7)" in printed
+    assert "14  stages at the default 'primary' (93.3% of 15)" in printed
 
 
 @pytest.mark.parametrize(

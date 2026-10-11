@@ -246,6 +246,14 @@ def evidence_store(store: Path) -> Path:
                 "Selectivity index, ratio of CC50 for Vero cells to MIC for "
                 "Mycobacterium tuberculosis H37Rv",
             ),
+            # A stage on cyp144's own protein, in a dated paper: the ChEMBL half of a gene
+            # that PubChem also screened (deposit 9000008 below).
+            (
+                "CHEMBL9100008",
+                "CHEMBL_DOC2",
+                "CHEMBL6195687",
+                "Inhibition of Mycobacterium tuberculosis CYP144",
+            ),
             # Prose no classifier pattern has seen: modality `other`, stage the default.
             ("CHEMBL9100005", "CHEMBL_DOC2", None, "Assay of a kind no pattern here has seen"),
         )
@@ -263,6 +271,10 @@ def evidence_store(store: Path) -> Path:
             "target_type": "SINGLE PROTEIN",
             "organism": "Mycolicibacterium smegmatis (strain ATCC 700084 / mc(2)155)",
         },
+        "CHEMBL6195687": {
+            "target_type": "SINGLE PROTEIN",
+            "organism": "Mycobacterium tuberculosis",
+        },
     }
     tested = {
         "CHEMBL9100001": 4,
@@ -270,6 +282,7 @@ def evidence_store(store: Path) -> Path:
         "CHEMBL9100003": 4,
         "CHEMBL9100006": 2,
         "CHEMBL9100007": 2,
+        "CHEMBL9100008": 3,
     }
     stage_activities = [
         {"assay_chembl_id": assay_id, "molecule_chembl_id": f"CHEMBL_M{i}"}
@@ -314,6 +327,13 @@ def evidence_store(store: Path) -> Path:
             (9000004, "A whole-cell screen", [], 100, 11_000),
             # A second, separate deposit on the same protein as 9000001.
             (9000005, "Another biochemical screen of PanD", ["P9WIL3"], 0, 0),
+            # One protein named twice, as the AIDs of a declared project can, beside a PDB
+            # chain that reaches no locus: two entries too many, but one protein.
+            (9000006, "A screen naming its protein twice", ["P9WIE5", "P9WIE5", "4KW5_A"], 0, 0),
+            # Calls stated, and none of the 11,000 called SIDs is active: a real zero.
+            (9000007, "A screen that found nothing", ["P9WH15"], 0, 11_000),
+            # Calls stated, 120 actives, on a gene that a dated ChEMBL paper also screened.
+            (9000008, "A screen with hits", ["P9WPL1"], 120, 2_000),
         )
     ]
     rv_by_acc: dict[str, list[str]] = {}

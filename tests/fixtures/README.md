@@ -59,7 +59,7 @@ complex's assay has a description that `protein_assay_example` must not offer;
 the assay id and its description are the live ones.
 
 The fixture store's `screens` and `screen_stages` are not files either. `tests/conftest.py`
-runs seven hand-written ChEMBL assays through `chembl.normalize_campaign_assays`,
+runs eight hand-written ChEMBL assays through `chembl.normalize_campaign_assays`,
 `stamp_stage_counts` and `campaign_screens`, so the rows have the ingesters' own key
 set and the classifiers' own labels. The assay ids (`CHEMBL91xxxxx`) and the two
 documents are **synthetic**; the targets are the fixture genes' own:
@@ -72,10 +72,11 @@ documents are **synthetic**; the targets are the fixture genes' own:
 | `CHEMBL9100003` | A stage on `CHEMBL5629` whose target type was not looked up (`NULL`), so it must land on the shown-not-counted side rather than in neither column. Its modality is `other` |
 | `CHEMBL9100007` | A stage on the *M. smegmatis* MmpL3 target (`CHEMBL5465372`). The store's crosswalk is built without the orthologue bridge, so it reaches no gene; the test that turns the bridge on shows `Rv0206c` still reads 0 screens |
 | `CHEMBL9100004` | A computed selectivity index: `derived`, `stage = NULL`, modality `other` by assignment. The unclassified-share counters leave it out |
+| `CHEMBL9100008` | A 3-compound stage on cyp144's own protein, in a 2019 paper: the ChEMBL half of a gene PubChem also screened (deposit `9000008`) |
 | `CHEMBL9100005` | Prose no pattern has seen: modality `other`, stage the default `primary`. Reaches no gene |
 
-Five PubChem deposits join them, built through `pubchem.normalize_screens`, `link_targets`
-and `stage_row` from records in PUG-REST's shape. The AIDs (`9000001-9000005`) are
+Eight PubChem deposits join them, built through `pubchem.normalize_screens`, `link_targets`
+and `stage_row` from records in PUG-REST's shape. The AIDs (`9000001-9000008`) are
 **synthetic**, and so are their SID counts; the accessions are the fixture genes' own. PubChem
 names its target on the campaign, and its stages carry no ChEMBL target:
 
@@ -86,6 +87,9 @@ names its target on the campaign, and its stages carry no ChEMBL target:
 | `9000003` | Two targets (`P9WPC3`, `P9WPC5`), as AID 1671185 lists ClpP1 and ClpP2: PubChem has no target type, so a deposit naming two proteins is the complex |
 | `9000004` | No `Target` key, as the 12 whole-cell AIDs: reaches no gene. Its stage has no modality, which the unclassified-share counters must not read as `other` |
 | `9000005` | A second deposit on the same protein as `9000001`: two deposits are two screens, so a gene's count is not collapsed to one |
+| `9000006` | `P9WIE5` named twice beside `4KW5_A`, a PDB chain that reaches no locus: one protein, so one screen of its own. Counting entries read it as a complex |
+| `9000007` | Calls stated, 11,000 inactive and none active: `n_screen_actives` is a real 0, not NULL |
+| `9000008` | 120 stated actives on cyp144, which `CHEMBL9100008` also screened: pins that the actives are the stated ones alone beside two screens, and that the year is the dated paper's |
 
 `extra_evidence.json` carries nine real `orthologue_structures` rows, chosen to
 be the three shapes rather than a sample: folC's two `same_sequence` entries

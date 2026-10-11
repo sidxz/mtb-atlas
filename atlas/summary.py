@@ -174,12 +174,22 @@ screen_reach AS (
     -- gene says so, as it does for structures.
     --
     -- PubChem has no target type, so the nearest thing to the complex rule is the
-    -- count of targets the deposit names: AID 1671185 lists ClpP1 and ClpP2, which
-    -- is ChEMBL's one PROTEIN COMPLEX. A campaign of several assays names the union
-    -- of theirs, so it errs toward not-own. `n_tested` is the deposit's SID count,
-    -- and a sample is not always a compound (AID 1626: 215,397 SIDs, 215,098 CIDs).
+    -- number of distinct proteins the deposit names: AID 1671185 lists ClpP1 and
+    -- ClpP2, which is ChEMBL's one PROTEIN COMPLEX. A protein is told apart by the
+    -- loci it reaches, among the targets that reach any. Counting entries instead
+    -- read a protein named twice (as the AIDs of a declared project can), or beside
+    -- a PDB chain that reaches no locus, as a complex: the real screen moved to
+    -- n_complex_screens and n_target_screens read 0, a false zero. A shared
+    -- accession is one target with several loci, so it stays one protein. A campaign
+    -- of several assays names the union of theirs, so it errs toward not-own.
+    -- `n_tested` is the deposit's SID count, and a sample is not always a compound
+    -- (AID 1626: 215,397 SIDs, 215,098 CIDs).
+    --
+    -- UNION ALL is positional: these columns must match the branch above, in order.
     SELECT r.rv_id, sc.screen_id, sc.n_tested, sc.n_active::BIGINT, sc.year,
-           len(sc.targets) = 1
+           len(list_distinct(list_transform(
+               list_filter(sc.targets, t -> len(t.rv_ids) > 0), t -> t.rv_ids
+           ))) = 1 AS own
     FROM screens sc, UNNEST(sc.targets) AS u(tg), UNNEST(tg.rv_ids) AS r(rv_id)
 ),
 screen_scale AS (
@@ -557,10 +567,14 @@ SCREEN_COLUMNS = """
 """
 # A store built before the screening layer, or one that stopped short of it, has no
 # `screens` or `screen_stages`. Then every screen column is NULL rather than 0: "no
-# screen exists for this gene" and "the layer was never built" are different answers.
-# `assay_sizes` is not the precedent -- built, its 0 is a real answer about a gene; a 0
-# from a table that is not there is not an answer at all. One missing table is as
-# unbuilt as both, because one stage writes them together.
+# screen exists for this gene" and "the layer was never built" are different answers,
+# and a 0 from a table that is not there is not an answer at all. One missing table is
+# as unbuilt as both, because one stage writes them together.
+#
+# This is not yet true of `assay_sizes`: absent, it still reads 0
+# (`test_a_store_without_the_census_still_summarises` pins that), which is the same
+# false answer. The screen columns and the census disagree, and bringing the census
+# into line is a follow-up, not a principle that distinguishes them.
 UNBUILT_SCREEN_COLUMNS = """
     NULL::BIGINT AS n_target_screens,
     NULL::BIGINT AS n_complex_screens,
@@ -742,9 +756,19 @@ def unclassified(*, store: Path | None = None) -> dict[str, tuple[int, int]]:
     Derived rows are left out: a computed ratio is *meant* to be modality `other` and
     stageless, and counted it would hold the share up permanently. PubChem stages have
     no modality (the title names no measurement), so they are not in the modality
+    denominator, but their stage is classified from the title, so they are in the stage
     denominator. `stage` is never NULL on a stage that is not derived --
     `classify_stage` falls through to `primary` -- so the catch-all to watch is
     `primary`, not a NULL.
+
+    What it does and does not detect. `primary` has no pattern of its own and genuine
+    primaries are most of the base, so the share starts high. It catches the other
+    stages' patterns ceasing to match (counter-screens, confirmations and profiling
+    falling to the default), and a move of a few points is the whole signal; it cannot
+    say a primary was mislabelled. `other` is a legitimate label as well as a catch-all
+    (an assay on another organism's protein is `other`). Each is the share of one build
+    and nothing stores the previous one, so it is a delta only if you read it before and
+    after a refresh. Sound signal, weak sensitivity: do not over-trust it.
 
     Empty where the table was never built: no stages is not a share of zero.
     """

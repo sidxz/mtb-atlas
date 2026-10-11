@@ -652,7 +652,9 @@ def campaign_row(
             "across them, counted from the results; the sum would count a substance twice"
         )
     stated = [member for member in members if member["outcome_stated"]]
-    all_unspecified = not stated and all(m["n_unspecified"] == m["n_tested"] for m in members)
+    # A stage that stated calls cannot have every SID unspecified (`normalize_screens` vetoes
+    # the calls when it does), so this is also false for any campaign with a stated stage.
+    all_unspecified = all(m["n_unspecified"] == m["n_tested"] for m in members)
     methods = sorted({member["outcome_method"] for member in members if member["outcome_method"]})
     targets = {(t["accession"], t["name"]): t for member in members for t in member["targets"]}
     return {

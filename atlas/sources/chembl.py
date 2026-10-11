@@ -626,13 +626,14 @@ def campaign_publications(
     return [d for d in documents if meta[d].get("doc_type") == "PUBLICATION"]
 
 
-def _batch_name(batch: Sequence[str]) -> str:
+def _batch_name(batch: Sequence[str], fields: str) -> str:
     """A cache name that follows what the batch holds, not where it sits in the list.
 
     The document list comes from live fetches and differs between builds, so a
-    positional name would serve one batch's pages to another.
+    positional name would serve one batch's pages to another. The columns asked
+    for are part of what a page holds, so they are part of the name.
     """
-    return hashlib.sha1(",".join(batch).encode()).hexdigest()[:10]
+    return hashlib.sha1(f"{','.join(batch)}|{fields}".encode()).hexdigest()[:10]
 
 
 def campaign_assays(documents: Sequence[str], *, force: bool = False) -> list[dict[str, Any]]:
@@ -644,7 +645,7 @@ def campaign_assays(documents: Sequence[str], *, force: bool = False) -> list[di
             "assay",
             f"document_chembl_id__in={','.join(batch)}&only={CAMPAIGN_ASSAY_FIELDS}",
             "assays",
-            f"campaigns/assays-{_batch_name(batch)}",
+            f"campaigns/assays-{_batch_name(batch, CAMPAIGN_ASSAY_FIELDS)}",
             force=force,
         )
     return rows
@@ -659,7 +660,7 @@ def campaign_activities(documents: Sequence[str], *, force: bool = False) -> lis
             "activity",
             f"document_chembl_id__in={','.join(batch)}&only={CAMPAIGN_ACTIVITY_FIELDS}",
             "activities",
-            f"campaigns/activities-{_batch_name(batch)}",
+            f"campaigns/activities-{_batch_name(batch, CAMPAIGN_ACTIVITY_FIELDS)}",
             force=force,
         )
     return rows

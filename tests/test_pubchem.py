@@ -331,8 +331,14 @@ def test_summaries_are_fetched_in_batches_that_cover_every_aid_once(monkeypatch)
     assert [s["AID"] for s in got] == [int(a) for a in aids]
     assert len(calls) == 3
     assert len({dest for _, dest, _ in calls}) == 3
-    # PubChem asks for at most 5 requests a second.
-    assert all(kwargs["min_interval"] >= 0.2 for _, _, kwargs in calls)
+    assert all(kwargs["min_interval"] == pubchem.PACE for _, _, kwargs in calls)
+
+
+def test_the_pace_is_inside_what_eutils_allows_without_an_api_key():
+    """PUG-REST asks for at most 5 requests a second; E-utilities allows 3 without a
+    key, and the AID search and the project links go to E-utilities. PACE was 0.25,
+    which is 4 a second, and this machine has already been edge-blocked once."""
+    assert 1 / pubchem.PACE <= 3
 
 
 def test_a_summary_pubchem_does_not_return_raises_instead_of_dropping_the_campaign(monkeypatch):
@@ -372,7 +378,7 @@ def test_aids_come_back_as_strings_in_the_order_pubchem_gave_them(monkeypatch):
     seen = {}
 
     def fake_fetch(url, dest, **kwargs):
-        seen["url"] = url
+        seen.update(url=url, **kwargs)
         body = {"esearchresult": {"count": "3", "idlist": ["2060911", "375", "1626"]}}
         return _Page(json.dumps(body))
 
@@ -381,6 +387,7 @@ def test_aids_come_back_as_strings_in_the_order_pubchem_gave_them(monkeypatch):
     # reverse of itself: any sort or reversal changes it.
     assert pubchem.fetch_aids() == ["2060911", "375", "1626"]
     assert "txid1773[ORGN]" in seen["url"]
+    assert seen["min_interval"] == pubchem.PACE
 
 
 def test_the_search_carries_the_size_floor_so_only_large_summaries_are_fetched(monkeypatch):
@@ -864,8 +871,13 @@ def test_a_refseq_answer_that_runs_to_a_second_page_raises_instead_of_truncating
     monkeypatch.setattr(
         pubchem, "fetch", lambda *a, **k: _Page(json.dumps(body), headers={"link": link})
     )
-    with pytest.raises(ValueError, match=r"NP_214877.*more than one page.*atlas refresh pubchem"):
+    with pytest.raises(ValueError, match=r"NP_214877.*more than one page") as raised:
         pubchem.fetch_refseq("NP_214877")
+    # Fetching it again returns the same first page, so the usual "re-run with
+    # force" remedy cannot help here. The message has to say what would.
+    message = str(raised.value)
+    assert "force" not in message and "refresh" not in message
+    assert "size" in message and "cursor" in message
 
 
 def test_a_refseq_lookup_is_cached_under_uniprot_and_refuses_a_non_refseq_string(monkeypatch):

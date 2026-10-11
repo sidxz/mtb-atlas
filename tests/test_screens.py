@@ -618,8 +618,8 @@ def test_a_stage_follows_the_modality_read_from_the_target_not_the_prose_alone()
     assert [stages[a] for a in ("CHEMBL102", "CHEMBL103", "CHEMBL104")] == ["profiling"] * 3
 
 
-def _digest(batch: list[str]) -> str:
-    return hashlib.sha1(",".join(batch).encode()).hexdigest()[:10]
+def _digest(batch: list[str], fields: str) -> str:
+    return hashlib.sha1(f"{','.join(batch)}|{fields}".encode()).hexdigest()[:10]
 
 
 @pytest.mark.parametrize(
@@ -660,7 +660,7 @@ def test_a_campaign_is_fetched_by_document_in_batches_of_ten(
     assert [call[0] for call in calls] == [endpoint] * 3
     # The payload key is what `pages` reads out of the response; the wrong one is a KeyError.
     assert [call[2] for call in calls] == [key] * 3
-    assert [call[3] for call in calls] == [f"{dest}-{_digest(batch)}" for batch in batches]
+    assert [call[3] for call in calls] == [f"{dest}-{_digest(batch, fields)}" for batch in batches]
     assert all(call[4] is True for call in calls)
     assert calls[0][1] == f"document_chembl_id__in={','.join(documents[:10])}&only={fields}"
     assert calls[2][1].startswith(f"document_chembl_id__in={','.join(documents[20:])}&")
@@ -687,10 +687,37 @@ def test_a_campaign_batch_is_cached_by_what_it_holds_not_where_it_sits(
     # The second batch alone: same documents, now first in the list.
     chembl.campaign_assays(documents[10:])
     assert dests == [second]
-    dests.clear()
-    # One document changed: a different batch, so a different cache name.
-    chembl.campaign_assays([*documents[10:19], "CHEMBL_NEW"])
-    assert dests[0] not in (first, second)
+    # One document changed, wherever it sits in the batch: a different batch, so a different
+    # cache name. The last position alone would let a name built from the last document pass.
+    for position in (0, 5, 9):
+        dests.clear()
+        changed = documents[10:]
+        changed[position] = "CHEMBL_NEW"
+        chembl.campaign_assays(changed)
+        assert dests[0] not in (first, second), position
+
+
+@pytest.mark.parametrize("fetch_all", [chembl.campaign_assays, chembl.campaign_activities])
+def test_a_campaign_batch_is_cached_by_the_columns_it_asked_for(
+    monkeypatch: pytest.MonkeyPatch, fetch_all
+):
+    """The name must follow the field list as well as the documents. The URL is checked by
+    `fetch` too, but a name that ignores the columns would let two column sets overwrite
+    each other's pages, and a rolled-back list re-download what it already had."""
+    dests: list[str] = []
+    monkeypatch.setattr(
+        chembl, "pages", lambda endpoint, query, key, dest, *, force: dests.append(dest) or []
+    )
+    documents = [f"CHEMBL_DOC{n:02d}" for n in range(10)]
+    fetch_all(documents)
+    monkeypatch.setattr(
+        chembl, "CAMPAIGN_ASSAY_FIELDS", chembl.CAMPAIGN_ASSAY_FIELDS + ",assay_type"
+    )
+    monkeypatch.setattr(
+        chembl, "CAMPAIGN_ACTIVITY_FIELDS", chembl.CAMPAIGN_ACTIVITY_FIELDS + ",activity_type"
+    )
+    fetch_all(documents)
+    assert len(set(dests)) == 2
 
 
 def test_document_meta_is_keyed_by_document_and_keeps_the_type(monkeypatch: pytest.MonkeyPatch):

@@ -59,8 +59,10 @@ from ..fetch import Fetched, fetch
 SOURCE = "pubchem"
 EUTILS = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 PUG = "https://pubchem.ncbi.nlm.nih.gov/rest/pug"
-# PubChem asks for no more than 5 requests a second.
-PACE = 0.25
+# PubChem asks for no more than 5 requests a second, and E-utilities allows 3 without
+# an API key. The AID search and the project links go to E-utilities, so this is the
+# stricter of the two.
+PACE = 0.34
 # Taxonomy 1773 is M. tuberculosis. [ORGN] explodes to the strains beneath it.
 MTB_TAXON = "1773"
 # The campaigns worth their download, in SIDs. The floor is this atlas's choice:
@@ -452,8 +454,9 @@ def fetch_refseq(accession: str, *, force: bool = False) -> list[str]:
     # more. A cut list would leave a locus unmatched with nothing to say why.
     if 'rel="next"' in page.headers.get("link", ""):
         raise ValueError(
-            f"UniProt answered {accession} with more than one page of accessions. "
-            f"The response is cached already, so a re-run reads it back: {_REMEDY}"
+            f"UniProt answered {accession} with more than one page of accessions. Fetching it "
+            "again returns the same first page; `fetch_refseq` has to ask for a larger `size` "
+            "(UniProt allows 500) or follow the cursor in the `Link` header."
         )
     return [hit["primaryAccession"] for hit in json.loads(page.text)["results"]]
 

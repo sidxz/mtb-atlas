@@ -50,6 +50,13 @@ KEYS: dict[str, tuple[str, ...]] = {
     "trials": ("nct_id",),
     "drug_genes": ("molecule_chembl_id", "rv_id", "link"),
     "trial_drugs": ("nct_id", "molecule_chembl_id"),
+    "screens": ("screen_id",),
+    "screen_stages": ("stage_id",),
+    # A PubChem row has a `result_tag` and a NULL `activity_id`; a ChEMBL row the
+    # reverse. That is sound here because EXCEPT treats two NULLs as equal, though
+    # `NULL = NULL` is not true, so a row with a NULL in its key still compares.
+    # Not the compound and not the SID, which both repeat: see `pubchem.RESULT_KEY`.
+    "screen_results": ("stage_id", "result_tag", "activity_id"),
     "target_summary": ("rv_id",),
 }
 

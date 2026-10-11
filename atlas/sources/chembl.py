@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from ..fetch import RAW, Fetched, fetch, fetch_json, fetch_json_many
-from ..store import write_parquet
+from ..store import stamp, write_parquet
 
 SOURCE = "chembl"
 # Where fetch() put the mapping file, which names the release in its first line.
@@ -731,6 +731,161 @@ def normalize_campaign_assays(
             }
         )
     return rows
+
+
+def _tested(
+    stages: Iterable[Mapping[str, Any]], activities: Iterable[Mapping[str, Any]]
+) -> dict[str, set[str]]:
+    """Stage id -> the compounds with an activity recorded in it, for the stages given.
+
+    An activity in an assay that is not one of the stages is dropped: the document query
+    can return assays the stage list does not hold, and they belong to no campaign here.
+    """
+    tested: dict[str, set[str]] = {stage["stage_id"]: set() for stage in stages}
+    for row in activities:
+        stage_id = f"chembl:{row.get('assay_chembl_id')}"
+        if stage_id in tested and row.get("molecule_chembl_id"):
+            tested[stage_id].add(row["molecule_chembl_id"])
+    return tested
+
+
+def stamp_stage_counts(
+    stages: Sequence[dict[str, Any]], activities: Iterable[Mapping[str, Any]]
+) -> list[dict[str, Any]]:
+    """Fill each stage's `n_tested`. `n_active` stays None: ChEMBL states no calls.
+
+    Left unset by `normalize_campaign_assays`, which has not seen the activities yet.
+    A stage with no activity on record has tested no compound that ChEMBL knows of: 0.
+    """
+    tested = _tested(stages, activities)
+    for stage in stages:
+        stage["n_tested"] = len(tested[stage["stage_id"]])
+    return list(stages)
+
+
+def campaign_screens(
+    stages: Sequence[Mapping[str, Any]],
+    activities: Iterable[Mapping[str, Any]],
+    documents: Mapping[str, Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """One campaign row per document.
+
+    `outcome_stated` is false for every ChEMBL campaign: ChEMBL stores values, not
+    activity calls, so `n_active` is NULL rather than 0 here. What exists is a count of
+    compounds tested, which is a count of rows and not a claim about what worked, and
+    all of them are `n_unspecified`: that is what keeps the four outcome counts summing
+    to `n_tested` on both sources' rows.
+
+    The key set is `pubchem.normalize_screens`'s, with the PubChem-only fields NULL or
+    empty, so that the two fill one table. A document with no record raises: a missing
+    one is a lost fetch, and a campaign with a guessed title and type is not a campaign.
+    """
+    tested = _tested(stages, activities)
+    by_screen: dict[str, list[Mapping[str, Any]]] = {}
+    for stage in stages:
+        by_screen.setdefault(stage["screen_id"], []).append(stage)
+
+    rows = []
+    for screen_id, members in sorted(by_screen.items()):
+        document_id = members[0]["document_chembl_id"]
+        document = documents[document_id]
+        compounds = set().union(*(tested[stage["stage_id"]] for stage in members))
+        rows.append(
+            {
+                "screen_id": screen_id,
+                "aid": None,
+                "title": document.get("title"),
+                "depositor": "Scientific Literature",
+                "deposit_kind": (document.get("doc_type") or "").lower() or None,
+                "library_name": None,
+                "library_size_stated": None,
+                "year": document.get("year"),
+                "n_stages": len(members),
+                "n_tested": len(compounds),
+                "n_active": None,
+                "n_inactive": None,
+                "n_inconclusive": None,
+                "n_unspecified": len(compounds),
+                "outcome_stated": False,
+                # PubChem's `Method`, which ChEMBL has no equivalent of.
+                "outcome_method": None,
+                "stages_source": "from_prose",
+                "project_declared": False,
+                "modalities": sorted({stage["modality"] for stage in members}),
+                "document_chembl_id": document_id,
+                "pubmed_id": document.get("pubmed_id"),
+                "targets": [],
+                "licence": "CC BY-SA 3.0",
+            }
+        )
+    return rows
+
+
+def campaign_results(
+    stages: Sequence[Mapping[str, Any]], activities: Iterable[Mapping[str, Any]]
+) -> list[dict[str, Any]]:
+    """One row per activity ChEMBL records in a campaign's assay.
+
+    ChEMBL states no outcome, so `outcome` is NULL. The key set is
+    `pubchem.normalize_results`'s, the PubChem columns empty, and a row is told from its
+    neighbours by `activity_id`. `standard_value` is converted: the API sends a string.
+    """
+    stage_screen = {stage["stage_id"]: stage["screen_id"] for stage in stages}
+    rows = []
+    for row in activities:
+        stage_id = f"chembl:{row.get('assay_chembl_id')}"
+        if stage_id not in stage_screen or not row.get("molecule_chembl_id"):
+            continue
+        rows.append(
+            {
+                "stage_id": stage_id,
+                "screen_id": stage_screen[stage_id],
+                "pubchem_cid": None,
+                "pubchem_sid": None,
+                "molecule_chembl_id": row["molecule_chembl_id"],
+                "outcome": None,
+                "activity_score": None,
+                "endpoint": row.get("standard_type"),
+                "standard_value": _float(row.get("standard_value")),
+                "standard_units": row.get("standard_units"),
+                "standard_relation": row.get("standard_relation"),
+                "result_tag": None,
+                "activity_id": row.get("activity_id"),
+            }
+        )
+    return rows
+
+
+def build_campaigns(
+    activities: Iterable[Mapping[str, Any]], *, retrieved_at: str, force: bool = False
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """The literature campaigns as (screens, stages, results), stamped as ChEMBL's.
+
+    `activities` are rows with `evidence` and `document_chembl_id`; the documents that
+    reported whole-cell activity are the candidates. Publications only, and the filter
+    runs before any activity is fetched: a dataset can hold 1.4 million rows. The
+    rest are PubChem's to bring in. The rows are stamped here, not by the table's
+    writer, because `screens` is shared with PubChem and one stamp would be wrong for
+    one of them.
+    """
+    candidates = campaign_documents(activities)
+    meta = campaign_document_meta(candidates)
+    documents = campaign_publications(candidates, meta)
+    assays = campaign_assays(documents, force=force)
+    acts = campaign_activities(documents, force=force)
+    stages = stamp_stage_counts(normalize_campaign_assays(assays, campaign_targets(assays)), acts)
+    print(
+        f"  chembl campaigns: {len(documents)} publications of {len(candidates)} candidate "
+        f"documents ({len(candidates) - len(documents)} left to PubChem), {len(stages)} stages, "
+        f"{len(acts):,} activities",
+        file=sys.stderr,
+    )
+    label = {"source": SOURCE, "source_version": release_from_api(), "retrieved_at": retrieved_at}
+    return (
+        list(stamp(campaign_screens(stages, acts, meta), **label)),
+        list(stamp(stages, **label)),
+        list(stamp(campaign_results(stages, acts), **label)),
+    )
 
 
 def annotate_activities(

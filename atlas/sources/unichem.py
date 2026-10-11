@@ -19,7 +19,7 @@ to the store from it. It is a lookup that the PubChem ingester consumes.
 from __future__ import annotations
 
 import gzip
-from collections.abc import Iterator
+from collections.abc import Container, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -72,7 +72,7 @@ def normalize(path: Path) -> Iterator[dict[str, Any]]:
         yield {"molecule_chembl_id": chembl_id, "pubchem_cid": cid}
 
 
-def chembl_by_cid(path: Path) -> dict[str, str]:
+def chembl_by_cid(path: Path, *, only: Container[str] | None = None) -> dict[str, str]:
     """CID -> ChEMBL id, for stamping a ChEMBL identity onto a PubChem result.
 
     Keyed on the CID side because that is the unique side of the relation. In
@@ -81,10 +81,16 @@ def chembl_by_cid(path: Path) -> dict[str, str]:
     across the 2,832,793 pairs, which is what makes this dict lossless. A CID
     that does map to two ChEMBL ids raises, rather than keeping one of them: that
     uniqueness is asserted here, not assumed.
+
+    `only` keeps the CIDs that are wanted and drops the rest as they stream past,
+    so the 2.8M-pair dict is never built for a table that touches a fraction of it.
+    A collision on a CID outside `only` is not checked: nothing reads that pair.
     """
     out: dict[str, str] = {}
     for row in normalize(path):
         cid, chembl_id = row["pubchem_cid"], row["molecule_chembl_id"]
+        if only is not None and cid not in only:
+            continue
         seen = out.get(cid)
         if seen is not None and seen != chembl_id:
             raise ValueError(

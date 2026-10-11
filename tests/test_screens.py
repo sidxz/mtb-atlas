@@ -783,3 +783,637 @@ def test_campaign_documents_are_sorted_and_unique():
         {"evidence": "whole_cell", "document_chembl_id": d} for d in [*documents, *documents[:2]]
     ]
     assert campaign_documents(activities) == sorted(documents)
+
+
+# --- the three tables -----------------------------------------------------------
+#
+# ChEMBL's rows and PubChem's go into one file per table, so they must carry one set of
+# keys: DuckDB types a column from the rows it sees, and a key that only some rows carry
+# is NULL for all of them with no error. The sets below are the contract, spelled out.
+
+SCREEN_KEYS = {
+    "screen_id",
+    "aid",
+    "title",
+    "depositor",
+    "deposit_kind",
+    "library_name",
+    "library_size_stated",
+    "year",
+    "n_stages",
+    "n_tested",
+    "n_active",
+    "n_inactive",
+    "n_inconclusive",
+    "n_unspecified",
+    "outcome_stated",
+    "outcome_method",
+    "stages_source",
+    "project_declared",
+    "modalities",
+    "document_chembl_id",
+    "pubmed_id",
+    "targets",
+    "licence",
+}
+STAGE_KEYS = {
+    "stage_id",
+    "screen_id",
+    "assay_chembl_id",
+    "document_chembl_id",
+    "stage",
+    "modality",
+    "description",
+    "target_chembl_id",
+    "target_type",
+    "target_organism",
+    "derived",
+    "assay_condition",
+    "strain",
+    "n_tested",
+    "n_active",
+}
+RESULT_KEYS = {
+    "stage_id",
+    "screen_id",
+    "pubchem_cid",
+    "pubchem_sid",
+    "molecule_chembl_id",
+    "outcome",
+    "activity_score",
+    "endpoint",
+    "standard_value",
+    "standard_units",
+    "standard_relation",
+    "result_tag",
+    "activity_id",
+}
+
+
+def _documents() -> dict[str, dict]:
+    return {
+        "CHEMBL_DOC1": {
+            "year": 2019,
+            "title": "A paper",
+            "doc_type": "PUBLICATION",
+            "pubmed_id": "12345",
+        }
+    }
+
+
+def _activities() -> list[dict]:
+    """ChEMBL sends `standard_value` as a string."""
+    return [
+        {
+            "activity_id": 11,
+            "assay_chembl_id": "CHEMBL100",
+            "molecule_chembl_id": "M1",
+            "standard_type": "MIC",
+            "standard_relation": "=",
+            "standard_value": "0.5",
+            "standard_units": "ug.mL-1",
+        },
+        {
+            "activity_id": 12,
+            "assay_chembl_id": "CHEMBL100",
+            "molecule_chembl_id": "M2",
+            "standard_type": "MIC",
+            "standard_relation": ">",
+            "standard_value": "100.0",
+            "standard_units": "ug.mL-1",
+        },
+        {
+            "activity_id": 13,
+            "assay_chembl_id": "CHEMBL102",
+            "molecule_chembl_id": "M1",
+            "standard_type": "CC50",
+            "standard_relation": "=",
+            "standard_value": "20.0",
+            "standard_units": "uM",
+        },
+    ]
+
+
+def _stages() -> list[dict]:
+    assays, targets = _campaign()
+    return normalize_campaign_assays(assays, targets)
+
+
+def test_a_campaign_row_counts_its_stages_and_states_where_they_came_from():
+    screens = chembl.campaign_screens(_stages(), _activities(), _documents())
+    assert len(screens) == 1
+    screen = screens[0]
+    assert screen["screen_id"] == "chembl:CHEMBL_DOC1"
+    assert screen["deposit_kind"] == "publication"
+    assert (screen["n_stages"], screen["n_tested"]) == (7, 2)
+    assert (screen["title"], screen["year"], screen["pubmed_id"]) == ("A paper", 2019, "12345")
+    assert screen["document_chembl_id"] == "CHEMBL_DOC1"
+    assert (screen["depositor"], screen["licence"]) == ("Scientific Literature", "CC BY-SA 3.0")
+    # ChEMBL states no activity call anywhere, so there is none to report.
+    assert screen["outcome_stated"] is False
+    assert screen["n_active"] is None
+    assert screen["n_inactive"] is None
+    assert screen["n_inconclusive"] is None
+    assert screen["outcome_method"] is None
+    # Classified from the depositor's prose, and the table says so.
+    assert screen["stages_source"] == "from_prose"
+    assert screen["project_declared"] is False
+    # A paper has no AID and no single target, and a literature campaign has no library.
+    assert screen["aid"] is None
+    assert screen["targets"] == []
+    assert (screen["library_name"], screen["library_size_stated"]) == (None, None)
+
+
+def test_every_compound_of_a_literature_campaign_is_unspecified_not_missing():
+    """With no calls stated, all `n_tested` compounds are in the one bucket that says so.
+    That keeps `n_active + n_inactive + n_inconclusive + n_unspecified == n_tested` true on
+    both sides, which is what makes a partial deposit detectable."""
+    screen = chembl.campaign_screens(_stages(), _activities(), _documents())[0]
+    assert screen["n_unspecified"] == screen["n_tested"] == 2
+
+
+def test_the_modalities_a_campaign_reached_are_listed_not_scored():
+    screen = chembl.campaign_screens(_stages(), [], _documents())[0]
+    assert screen["modalities"] == [
+        "adme",
+        "biochemical_mtb",
+        "in_vivo_efficacy",
+        "mammalian_cytotox",
+        "other",
+        "other_pathogen",
+        "phenotypic_mtb",
+    ]
+    # A list, so a reader can see what was measured. No count is summed into
+    # a completeness figure.
+    assert "completeness" not in screen
+    assert "score" not in screen
+    assert screen["n_tested"] == screen["n_unspecified"] == 0
+
+
+def test_a_campaign_whose_document_record_is_missing_is_an_error_not_a_guess():
+    with pytest.raises(KeyError, match="CHEMBL_DOC1"):
+        chembl.campaign_screens(_stages(), _activities(), {})
+
+
+def test_a_stage_counts_the_compounds_tested_in_its_own_assay():
+    stages = chembl.stamp_stage_counts(_stages(), _activities())
+    counts = {stage["assay_chembl_id"]: stage["n_tested"] for stage in stages}
+    assert counts["CHEMBL100"] == 2
+    assert counts["CHEMBL102"] == 1
+    # An assay with no activity row has no compound on record, which is a count of zero.
+    assert counts["CHEMBL101"] == 0
+    # ChEMBL states no calls, so there is no count of actives: NULL, never 0.
+    assert {stage["n_active"] for stage in stages} == {None}
+
+
+def test_a_compound_measured_twice_in_one_assay_is_tested_once():
+    activities = [*_activities(), {**_activities()[0], "activity_id": 99, "standard_type": "MBC"}]
+    stages = chembl.stamp_stage_counts(_stages(), activities)
+    assert {s["assay_chembl_id"]: s["n_tested"] for s in stages}["CHEMBL100"] == 2
+
+
+def test_an_activity_outside_the_campaigns_assays_is_not_counted():
+    stray = {"activity_id": 77, "assay_chembl_id": "CHEMBL999", "molecule_chembl_id": "M9"}
+    stages = chembl.stamp_stage_counts(_stages(), [*_activities(), stray])
+    assert sum(stage["n_tested"] for stage in stages) == 3
+    screen = chembl.campaign_screens(stages, [*_activities(), stray], _documents())[0]
+    assert screen["n_tested"] == 2
+
+
+def test_a_results_row_is_one_activity_with_the_value_as_a_number():
+    stages = _stages()
+    rows = chembl.campaign_results(stages, _activities())
+    assert [row["activity_id"] for row in rows] == [11, 12, 13]
+    first, censored, cytotox = rows
+    assert first["stage_id"] == "chembl:CHEMBL100"
+    assert first["screen_id"] == "chembl:CHEMBL_DOC1"
+    assert first["molecule_chembl_id"] == "M1"
+    # ChEMBL sends "0.5". A string in some rows and a float in others is a column DuckDB
+    # cannot type, and PubChem's side is a float.
+    assert first["standard_value"] == 0.5
+    assert isinstance(first["standard_value"], float)
+    assert (first["endpoint"], first["standard_relation"], first["standard_units"]) == (
+        "MIC",
+        "=",
+        "ug.mL-1",
+    )
+    # `>` 100 is a bound, stored with its relation and not as a measurement.
+    assert (censored["standard_relation"], censored["standard_value"]) == (">", 100.0)
+    assert (cytotox["stage_id"], cytotox["endpoint"]) == ("chembl:CHEMBL102", "CC50")
+
+
+def test_chembl_states_no_outcome_and_the_pubchem_columns_are_empty():
+    for row in chembl.campaign_results(_stages(), _activities()):
+        assert row["outcome"] is None
+        assert row["activity_score"] is None
+        assert row["pubchem_cid"] is None
+        assert row["pubchem_sid"] is None
+        assert row["result_tag"] is None
+
+
+def test_an_activity_with_no_compound_or_no_campaign_assay_has_no_results_row():
+    activities = [
+        *_activities(),
+        {"activity_id": 20, "assay_chembl_id": "CHEMBL100", "molecule_chembl_id": None},
+        {"activity_id": 21, "assay_chembl_id": "CHEMBL999", "molecule_chembl_id": "M1"},
+    ]
+    assert [row["activity_id"] for row in chembl.campaign_results(_stages(), activities)] == [
+        11,
+        12,
+        13,
+    ]
+
+
+def _patch_chembl_network(monkeypatch: pytest.MonkeyPatch, calls: dict) -> None:
+    meta = {
+        "CHEMBL_DOC1": _documents()["CHEMBL_DOC1"],
+        "CHEMBL3988442": {"doc_type": "DATASET", "title": "A library", "year": None},
+    }
+    assays, targets = _campaign()
+
+    def fake_meta(documents):
+        calls["meta"] = list(documents)
+        return meta
+
+    def fake_assays(documents, *, force):
+        calls["assays"] = (list(documents), force)
+        return assays
+
+    def fake_activities(documents, *, force):
+        calls["activities"] = (list(documents), force)
+        return _activities()
+
+    monkeypatch.setattr(chembl, "campaign_document_meta", fake_meta)
+    monkeypatch.setattr(chembl, "campaign_assays", fake_assays)
+    monkeypatch.setattr(chembl, "campaign_activities", fake_activities)
+    monkeypatch.setattr(chembl, "campaign_targets", lambda assays: targets)
+    monkeypatch.setattr(chembl, "release_from_api", lambda: "ChEMBL_37 (2026-05-01)")
+
+
+def test_only_publications_have_their_activities_fetched_and_the_rows_say_chembl(monkeypatch):
+    """CHEMBL3988442 is a DATASET with 1,413,047 activity rows: one batch of ten documents
+    pages over it ~1,414 times. The filter has to come before the fetch, and the dataset
+    reaches the store through PubChem."""
+    calls: dict = {}
+    _patch_chembl_network(monkeypatch, calls)
+    whole_cell = [
+        {"evidence": "whole_cell", "document_chembl_id": "CHEMBL_DOC1"},
+        {"evidence": "whole_cell", "document_chembl_id": "CHEMBL3988442"},
+        {"evidence": "direct", "document_chembl_id": "CHEMBL_OTHER"},
+    ]
+    screens, stages, results = chembl.build_campaigns(
+        whole_cell, retrieved_at="2026-10-11", force=True
+    )
+    assert calls["meta"] == ["CHEMBL3988442", "CHEMBL_DOC1"]
+    assert calls["assays"] == (["CHEMBL_DOC1"], True)
+    assert calls["activities"] == (["CHEMBL_DOC1"], True)
+    assert [row["screen_id"] for row in screens] == ["chembl:CHEMBL_DOC1"]
+    assert len(stages) == 7 and len(results) == 3
+    assert {s["assay_chembl_id"]: s["n_tested"] for s in stages}["CHEMBL100"] == 2
+    # Each row says where it came from: this is a ChEMBL paper, whatever ingester wrote it.
+    for row in [*screens, *stages, *results]:
+        assert row["source"] == "chembl"
+        assert row["source_version"] == "ChEMBL_37 (2026-05-01)"
+        assert row["retrieved_at"] == "2026-10-11"
+
+
+def test_a_lost_document_record_stops_the_campaign_build(monkeypatch):
+    calls: dict = {}
+    _patch_chembl_network(monkeypatch, calls)
+    monkeypatch.setattr(chembl, "campaign_document_meta", lambda documents: {})
+    whole_cell = [{"evidence": "whole_cell", "document_chembl_id": "CHEMBL_DOC1"}]
+    with pytest.raises(RuntimeError, match="CHEMBL_DOC1"):
+        chembl.build_campaigns(whole_cell, retrieved_at="2026-10-11")
+    assert "activities" not in calls
+
+
+class _Downloaded:
+    """What `pubchem.fetch_results` returns, as far as `build` reads it."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+
+
+def _eutils(aid: str, members: list[str]) -> dict:
+    """An eLink answer for `aid`: a linkset naming the AID, with its project's members."""
+    linkset = {"ids": [aid]}
+    if members:
+        linkset["linksetdbs"] = [{"links": members}]
+    return {"linksets": [linkset]}
+
+
+def _fake_pubchem(monkeypatch, tmp_path: Path, *, project: list[str] | None = None) -> dict:
+    """Two campaigns' worth of PubChem, from the committed fixtures and no network.
+
+    The result files are trimmed to five rows each, so their summary counts are trimmed to
+    match: AID 1626 has 5 SIDs (2 active, 2 inactive, 1 inconclusive) and AID 1671170 has
+    3 (a SID on two rows, a second SID on two, and one with no CID).
+    """
+    from atlas.sources import pubchem
+
+    base = {
+        s["AID"]: s
+        for s in json.loads((FIXTURES / "pubchem_aid_summary.json").read_text())["AssaySummaries"][
+            "AssaySummary"
+        ]
+    }
+    summaries = [
+        {
+            **base[1626],
+            "SIDCountAll": 5,
+            "SIDCountActive": 2,
+            "SIDCountInactive": 2,
+            "SIDCountInconclusive": 1,
+            "SIDCountUnspecified": 0,
+        },
+        {**base[1671170], "SIDCountAll": 3, "SIDCountUnspecified": 3},
+    ]
+    files = {
+        "1626": FIXTURES / "pubchem_aid_results.csv",
+        "1671170": FIXTURES / "pubchem_aid_unspecified.csv",
+    }
+    monkeypatch.setattr(pubchem, "fetch_aids", lambda *, force=False: ["1626", "1671170"])
+    monkeypatch.setattr(pubchem, "fetch_summaries", lambda aids, *, force=False: summaries)
+    monkeypatch.setattr(
+        pubchem, "fetch_project", lambda aid, *, force=False: _eutils(aid, project or [])
+    )
+    monkeypatch.setattr(
+        pubchem, "fetch_results", lambda aid, *, force=False: _Downloaded(files[aid])
+    )
+
+    bridge = tmp_path / "bridge.txt"
+    bridge.write_text(
+        "From src:'1'\tTo src:'22'\nCHEMBL1461400\t911287\nCHEMBL533602\t3803930\n"
+        "CHEMBL_NOT_IN_ANY_SCREEN\t999999999\n"
+    )
+    asked: dict = {}
+    real = pubchem.unichem.chembl_by_cid
+
+    def spy(path, *, only=None):
+        asked["only"] = set(only)
+        return real(path, only=only)
+
+    monkeypatch.setattr(pubchem.unichem, "chembl_by_cid", spy)
+    return {"bridge": bridge, "asked": asked, "store": tmp_path / "store"}
+
+
+def _build(monkeypatch, tmp_path: Path, **kwargs):
+    from atlas.sources import pubchem
+
+    env = _fake_pubchem(monkeypatch, tmp_path, **kwargs)
+    _patch_chembl_network(monkeypatch, {})
+    screens, stages, results = chembl.build_campaigns(
+        [{"evidence": "whole_cell", "document_chembl_id": "CHEMBL_DOC1"}],
+        retrieved_at="2026-10-09",
+    )
+    paths = pubchem.build(
+        retrieved_at="2026-10-11",
+        bridge=env["bridge"],
+        rv_by_acc={"P9WFT3": ["Rv2348c"]},
+        extra_screens=screens,
+        extra_stages=stages,
+        extra_results=results,
+        store=env["store"],
+    )
+    return env, paths
+
+
+def _sql(env: dict, query: str) -> list[tuple]:
+    import duckdb
+
+    store = env["store"]
+    for name in ("screens", "screen_stages", "screen_results"):
+        query = query.replace(f"<{name}>", f"'{store / (name + '.parquet')}'")
+    return duckdb.sql(query).fetchall()
+
+
+def test_a_declared_project_is_one_campaign_row_and_no_result_is_orphaned(monkeypatch, tmp_path):
+    """The two PubChem AIDs share a project (synthetic here; 588335 and 588726 do in
+    life), the ChEMBL paper is a third thing. `screen_id` is the table's key, so a row per
+    AID would write the campaign twice, and a result still keyed on its AID would match no
+    campaign at all."""
+    env, paths = _build(monkeypatch, tmp_path, project=["1626", "1671170"])
+    assert [p.name for p in paths] == [
+        "screens.parquet",
+        "screen_stages.parquet",
+        "screen_results.parquet",
+    ]
+    screens = _sql(
+        env,
+        "SELECT screen_id, aid, n_stages, n_tested, project_declared FROM <screens> "
+        "ORDER BY screen_id",
+    )
+    assert screens == [
+        ("chembl:CHEMBL_DOC1", None, 7, 2, False),
+        ("pubchem:project:1626", None, 2, 8, True),
+    ]
+    stages = _sql(env, "SELECT stage_id, screen_id FROM <screen_stages> ORDER BY stage_id")
+    assert [s for s in stages if s[0].startswith("pubchem")] == [
+        ("pubchem:1626", "pubchem:project:1626"),
+        ("pubchem:1671170", "pubchem:project:1626"),
+    ]
+    orphan_results = (
+        "SELECT count(*) FROM <screen_results> r LEFT JOIN <screens> s USING (screen_id)"
+    )
+    assert _sql(env, orphan_results + " WHERE s.screen_id IS NULL") == [(0,)]
+    orphan_stages = (
+        "SELECT count(*) FROM <screen_results> r LEFT JOIN <screen_stages> s USING (stage_id)"
+    )
+    assert _sql(env, orphan_stages + " WHERE s.stage_id IS NULL") == [(0,)]
+    assert _sql(env, "SELECT count(*) FROM <screen_results>") == [(13,)]
+    # A campaign's stage count is the stages it has, in the table.
+    assert _sql(
+        env,
+        "SELECT count(*) FROM <screens> c WHERE n_stages != "
+        "(SELECT count(*) FROM <screen_stages> s WHERE s.screen_id = c.screen_id)",
+    ) == [(0,)]
+
+
+def test_assays_with_no_declared_project_are_each_their_own_campaign(monkeypatch, tmp_path):
+    env, _ = _build(monkeypatch, tmp_path)
+    assert _sql(
+        env, "SELECT screen_id, aid, project_declared FROM <screens> ORDER BY screen_id"
+    ) == [
+        ("chembl:CHEMBL_DOC1", None, False),
+        ("pubchem:1626", "1626", False),
+        ("pubchem:1671170", "1671170", False),
+    ]
+
+
+def test_each_row_says_which_source_it_came_from(monkeypatch, tmp_path):
+    """`provenance()` reads a table's first row, so PubChem's come first: the freshness
+    probe for PubChem compares against that row."""
+    from atlas.store import provenance
+
+    env, _ = _build(monkeypatch, tmp_path)
+    for table in ("screens", "screen_stages", "screen_results"):
+        rows = _sql(env, f"SELECT source, source_version, retrieved_at FROM <{table}>")
+        assert {r[0] for r in rows} == {"pubchem", "chembl"}
+        assert {(r[0], r[1], str(r[2])) for r in rows} == {
+            (
+                "pubchem",
+                "E-utilities txid1773[ORGN] AND 10000:100000000[TSC], 2 AIDs",
+                "2026-10-11",
+            ),
+            ("chembl", "ChEMBL_37 (2026-05-01)", "2026-10-09"),
+        }
+        version, retrieved = provenance(table, store=env["store"])
+        assert version.startswith("E-utilities")
+        assert str(retrieved) == "2026-10-11"
+
+
+def test_the_columns_keep_their_types_when_one_source_leaves_them_empty(monkeypatch, tmp_path):
+    """The ChEMBL rows have no outcome, CID or SID, and the PubChem 1671170 rows no outcome
+    at all. A column that is NULL in what DuckDB sees first types as JSON and stores
+    every later string in quotation marks, so `outcome = 'active'` finds nothing."""
+    import duckdb
+
+    env, _ = _build(monkeypatch, tmp_path)
+
+    def types(table):
+        path = env["store"] / f"{table}.parquet"
+        return dict(
+            duckdb.sql(f"SELECT column_name, column_type FROM (DESCRIBE '{path}')").fetchall()
+        )
+
+    results = types("screen_results")
+    assert results["outcome"] == "VARCHAR"
+    assert results["pubchem_cid"] == results["pubchem_sid"] == "VARCHAR"
+    assert (results["activity_id"], results["result_tag"]) == ("BIGINT", "BIGINT")
+    assert results["standard_value"] == "DOUBLE"
+    assert results["activity_score"] == "BIGINT"
+    screens = types("screens")
+    assert screens["modalities"] == "VARCHAR[]"
+    assert screens["targets"].startswith("STRUCT(") and screens["targets"].endswith("[]")
+    assert (screens["n_active"], screens["n_tested"], screens["year"]) == (
+        "BIGINT",
+        "BIGINT",
+        "BIGINT",
+    )
+    assert _sql(env, "SELECT count(*) FROM <screen_results> WHERE outcome = 'active'") == [(2,)]
+    assert _sql(env, "SELECT count(*) FROM <screen_results> WHERE outcome = 'inactive'") == [(2,)]
+
+
+def test_the_compounds_of_a_campaign_are_bridged_and_only_the_wanted_cids_are_read(
+    monkeypatch, tmp_path
+):
+    env, _ = _build(monkeypatch, tmp_path)
+    # Every CID in either results file, and nothing the bridge happens to hold besides.
+    assert env["asked"]["only"] == {
+        "911287",
+        "135458645",
+        "3803930",
+        "7314608",
+        "56761864",
+        "97398757",
+    }
+    mapped = _sql(
+        env,
+        "SELECT pubchem_cid, molecule_chembl_id FROM <screen_results> "
+        "WHERE stage_id = 'pubchem:1626' ORDER BY result_tag",
+    )
+    assert mapped == [
+        ("911287", "CHEMBL1461400"),
+        ("135458645", None),
+        ("3803930", "CHEMBL533602"),
+        ("7314608", None),
+        ("135458645", None),
+    ]
+
+
+def test_a_target_reaches_the_loci_the_crosswalk_gives_it(monkeypatch, tmp_path):
+    env, _ = _build(monkeypatch, tmp_path)
+    targets = _sql(
+        env,
+        "SELECT targets[1].accession, targets[1].rv_ids, targets[1].accession_kind "
+        "FROM <screens> WHERE screen_id = 'pubchem:1671170'",
+    )
+    assert targets == [("P9WFT3", ["Rv2348c"], "uniprot")]
+    assert _sql(
+        env, "SELECT len(targets) FROM <screens> WHERE screen_id = 'chembl:CHEMBL_DOC1'"
+    ) == [(0,)]
+
+
+def test_a_download_short_of_its_sids_stops_the_build_and_writes_nothing(monkeypatch, tmp_path):
+    """AID 1626's summary counts 6 SIDs but the file holds 5: a truncated download is a
+    successful one, and the screen would read as five compounds nobody else tested."""
+    from atlas.sources import pubchem
+
+    env = _fake_pubchem(monkeypatch, tmp_path)
+    real = pubchem.fetch_summaries
+    summaries = [{**s, "SIDCountAll": 6} if s["AID"] == 1626 else s for s in real([])]
+    monkeypatch.setattr(pubchem, "fetch_summaries", lambda aids, *, force=False: summaries)
+    with pytest.raises(ValueError, match="AID 1626.*5.*6"):
+        pubchem.build(
+            retrieved_at="2026-10-11", bridge=env["bridge"], rv_by_acc={}, store=env["store"]
+        )
+    assert not env["store"].exists()
+
+
+def test_a_chembl_activity_listed_twice_stops_the_build(monkeypatch, tmp_path):
+    from atlas.sources import pubchem
+
+    env = _fake_pubchem(monkeypatch, tmp_path)
+    twice = chembl.campaign_results(_stages(), _activities())[:1] * 2
+    with pytest.raises(ValueError, match="repeats 1 time"):
+        pubchem.build(
+            retrieved_at="2026-10-11",
+            bridge=env["bridge"],
+            rv_by_acc={},
+            extra_results=twice,
+            store=env["store"],
+        )
+
+
+def test_the_diff_compares_a_result_on_the_key_that_tells_rows_apart(tmp_path):
+    """A PubChem row has a NULL `activity_id` and a ChEMBL row a NULL `result_tag`, and EXCEPT
+    treats two NULLs as equal, so the composite key compares. A key that needed `NULL = NULL`
+    to be true would report every row as both added and removed."""
+    from atlas import storediff
+    from atlas.sources import pubchem
+    from atlas.store import write_parquet
+
+    assert storediff.KEYS["screens"] == ("screen_id",)
+    assert storediff.KEYS["screen_stages"] == ("stage_id",)
+    assert storediff.KEYS["screen_results"] == pubchem.RESULT_KEY
+
+    pubchem_rows = list(pubchem.normalize_results(FIXTURES / "pubchem_aid_results.csv", "1626", {}))
+    chembl_rows = chembl.campaign_results(_stages(), _activities())
+    old, new = tmp_path / "old", tmp_path / "new"
+    for store, rows in ((old, pubchem_rows + chembl_rows), (new, pubchem_rows + chembl_rows[:-1])):
+        write_parquet(
+            "screen_results",
+            rows,
+            source="x",
+            source_version="1",
+            retrieved_at="2026-10-11",
+            store=store,
+        )
+    (diff,) = storediff.compare(old, new)
+    assert (diff.before, diff.after, diff.added, diff.removed) == (8, 7, 0, 1)
+    assert diff.examples_removed == ["chembl:CHEMBL102 None 13"]
+
+
+def test_both_sources_emit_one_key_set_per_table():
+    """DuckDB infers the schema from the rows it sees. A column present in only some rows
+    types as NULL for all of them and no error is raised, so a key set that drifts between
+    the two ingesters loses a column quietly. This is the test that stops that."""
+    from atlas.sources import pubchem
+
+    stages = _stages()
+    summaries = json.loads((FIXTURES / "pubchem_aid_summary.json").read_text())
+    summaries = summaries["AssaySummaries"]["AssaySummary"]
+    pubchem_screens = pubchem.normalize_screens(summaries)
+
+    chembl_screens = chembl.campaign_screens(stages, _activities(), _documents())
+    assert set(chembl_screens[0]) == set(pubchem_screens[0]) == SCREEN_KEYS
+    # The campaign row `build` writes is built from the same row, and keeps the set.
+    merged = pubchem.campaign_row("pubchem:project:1", pubchem_screens[:2], declared=True)
+    assert set(merged) == SCREEN_KEYS
+
+    pubchem_stage = pubchem.stage_row(pubchem_screens[0], "pubchem:1626")
+    assert set(stages[0]) == set(pubchem_stage) == STAGE_KEYS
+
+    pubchem_rows = list(pubchem.normalize_results(FIXTURES / "pubchem_aid_results.csv", "1626", {}))
+    chembl_rows = chembl.campaign_results(stages, _activities())
+    assert {frozenset(row) for row in chembl_rows + pubchem_rows} == {frozenset(RESULT_KEYS)}

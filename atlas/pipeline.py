@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import shutil
 import sys
+from collections import defaultdict
 from pathlib import Path
 
 from . import clinical, crosswalk, summary
@@ -32,8 +33,10 @@ from .sources import (
     paralogs,
     pdb,
     precedent,
+    pubchem,
     resistance,
     string_db,
+    unichem,
     uniprot,
     vulnerability,
 )
@@ -129,6 +132,32 @@ def build_evidence(*, force: bool = False) -> list[Path]:
     paths.append(paralogs.build(retrieved_at=retrieved_at, force=force))
     _say("[evidence] orthologue structures (mycobacterial neighbours with a PDB entry)")
     paths.append(orthologue_structures.build(retrieved_at=retrieved_at, force=force))
+    _say("[evidence] screening campaigns (ChEMBL literature, PubChem depositions)")
+    rv_by_acc = defaultdict(list)
+    for accession, rv_id in walk.project("uniprot_acc, rv_id").fetchall():
+        if accession:
+            rv_by_acc[accession].append(rv_id)
+    # Publications only, and the filter runs inside `build_campaigns` before any activity
+    # is fetched. Deposited datasets reach the store through PubChem instead.
+    whole_cell = [
+        {"evidence": "whole_cell", "document_chembl_id": document}
+        for (document,) in read("activities")
+        .filter("evidence = 'whole_cell'")
+        .project("document_chembl_id")
+        .fetchall()
+    ]
+    screens, stages, results = chembl.build_campaigns(
+        whole_cell, retrieved_at=retrieved_at, force=force
+    )
+    paths += pubchem.build(
+        retrieved_at=retrieved_at,
+        bridge=unichem.fetch_raw(force=force).path,
+        rv_by_acc=rv_by_acc,
+        extra_screens=screens,
+        extra_stages=stages,
+        extra_results=results,
+        force=force,
+    )
     _say(f"[evidence] drug precedent for {len(domains)} Pfam domains (ChEMBL mechanisms)")
     paths.append(precedent.build(domains, retrieved_at=retrieved_at, force=force))
     return paths

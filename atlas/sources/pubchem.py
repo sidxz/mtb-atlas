@@ -13,7 +13,8 @@ The first half finds the campaigns: the taxonomy search selects the AIDs, the
 assay summary supplies the counts, and `normalize_screens` turns each into one row.
 The second reads what each campaign found, compound by compound
 (`normalize_results`), the project the depositor declared it part of
-(`group_projects`), and the gene it aims at (`link_targets`).
+(`group_projects`), and the gene it aims at (`link_targets`). `build` joins them, and
+the ChEMBL literature campaigns, into `screens`, `screen_stages` and `screen_results`.
 
 Licence: per depositor, not per database. NCBI's policy puts US-government
 material in the public domain but explicitly carves PubChem out: "resources
@@ -47,6 +48,7 @@ measured on the 28 AIDs of 10,000 or more tested SIDs (2026-10-11):
 from __future__ import annotations
 
 import csv
+import itertools
 import json
 import math
 import re
@@ -55,6 +57,9 @@ from pathlib import Path
 from typing import Any
 
 from ..fetch import Fetched, fetch
+from ..store import stamp, write_stamped
+from . import unichem
+from .chembl import classify_stage
 
 SOURCE = "pubchem"
 EUTILS = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
@@ -314,6 +319,7 @@ def normalize_results(
     # measured needed it (AID 1626 and 1671170 are pure ASCII), and the cost is
     # that a bad byte in a column that IS read (`Standard Type`, `Standard Units`)
     # becomes U+FFFD instead of raising.
+    stage = f"pubchem:{aid}"
     with path.open(encoding="utf-8", errors="replace", newline="") as handle:
         reader = csv.DictReader(handle)
         if missing := [name for name in RESULT_COLUMNS if name not in (reader.fieldnames or [])]:
@@ -331,18 +337,76 @@ def normalize_results(
             cid = _text(row.get("PUBCHEM_CID"))
             score = _text(row.get("PUBCHEM_ACTIVITY_SCORE"))
             yield {
-                "stage_id": f"pubchem:{aid}",
-                "screen_id": screen_id or f"pubchem:{aid}",
+                "stage_id": stage,
+                "screen_id": screen_id or stage,
                 "pubchem_cid": cid,
                 "pubchem_sid": _text(row.get("PUBCHEM_SID")),
                 "molecule_chembl_id": chembl_by_cid.get(cid) if cid else None,
                 "outcome": OUTCOMES[label.lower()],
                 "activity_score": int(score) if score else None,
+                # The row's number in PubChem's own table, which is what tells it from
+                # its neighbours (see `RESULT_KEY`) and finds it again in the raw CSV.
+                # `activity_id` is ChEMBL's equivalent and stays NULL on this side.
+                "result_tag": int(row["PUBCHEM_RESULT_TAG"]),
+                "activity_id": None,
                 "endpoint": _text(row.get("Standard Type")),
                 "standard_value": _number(row.get("Standard Value"), aid),
                 "standard_units": _text(row.get("Standard Units")),
                 "standard_relation": _text(row.get("Standard Relation")),
             }
+
+
+# What a `screen_results` row is known by, and what `atlas diff` compares it on. A
+# PubChem row has a `result_tag` and no `activity_id`; a ChEMBL row has the reverse.
+# `storediff` compares keys with EXCEPT, which treats two NULLs as equal, so a key with
+# one NULL per source is sound there.
+#
+# Not the compound and not the SID. A CID sits under several SIDs that can disagree, and
+# a SID can be measured twice for one endpoint: 21 pairs in AID 1671170 (6 replicate
+# `Percent Effect` rows, 15 SIDs with two `IC50` rows), 15 of them with the same value
+# too, so no choice of content columns separates them. The tag is the row's number in
+# PubChem's table: 1..N and unique in both AIDs measured.
+RESULT_KEY = ("stage_id", "result_tag", "activity_id")
+
+
+def check_result_key(rows: Iterable[Mapping[str, Any]]) -> None:
+    """Raise unless every row has an identity and no two share one.
+
+    The key has been wrong twice, so it is proved on every build rather than trusted.
+    A repeat would otherwise reach `atlas diff` as a row that appears to change when it
+    does not, or as one of two rows that disappears without a count noticing.
+    """
+    seen: set[tuple[Any, ...]] = set()
+    repeats: list[tuple[Any, ...]] = []
+    for row in rows:
+        key = tuple(row[column] for column in RESULT_KEY)
+        if row["result_tag"] is None and row["activity_id"] is None:
+            raise ValueError(f"screen_results row has neither result_tag nor activity_id: {key}")
+        if key in seen:
+            repeats.append(key)
+        seen.add(key)
+    if repeats:
+        raise ValueError(
+            f"screen_results key {RESULT_KEY} repeats {len(repeats):,} times, "
+            f"e.g. {repeats[:3]}. Two rows of one stage share an identity, so `atlas diff` "
+            "could not tell them apart."
+        )
+
+
+def check_complete(aid: str, rows: Sequence[Mapping[str, Any]], expected: int) -> None:
+    """Raise unless the download holds exactly the SIDs the summary counts.
+
+    A truncated download is a successful one: it parses, it has the right header, and
+    nothing else compares it to the summary. Here an absence is an answer, so a screen
+    short of its compounds would read as compounds that were never tested. The count is
+    of distinct SIDs, not rows: 65,646 rows cover AID 1671170's 65,366.
+    """
+    got = len({row["pubchem_sid"] for row in rows if row["pubchem_sid"]})
+    if got != expected:
+        raise ValueError(
+            f"AID {aid}: the download holds {got:,} distinct SIDs but PubChem's summary "
+            f"counts {expected:,}. {_REMEDY}"
+        )
 
 
 # --- the declared ladder -----------------------------------------------------
@@ -500,3 +564,153 @@ def link_targets(
             }
         )
     return out
+
+
+# --- the three tables ---------------------------------------------------------
+#
+# `screens` is one row per campaign, `screen_stages` one per assay within it,
+# `screen_results` one per row of each assay's table. A declared project is one
+# campaign however many of its AIDs reach the floor: AIDs 588335 and 588726 both do.
+
+
+def stage_row(screen: Mapping[str, Any], campaign: str) -> dict[str, Any]:
+    """The `screen_stages` row for one AID, under the campaign it belongs to.
+
+    The key set is `chembl.normalize_campaign_assays`'s, so the two sources fill one
+    table. `modality` is NULL on purpose: a PubChem title names no measurement, and
+    inventing one from it would be a label this pipeline made up rather than one it
+    read. `stage` is read from the title, and `Method` is not used for it: that is how
+    the outcome was called.
+    """
+    return {
+        "stage_id": f"pubchem:{screen['aid']}",
+        "screen_id": campaign,
+        "assay_chembl_id": None,
+        "document_chembl_id": None,
+        "stage": classify_stage(screen["title"]),
+        "modality": None,
+        "description": screen["title"],
+        "target_chembl_id": None,
+        "target_type": None,
+        "target_organism": None,
+        "derived": False,
+        "assay_condition": None,
+        "strain": None,
+        "n_tested": screen["n_tested"],
+        "n_active": screen["n_active"],
+    }
+
+
+def campaign_row(
+    screen_id: str, members: Sequence[Mapping[str, Any]], *, declared: bool
+) -> dict[str, Any]:
+    """One `screens` row from the `normalize_screens` rows of a campaign's AIDs.
+
+    With one AID it is that AID's row under the campaign's id. With several, the
+    biggest names the campaign and states its library size, and the counts are summed
+    over the stages ingested: a compound tested in two of them counts twice here and
+    once on each stage, where `screen_stages` has the figure per assay. The calls are
+    summed over the stages that stated any, so an unstated stage adds to `n_unspecified`
+    and nothing else, and `n_active + n_inactive + n_inconclusive + n_unspecified ==
+    n_tested` still holds. `aid` is NULL when there is no single one to name.
+    """
+    lead = max(members, key=lambda member: member["n_tested"])
+    if len(members) == 1:
+        return {**lead, "screen_id": screen_id, "project_declared": declared}
+    stated = [member for member in members if member["outcome_stated"]]
+
+    def calls(key: str) -> int | None:
+        return sum(member[key] for member in stated) if stated else None
+
+    methods = sorted({member["outcome_method"] for member in members if member["outcome_method"]})
+    targets = {(t["accession"], t["name"]): t for member in members for t in member["targets"]}
+    return {
+        **lead,
+        "screen_id": screen_id,
+        "aid": None,
+        "depositor": "; ".join(sorted({member["depositor"] for member in members})),
+        "n_stages": len(members),
+        "n_tested": sum(member["n_tested"] for member in members),
+        "n_active": calls("n_active"),
+        "n_inactive": calls("n_inactive"),
+        "n_inconclusive": calls("n_inconclusive"),
+        "n_unspecified": sum(member["n_unspecified"] for member in members),
+        "outcome_stated": bool(stated),
+        "outcome_method": "; ".join(methods) or None,
+        "project_declared": declared,
+        "targets": list(targets.values()),
+    }
+
+
+def build(
+    *,
+    retrieved_at: str,
+    bridge: Path,
+    rv_by_acc: Mapping[str, Sequence[str]],
+    extra_screens: Iterable[Mapping[str, Any]] = (),
+    extra_stages: Iterable[Mapping[str, Any]] = (),
+    extra_results: Sequence[Mapping[str, Any]] = (),
+    store: Path | None = None,
+    force: bool = False,
+) -> list[Path]:
+    """The screens tables: PubChem's campaigns, then whatever ChEMBL handed over.
+
+    `bridge` is the UniChem file and `rv_by_acc` the crosswalk's UniProt accession ->
+    Rv ids. The `extra_*` rows are ChEMBL's, already stamped as ChEMBL's, and follow
+    PubChem's: `provenance()` reads a table's first row, and the freshness probe for
+    PubChem compares against it.
+    """
+    aids = fetch_aids(force=force)
+    summaries = normalize_screens(fetch_summaries(aids, force=force))
+    campaign_of = group_projects(
+        {s["aid"]: fetch_project(s["aid"], force=force) for s in summaries}
+    )
+    tables = {s["aid"]: fetch_results(s["aid"], force=force).path for s in summaries}
+
+    # Every check runs before anything is written, one AID's rows in memory at a time
+    # (the largest has 359,484), so a bad download leaves the store as it was. The same
+    # pass collects the CIDs, which cut the bridge: the file has 2,832,793 pairs.
+    cids: set[str] = set()
+    for summary in summaries:
+        aid = summary["aid"]
+        rows = list(normalize_results(tables[aid], aid, {}))
+        check_complete(aid, rows, summary["n_tested"])
+        check_result_key(rows)
+        cids.update(row["pubchem_cid"] for row in rows if row["pubchem_cid"])
+    # A key carries its stage_id, so each source is checked on its own.
+    check_result_key(extra_results)
+    chembl_by_cid = unichem.chembl_by_cid(bridge, only=cids)
+
+    campaigns: dict[str, list[dict[str, Any]]] = {}
+    for summary in summaries:
+        summary["targets"] = link_targets(summary["targets"], rv_by_acc, force=force)
+        campaigns.setdefault(campaign_of[summary["aid"]], []).append(summary)
+    screens = [
+        campaign_row(campaign, members, declared=campaign.startswith("pubchem:project:"))
+        for campaign, members in campaigns.items()
+    ]
+    stages = [stage_row(s, campaign_of[s["aid"]]) for s in summaries]
+
+    def results() -> Iterator[dict[str, Any]]:
+        # Streamed to the writer: the tables hold millions of rows between them.
+        for summary in summaries:
+            aid = summary["aid"]
+            yield from normalize_results(
+                tables[aid], aid, chembl_by_cid, screen_id=campaign_of[aid]
+            )
+
+    # The same statement the probe in `freshness.py` reads, so the comparison is like
+    # with like: every tagged AID, not the subset this build ingested.
+    labels = {
+        "source": SOURCE,
+        "source_version": f"E-utilities {SEARCH_TERM}, {len(aids)} AIDs",
+        "retrieved_at": retrieved_at,
+    }
+    return [
+        write_stamped(name, itertools.chain(stamp(own, **labels), extra), store=store)
+        for name, own, extra in (
+            ("screens", screens, extra_screens),
+            ("screen_stages", stages, extra_stages),
+            ("screen_results", results(), extra_results),
+        )
+    ]

@@ -434,6 +434,10 @@ RESULT_KEYS = {
     "standard_value",
     "standard_units",
     "standard_relation",
+    # How a row is told from its neighbours: PubChem's row in its own datatable, or
+    # ChEMBL's activity. Each source fills one and leaves the other NULL.
+    "result_tag",
+    "activity_id",
 }
 
 
@@ -898,3 +902,181 @@ def test_a_refseq_lookup_is_cached_under_uniprot_and_refuses_a_non_refseq_string
     assert seen["json_body"] is True
     with pytest.raises(ValueError, match="RefSeq"):
         pubchem.fetch_refseq("../../etc/passwd")
+
+
+# --- telling one result row from another --------------------------------------
+#
+# The key a row is known by has been wrong twice. `(stage_id, pubchem_cid,
+# molecule_chembl_id)` repeats because one CID sits under several SIDs. The next
+# candidate, `(stage_id, pubchem_sid, activity_id, endpoint)`, repeats 21 times in
+# AID 1671170 alone, because a SID can be measured twice for the same endpoint
+# (6 replicate `Percent Effect` rows, 15 SIDs with two `IC50` rows). Adding the value
+# does not help: 15 of those pairs repeat the value as well. What does not repeat is
+# `PUBCHEM_RESULT_TAG`, the row's number in PubChem's own table.
+
+
+def test_a_result_row_carries_its_number_in_the_pubchem_table():
+    assert [row["result_tag"] for row in _results()] == [1, 13, 2045, 2046, 2275]
+    assert [row["result_tag"] for row in _unspecified()] == [2227, 2228, 3777, 3778, 65639]
+    assert all(row["activity_id"] is None for row in _results() + _unspecified())
+
+
+def test_the_sid_and_endpoint_do_not_tell_two_rows_apart_but_the_row_number_does():
+    """312400166 is on two `Percent Effect` rows, -1.988 and 1.19: two measurements."""
+    rows = _unspecified()
+    by_sid_and_endpoint = [(row["pubchem_sid"], row["endpoint"]) for row in rows]
+    assert len(set(by_sid_and_endpoint)) < len(rows)
+    pubchem.check_result_key(rows)
+
+
+def test_a_result_key_that_repeats_is_refused_with_the_rows_that_repeat_it():
+    rows = _unspecified()
+    with pytest.raises(ValueError, match=r"repeats 1 time.*pubchem:1671170.*2227") as raised:
+        pubchem.check_result_key([*rows, rows[0]])
+    assert "result_tag" in str(raised.value)
+
+
+def test_a_row_with_neither_a_row_number_nor_an_activity_has_no_identity():
+    row = {**_results()[0], "result_tag": None, "activity_id": None}
+    with pytest.raises(ValueError, match="neither"):
+        pubchem.check_result_key([row])
+
+
+def test_the_same_row_number_in_two_stages_is_two_rows():
+    """Row 1 of AID 1626 and row 1 of AID 1671170 are different rows."""
+    a, b = _results()[0], {**_results()[0], "stage_id": "pubchem:1671170"}
+    pubchem.check_result_key([a, b])
+
+
+def test_a_chembl_row_is_told_by_its_activity():
+    chembl_row = {**_results()[0], "stage_id": "chembl:CHEMBL100", "result_tag": None}
+    pubchem.check_result_key([{**chembl_row, "activity_id": 1}, {**chembl_row, "activity_id": 2}])
+    with pytest.raises(ValueError, match="repeats 1 time"):
+        pubchem.check_result_key([{**chembl_row, "activity_id": 1}] * 2)
+
+
+def test_a_download_is_complete_when_its_distinct_sids_are_the_summarys_count():
+    """65,646 rows cover 65,366 SIDs: the count is of SIDs, so the extra rows are
+    not extra compounds. Five trimmed rows cover three."""
+    rows = _unspecified()
+    assert len(rows) == 5
+    pubchem.check_complete("1671170", rows, 3)
+
+
+@pytest.mark.parametrize("expected", [4, 2])
+def test_a_download_with_fewer_or_more_sids_than_the_summary_counts_raises(expected):
+    """A truncated download is a successful one: it parses, it has the right header,
+    and a screen short of its compounds reads as compounds nobody tested."""
+    with pytest.raises(ValueError, match=rf"AID 1671170.*3.*{expected}.*force=True"):
+        pubchem.check_complete("1671170", _unspecified(), expected)
+
+
+def test_a_row_with_no_sid_is_not_counted_as_a_compound():
+    rows = [{**row, "pubchem_sid": None} for row in _unspecified()]
+    with pytest.raises(ValueError, match="AID 1671170"):
+        pubchem.check_complete("1671170", rows, 3)
+
+
+# --- one campaign, several AIDs ------------------------------------------------
+
+
+def test_a_campaign_of_one_assay_is_that_assays_row_under_the_campaigns_id():
+    row = _rows()["1626"]
+    campaign = pubchem.campaign_row("pubchem:1626", [row], declared=False)
+    assert campaign == row | {"project_declared": False}
+    declared = pubchem.campaign_row("pubchem:project:435019", [row], declared=True)
+    assert declared["screen_id"] == "pubchem:project:435019"
+    assert declared["project_declared"] is True
+    # The one ingested assay is still the campaign's assay, and findable by its AID.
+    assert declared["aid"] == "1626"
+    assert declared["n_stages"] == 1
+
+
+def test_two_assays_of_one_project_are_one_campaign_row():
+    """AIDs 588335 and 588726 both reach 10,000 SIDs and share a declared project: two
+    `screens` rows under one `screen_id` would break the table's key.
+
+    The counts are summed over the stages that were ingested, so a compound tested in
+    both counts twice here and once on each stage. The calls are summed from the stages
+    that stated any: an unstated stage adds to `n_unspecified` and to nothing else."""
+    rows = _rows()
+    called, uncalled = rows["1626"], rows["1671170"]
+    campaign = pubchem.campaign_row("pubchem:project:1626", [uncalled, called], declared=True)
+    assert campaign["screen_id"] == "pubchem:project:1626"
+    assert campaign["n_stages"] == 2
+    assert campaign["aid"] is None
+    assert campaign["n_tested"] == 215397 + 65366
+    assert campaign["outcome_stated"] is True
+    assert (campaign["n_active"], campaign["n_inactive"], campaign["n_inconclusive"]) == (
+        2044,
+        209843,
+        3510,
+    )
+    assert campaign["n_unspecified"] == 65366
+    parts = ("n_active", "n_inactive", "n_inconclusive", "n_unspecified")
+    assert sum(campaign[part] for part in parts) == campaign["n_tested"]
+    # The biggest stage names the campaign and states its library size.
+    assert campaign["title"] == called["title"]
+    assert campaign["library_size_stated"] == 216163
+    assert campaign["depositor"] == "ChEMBL; SRMLSC"
+    assert campaign["outcome_method"] == "confirmatory"
+    assert campaign["targets"] == uncalled["targets"]
+
+
+def test_a_campaign_none_of_whose_assays_stated_a_call_states_none():
+    rows = _rows()
+    campaign = pubchem.campaign_row(
+        "pubchem:project:1671170", [rows["1671170"], rows["1671178"]], declared=True
+    )
+    assert campaign["outcome_stated"] is False
+    assert (campaign["n_active"], campaign["n_inactive"], campaign["n_inconclusive"]) == (
+        None,
+        None,
+        None,
+    )
+    assert campaign["n_unspecified"] == campaign["n_tested"] == 65366 + 66592
+
+
+def test_a_campaign_lists_a_target_once_however_many_of_its_assays_name_it():
+    rows = _rows()
+    twin = {**rows["2060911"], "aid": "2060912"}
+    campaign = pubchem.campaign_row(
+        "pubchem:project:2060911", [rows["2060911"], twin], declared=True
+    )
+    assert len(campaign["targets"]) == 1
+
+
+def test_a_stage_is_the_assay_and_carries_the_campaign_it_belongs_to():
+    stage = pubchem.stage_row(_rows()["1671170"], "pubchem:project:435019")
+    assert stage["stage_id"] == "pubchem:1671170"
+    assert stage["screen_id"] == "pubchem:project:435019"
+    assert (stage["n_tested"], stage["n_active"]) == (65366, None)
+    # The title names no measurement, so no modality is invented from it.
+    assert stage["modality"] is None
+    assert stage["stage"] == "primary"
+    assert stage["derived"] is False
+    assert stage["description"] == _rows()["1671170"]["title"]
+
+
+def test_a_counter_screen_title_is_a_counter_screen_stage():
+    row = {**_rows()["1626"], "title": "Counterscreen for inhibitors in Vero cells"}
+    assert pubchem.stage_row(row, "pubchem:1626")["stage"] == "counter_screen"
+
+
+def test_the_unichem_dict_can_be_cut_to_the_cids_that_are_wanted():
+    """The full file is 2,832,793 pairs, a few hundred MB as a dict, for a screens
+    table that touches a fraction of them."""
+    path = FIXTURES / "unichem_src1src22.txt"
+    assert unichem.chembl_by_cid(path, only={"962", "24850", "not-in-the-file"}) == {
+        "962": "CHEMBL1098659",
+        "24850": "CHEMBL3833402",
+    }
+    assert unichem.chembl_by_cid(path, only=set()) == {}
+
+
+def test_a_collision_on_a_cid_nobody_asked_about_is_not_this_builds_problem(tmp_path):
+    path = tmp_path / "collision.txt"
+    path.write_text("From src:'1'\tTo src:'22'\nCHEMBL1\t5\nCHEMBL2\t5\nCHEMBL3\t6\n")
+    assert unichem.chembl_by_cid(path, only={"6"}) == {"6": "CHEMBL3"}
+    with pytest.raises(ValueError, match="CID 5"):
+        unichem.chembl_by_cid(path, only={"5"})

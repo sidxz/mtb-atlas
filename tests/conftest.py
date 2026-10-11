@@ -329,8 +329,9 @@ def evidence_store(store: Path) -> Path:
             (9000001, "A biochemical screen of PanD", ["P9WIL3"], 0, 0),
             # One UniProt entry that two loci share (pks3, pks4), with calls.
             (9000002, "A biochemical screen of a shared entry", ["A0A089QRB9"], 7, 9_000),
-            # Two proteins, as AID 1671185 lists ClpP1 and ClpP2: the complex.
-            (9000003, "A biochemical screen of a pair", ["P9WPC3", "P9WPC5"], 0, 0),
+            # Two proteins, as AID 1671185 lists ClpP1 and ClpP2: the complex. Its 5 stated
+            # actives belong to the pair and to neither subunit.
+            (9000003, "A biochemical screen of a pair", ["P9WPC3", "P9WPC5"], 5, 100),
             # A whole-cell deposit has no Target key at all.
             (9000004, "A whole-cell screen", [], 100, 11_000),
             # A second, separate deposit on the same protein as 9000001.

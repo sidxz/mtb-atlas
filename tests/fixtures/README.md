@@ -85,7 +85,7 @@ names its target on the campaign, and its stages carry no ChEMBL target:
 |---|---|
 | `9000001` | One protein (`P9WIL3`, panD), 12,000 SIDs, every one `Unspecified`: the TrpRS shape. A screen that reaches the gene, with `n_screen_actives` NULL |
 | `9000002` | One UniProt entry two loci share (`A0A089QRB9`: pks3, pks4), with 7 stated actives: both loci carry the screen and the actives, and `shared_accession` says why |
-| `9000003` | Two targets (`P9WPC3`, `P9WPC5`), as AID 1671185 lists ClpP1 and ClpP2: PubChem has no target type, so a deposit naming two proteins is the complex |
+| `9000003` | Two targets (`P9WPC3`, `P9WPC5`), as AID 1671185 lists ClpP1 and ClpP2: PubChem has no target type, so a deposit naming two proteins is the complex, and its 5 stated actives belong to neither subunit |
 | `9000004` | No `Target` key, as the 12 whole-cell AIDs: reaches no gene. Its stage has no modality, which the unclassified-share counters must not read as `other` |
 | `9000005` | A second deposit on the same protein as `9000001`: two deposits are two screens, so a gene's count is not collapsed to one |
 | `9000006` | `P9WIE5` named twice beside `4KW5_A`, a PDB chain that reaches no locus: one protein, so one screen of its own. Counting entries read it as a complex |

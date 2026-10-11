@@ -254,6 +254,7 @@ def test_a_complex_stage_is_counted_apart_from_the_genes_own_screens(rows: dict)
         assert rows[rv_id]["n_target_screens"] == 0
         assert rows[rv_id]["n_complex_screens"] == 2  # ChEMBL's stage, PubChem's deposit
         assert rows[rv_id]["max_screen_compounds"] is None
+        assert rows[rv_id]["n_screen_actives"] is None  # the pair's 5 actives are not a subunit's
         assert rows[rv_id]["latest_screen_year"] is None
 
 

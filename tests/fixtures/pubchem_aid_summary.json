@@ -1,0 +1,153 @@
+{
+  "AssaySummaries": {
+    "AssaySummary": [
+      {
+        "AID": 1626,
+        "SourceName": "SRMLSC",
+        "SourceID": "H37Rv",
+        "Name": "High Throughput Screen to Identify Inhibitors of Mycobacterium tuberculosis H37Rv",
+        "Description": [
+          "Southern Research Molecular Libraries Screening Center (SRMLSC)",
+          "Southern Research Institute (Birmingham, Alabama)",
+          "NIH Molecular Libraries Screening Centers Network (MLSCN)",
+          "Assay Provider Lucile White, Southern Research Institute, Birmingham, AL",
+          "Award: N01-AI-15449",
+          "Thus the discovery of new types of anti-TB drugs acting on novel drug targets with no cross-resistance to any existing drugs is urgently needed. Modern high-throughput screening systems provide an immensely powerful strategy to identify new lead compounds in a relatively short amount of time. In this study we have adapted the microdilution Alamar blue assay (PMID: 9145860, Collins and Franzblau 1997) to a 384-well plate format and used it to screen a compound library in a BSL-3 contained high throughput platform for antimicrobial activity. A total of 216,163 compounds were screened initially in a single dose of 10 uM and a final DMSO concentration of 1%. 5,883 compounds were identified that inhibited bacterial growth >80%. Cheminformatics techniques were used to select a diverse set of 2,500 compounds that were structurally different from known TB drugs. Compounds were screened in a dose-response assay using a stacked-plate method at concentrations ranging from 100uM to 0.19uM."
+        ],
+        "NumberOfTIDs": 41,
+        "HasScore": true,
+        "Method": "confirmatory",
+        "Version": 1,
+        "Revision": 2,
+        "LastDataChange": {
+          "Year": 2009,
+          "Month": 10,
+          "Day": 2
+        },
+        "SIDCountAll": 215397,
+        "SIDCountActive": 2044,
+        "SIDCountInactive": 209843,
+        "SIDCountInconclusive": 3510,
+        "SIDCountUnspecified": 0,
+        "SIDCountProbe": 0,
+        "CIDCountAll": 215098,
+        "CIDCountActive": 2044,
+        "CIDCountInactive": 209564,
+        "CIDCountInconclusive": 3501,
+        "CIDCountUnspecified": 0,
+        "CIDCountProbe": 0
+      },
+      {
+        "AID": 1671170,
+        "SourceName": "ChEMBL",
+        "SourceID": "CHEMBL4649957",
+        "Name": "Biochemical assay for Mt-TrpRS",
+        "Description": [
+          "Biochemical assay for Mt-TrpRS"
+        ],
+        "NumberOfTIDs": 6,
+        "HasScore": false,
+        "Method": "confirmatory",
+        "Target": [
+          {
+            "Accession": "P9WFT3",
+            "Name": "Tryptophan--tRNA ligase"
+          }
+        ],
+        "Version": 3,
+        "Revision": 1,
+        "LastDataChange": {
+          "Year": 2026,
+          "Month": 6,
+          "Day": 15
+        },
+        "SIDCountAll": 65366,
+        "SIDCountActive": 0,
+        "SIDCountInactive": 0,
+        "SIDCountInconclusive": 0,
+        "SIDCountUnspecified": 65366,
+        "SIDCountProbe": 0,
+        "CIDCountAll": 65365,
+        "CIDCountActive": 0,
+        "CIDCountInactive": 0,
+        "CIDCountInconclusive": 0,
+        "CIDCountUnspecified": 65365,
+        "CIDCountProbe": 0
+      },
+      {
+        "AID": 1671178,
+        "SourceName": "ChEMBL",
+        "SourceID": "CHEMBL4649965",
+        "Name": "Mycobacterium tuberculosis Polyketide synthase 13 Thioesterase (PKS13)",
+        "Description": [
+          "Mycobacterium tuberculosis Polyketide synthase 13 Thioesterase (PKS13)"
+        ],
+        "NumberOfTIDs": 5,
+        "HasScore": false,
+        "Method": "confirmatory",
+        "Target": [
+          {
+            "Accession": "I6X8D2",
+            "Name": "Polyketide synthase Pks13"
+          }
+        ],
+        "Version": 3,
+        "Revision": 1,
+        "LastDataChange": {
+          "Year": 2026,
+          "Month": 6,
+          "Day": 15
+        },
+        "SIDCountAll": 66592,
+        "SIDCountActive": 25,
+        "SIDCountInactive": 0,
+        "SIDCountInconclusive": 0,
+        "SIDCountUnspecified": 66592,
+        "SIDCountProbe": 0,
+        "CIDCountAll": 66591,
+        "CIDCountActive": 25,
+        "CIDCountInactive": 0,
+        "CIDCountInconclusive": 0,
+        "CIDCountUnspecified": 66591,
+        "CIDCountProbe": 0
+      },
+      {
+        "AID": 2060911,
+        "SourceName": "11908",
+        "SourceID": "PstP Phosphatase Inhibition",
+        "Name": "HTS for inhibitors of phosphatase PstP of Mycobacterium tuberculosis",
+        "Description": [
+          "Tuberculosis is the deadliest infectious disease worldwide, with two billion people infected and 1.25 million annual deaths. Antibiotic-resistant infections are increasingly prevalent, require 6-20 months of treatment, and carry a 32% treatment failure. New drugs are severely needed to improve treatment outcomes. Mycobacterial growth signaling pathways are attractive novel targets for antibiotic development. The M. tuberculosis kinase PknB and phosphatase PstP are essential enzymes involved in growth and virulence. Pharmacologic inhibition of PknB sensitizes mycobacteria to beta-lactams, and we hypothesized that concurrent PstP inhibition would improve this effect. We performed a high-throughput screen on the LifeChem Diversity Library (100,639 compounds) to identify biochemical inhibitors of PstP. Inhibition of bacterial phosphatase PstP was measured through absorbance (OD) of chromogenic product at 405 nm. The signal is caused by conversion of substrate pNPP to the chromogenic (yellow) product p-nitrophenol (p-nitrophenolate) upon dephosphorylation by the phosphatase. The positive control is EDTA (4 microM). The reaction mixture contained pNPP substrate at 2.5 microM, PstP protein at 4 nM, and final test compound concentration at 33 microM. Confirmatory screening identified 126 biochemical inhibitors, four of which had appreciable microbiologic activity. These inhibitors had additive effects with PknB inhibitors and enhanced additivity with a beta-lactam. Additionally, they have low cytotoxicity and minimal effects on cell cycle phospho-protein regulation at or near their minimum inhibitory concentration. These compounds represent the first PstP inhibitors with microbiologic efficacy and the first demonstration of additive inhibition between a beta-lactam and bacterial phosphatase and kinase inhibitors."
+        ],
+        "NumberOfTIDs": 3,
+        "HasScore": false,
+        "Method": "screening",
+        "Target": [
+          {
+            "Accession": "P9WHW5",
+            "Name": "Serine/threonine protein phosphatase PstP"
+          }
+        ],
+        "Version": 1,
+        "Revision": 4,
+        "LastDataChange": {
+          "Year": 2026,
+          "Month": 9,
+          "Day": 9
+        },
+        "SIDCountAll": 93270,
+        "SIDCountActive": 366,
+        "SIDCountInactive": 92957,
+        "SIDCountInconclusive": 0,
+        "SIDCountUnspecified": 0,
+        "SIDCountProbe": 0,
+        "CIDCountAll": 93237,
+        "CIDCountActive": 366,
+        "CIDCountInactive": 92925,
+        "CIDCountInconclusive": 0,
+        "CIDCountUnspecified": 0,
+        "CIDCountProbe": 0
+      }
+    ]
+  }
+}

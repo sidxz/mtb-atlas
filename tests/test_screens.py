@@ -1358,6 +1358,29 @@ def test_each_row_says_which_source_it_came_from(monkeypatch, tmp_path):
         assert str(retrieved) == "2026-10-11"
 
 
+def test_the_freshness_probe_reads_the_statement_the_table_was_stamped_from(monkeypatch, tmp_path):
+    """`atlas check` compares the probe to the stored version, so the two have to be one
+    statement or the source reads stale for ever (ChEMBL's two release strings were this).
+
+    The search tags two AIDs and the build ingests one campaign from them, which is the
+    case that tells "AIDs the search tagged" from "campaigns this build wrote". The probe is
+    asked what the search says now, so the same count is current and a new AID is stale."""
+    from atlas import freshness
+    from atlas.store import provenance
+
+    env, _ = _build(monkeypatch, tmp_path, project=["1626", "1671170"])
+    assert _sql(env, "SELECT count(*) FROM <screens> WHERE source = 'pubchem'") == [(1,)]
+    stored = provenance("screens", store=env["store"])[0]
+
+    def state_when_the_search_says(count: str) -> str:
+        reply = type("Reply", (), {"json": lambda self: {"esearchresult": {"count": count}}})()
+        monkeypatch.setattr(freshness, "_get", lambda url, **kw: reply)
+        return freshness.state_of(stored, freshness._pubchem())[0]
+
+    assert state_when_the_search_says("2") == "current", stored
+    assert state_when_the_search_says("3") == "stale"
+
+
 def test_the_columns_keep_their_types_when_one_source_leaves_them_empty(monkeypatch, tmp_path):
     """The ChEMBL rows have no outcome, CID or SID, and the PubChem 1671170 rows no outcome
     at all, and the table's types come out as the code writes them.

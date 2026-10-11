@@ -155,6 +155,23 @@ def _orthologue_pdb() -> str:
     return version_label(len(entries))
 
 
+def _pubchem() -> str:
+    """How many AIDs PubChem tags *M. tuberculosis* at the floor, which is the search's answer.
+
+    One E-utilities request with `retmax=0`, so the cost does not grow with the answer,
+    and the count moves when a new campaign is deposited, which is the thing worth
+    noticing. It is the same search `pubchem.build` ran and the label is the same function:
+    the table is stamped with the AIDs the search tagged, not the campaigns it ingested.
+    """
+    from .sources import pubchem
+
+    response = _get(
+        "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+        f"?db=pcassay&term={pubchem.SEARCH_TERM}&retmax=0&retmode=json"
+    )
+    return pubchem.version_label(response.json()["esearchresult"]["count"])
+
+
 @dataclass(frozen=True)
 class Source:
     """One upstream, where its version is stamped, and how to ask it."""
@@ -184,6 +201,18 @@ SOURCES: tuple[Source, ...] = (
     Source("string-db", "interactions", "evidence", _string),
     Source("clinicaltrials-gov", "trials", "clinical", _clinicaltrials),
     Source("mtbtndb", "conditional_tnseq", "evidence", _mtbtndb),
+    # `screens` is PubChem's first and ChEMBL's after, so `provenance()` reads PubChem's.
+    Source("pubchem", "screens", "evidence", _pubchem),
+    # Registered so `atlas refresh unichem` works, and deliberately neither probed nor frozen.
+    # The bridge has no release label and is stamped on no table: the version `check` prints
+    # beside it is PubChem's, because `screen_results` carries no other. The server does send
+    # Last-Modified and an ETag, but there is nothing stored to compare them to short of
+    # reading the raw sidecar, which `check` would need a second way of reading a stored
+    # version to do. It is not `frozen`: it moves on its own (the whole directory was
+    # regenerated 2026-10-10, five months after ChEMBL 37, so it does not move with ChEMBL),
+    # and `refresh` says a frozen source "cannot bring new data". So it reads `unknown`
+    # for ever, which is true: it is not asked, and not stale to a scheduler.
+    Source("unichem", "screen_results", "evidence"),
     Source("dejesus-2017", "essentiality", "evidence", frozen="a 2017 paper's supplementary table"),
     Source("bosch-2021", "vulnerability", "evidence", frozen="a 2021 paper's supplementary table"),
     Source(

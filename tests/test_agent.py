@@ -174,3 +174,52 @@ def test_describe_warns_that_tnseq_cannot_see_essential_genes() -> None:
     text = agent.describe()
     assert "## conditional_fitness" in text
     assert "NOT the same as unaffected" in text
+
+
+def test_the_schema_warns_about_every_screens_trap() -> None:
+    """A model that writes a plausible wrong join here gets silent nonsense, not an error.
+
+    Each phrase sits under the table it belongs to, so a trap moved to the wrong note (or
+    dropped from the right one because a sibling still names it) fails here.
+    """
+    traps = {
+        "screens": (
+            "`outcome_stated` can be true",  # a NULL count is not 'no calls', even with calls ...
+            "n_stages > 1",  # ... and a campaign of several assays is the second NULL
+            "lowest member",  # a declared project is ONE row, named for it
+            "library_size_stated",  # the depositor's figure is not n_tested
+            "outcome_method",  # PubChem's Method is not a stage
+            "project_declared",  # false is not "had no follow-up"
+            "licence is per depositor",
+        ),
+        "screen_stages": (
+            "Join screen_results on stage_id",
+            "SINGLE PROTEIN",  # a complex is not the subunit's screen
+            "screens.targets",  # PubChem stages have no ChEMBL target: the other route
+            "derived",  # an index ChEMBL computed has no funnel position
+            "default",  # 'primary' is what a description matching nothing falls to
+        ),
+        "screen_results": (
+            "outcome = 'inactive'",  # the non-hits ...
+            "outcome IS NULL",  # ... and the filter that is not them
+            "not a compound",  # a row is a SID or an activity
+            "unmapped",  # NULL molecule_chembl_id is not untested
+            "Not Determined",  # ChEMBL's failed measurement
+        ),
+        "target_summary": (
+            "n_screen_actives",  # a sum over the screens that stated calls
+            "n_complex_screens",  # shown, never counted
+            "latest_screen_year",  # undated deposits do not count
+        ),
+    }
+    for table, phrases in traps.items():
+        for phrase in phrases:
+            assert phrase in agent.TABLE_NOTES[table], (table, phrase)
+
+
+def test_the_schema_dump_carries_the_screens_notes() -> None:
+    """The notes reach the model only through `describe`, and only for tables that exist."""
+    text = agent.describe()
+    for table in ("screens", "screen_stages"):
+        assert f"## {table}" in text
+        assert agent.TABLE_NOTES[table] in text

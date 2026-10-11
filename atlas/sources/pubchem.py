@@ -92,6 +92,17 @@ _REMEDY = "run `atlas refresh pubchem`, or pass force=True, to fetch it again."
 _LIBRARY_SIZE = re.compile(r"(\d[\d,]{3,})\s*-?\s*compound", re.I)
 
 
+def version_label(n_aids: int | str) -> str:
+    """The stored `source_version`, so the freshness probe can reproduce it.
+
+    It names the search and how many AIDs the search tagged, not how many campaigns this
+    build wrote: a project of several AIDs is one campaign, and a probe that counted
+    campaigns would report stale for ever. `atlas check` compares like with like only
+    because `build` and the probe both call this.
+    """
+    return f"E-utilities {SEARCH_TERM}, {n_aids} AIDs"
+
+
 def fetch_aids(*, force: bool = False) -> list[str]:
     """Every Mtb-tagged AID with at least `MIN_TESTED` SIDs, in the order Entrez gives them."""
     page = fetch(
@@ -752,7 +763,7 @@ def build(
     # with like: every tagged AID, not the subset this build ingested.
     labels = {
         "source": SOURCE,
-        "source_version": f"E-utilities {SEARCH_TERM}, {len(aids)} AIDs",
+        "source_version": version_label(len(aids)),
         "retrieved_at": retrieved_at,
     }
     return [

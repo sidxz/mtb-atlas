@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from atlas import freshness, storediff
+from atlas.sources import pubchem
 from atlas.store import write_parquet
 
 # --- is it stale? ------------------------------------------------------------
@@ -75,8 +76,53 @@ def test_every_source_is_registered_with_a_stage() -> None:
         "orthologue-pdb",
         "clinicaltrials-gov",
         "mtbtndb",
+        "pubchem",
+        "unichem",
     }
     assert all(s.stage in freshness.STAGES for s in freshness.SOURCES)
+
+
+def test_pubchem_and_unichem_are_checkable() -> None:
+    """Task 7's error text tells a user to run `atlas refresh pubchem`, so it has to be one.
+
+    Both feed the evidence stage, so a refresh runs evidence, then the clinical re-link and
+    the roll-up.
+    """
+    assert freshness.stages_from("pubchem") == ["evidence", "clinical", "summary"]
+    assert freshness.stages_from("unichem") == ["evidence", "clinical", "summary"]
+    assert freshness.BY_NAME["pubchem"].probe is not None
+    assert freshness.BY_NAME["pubchem"].table == "screens"
+
+
+def test_unichem_is_not_asked_and_not_called_frozen() -> None:
+    """The bridge moves on its own (its Last-Modified is 2026-10-10, five months after ChEMBL
+    37), so calling it frozen would make `atlas refresh unichem` announce that it "cannot bring
+    new data", and no table stores a UniChem version to probe against. So it is not asked, and
+    the report says what is true of a source that was not asked: unknown, and not stale."""
+    unichem = freshness.BY_NAME["unichem"]
+    assert unichem.probe is None
+    assert not unichem.frozen
+    state = freshness.state_of(stored="x", upstream=None, frozen=unichem.frozen)[0]
+    assert state == "unknown"
+    assert not freshness.any_stale(
+        [freshness.Report("unichem", "x", None, state, "", unichem.stage)]
+    )
+
+
+def test_the_pubchem_probe_asks_for_the_count_and_not_the_ids(monkeypatch) -> None:
+    """The search returns 28 ids today; `retmax=0` keeps it one small request however many."""
+    asked = []
+
+    class Reply:
+        def json(self):
+            return {"esearchresult": {"count": "28"}}
+
+    monkeypatch.setattr(freshness, "_get", lambda url, **kw: asked.append(url) or Reply())
+    assert freshness._pubchem().endswith(", 28 AIDs")
+    assert "retmax=0" in asked[0]
+    assert "db=pcassay" in asked[0]
+    # The count of a different search is a different statement, stale for ever.
+    assert f"term={pubchem.SEARCH_TERM}&" in asked[0]
 
 
 # --- what has to be rebuilt? -------------------------------------------------

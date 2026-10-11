@@ -10,10 +10,11 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+import duckdb
 import pytest
 from fastapi.testclient import TestClient
 
-from atlas import api, store, summary
+from atlas import agent, api, store, summary
 from atlas.summary import counts
 
 CLINICAL = ("drugs", "drug_mechanisms", "trials", "drug_genes", "trial_drugs")
@@ -90,6 +91,26 @@ def test_search_still_answers(client: TestClient) -> None:
     assert found.status_code == 200
     assert found.json()["genes"][0]["id"] == "Rv3790"
     assert found.json()["drugs"] == []
+
+
+def test_the_agent_calls_an_unbuilt_table_missing_rather_than_empty(
+    evidence_only_store: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`/ask` is the fourth way into the store. Over a store short of a layer, a query on
+    that layer must fail where the model can read it: an empty table would answer `count(*)`
+    with 0, which is "no drug acts on this gene" and "nothing was ever screened" at once.
+
+    `evidence_only_store` has no clinical tables and, as the fixtures stand, no
+    `screen_results`, so one of each is checked.
+    """
+    monkeypatch.setattr(agent, "STORE", evidence_only_store)
+    monkeypatch.setattr(agent, "_connection", None)
+    for table in ("drugs", "screen_results"):
+        assert table not in agent.available_tables()
+        with pytest.raises(duckdb.CatalogException):
+            agent.run_sql(f"SELECT count(*) FROM {table}")
+    # What is there is still described, with its traps.
+    assert "## screens " in agent.describe()
 
 
 def test_a_compound_page_still_answers(client: TestClient) -> None:

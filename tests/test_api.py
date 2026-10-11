@@ -84,10 +84,29 @@ def screen_store(evidence_store: Path, tmp_path_factory: pytest.TempPathFactory)
                 ("CHEMBL9300001", "CHEMBL_POTENCY_ONLY"),
                 ("CHEMBL9300004", "CHEMBL_ELSEWHERE"),  # neither Mtb potency nor a tier
                 ("CHEMBL9300003", "CHEMBL_ADME_ONLY"),
+                # Whole-cell too, so its only reported ratio being a bound is visible
+                # here: a compound on derived stages alone has no profiling row at all.
+                ("CHEMBL9300001", "CHEMBL_BOUND_ONLY"),
                 ("CHEMBL9100001", "CHEMBL_PROTEIN"),  # dprE1's own protein: potency
                 ("CHEMBL9100004", "CHEMBL_DERIVED_ONLY"),  # a computed ratio: not tested
             ),
             start=1,
+        )
+    ]
+    # The authors' own selectivity index, on the derived stage conftest builds for it:
+    # one measured, one a bound. A bound must not become the number.
+    acts += [
+        {
+            "assay_chembl_id": "CHEMBL9100004",
+            "molecule_chembl_id": molecule,
+            "activity_id": 900 + i,
+            "standard_type": "Selectivity Index",
+            "standard_value": value,
+            "standard_relation": relation,
+            "standard_units": None,
+        }
+        for i, (molecule, value, relation) in enumerate(
+            ((MACOZINONE, "40", "="), (MACOZINONE, "1000", ">"), ("CHEMBL_BOUND_ONLY", "500", ">"))
         )
     ]
     new_stages = chembl.stamp_stage_counts(
@@ -110,6 +129,16 @@ def screen_store(evidence_store: Path, tmp_path_factory: pytest.TempPathFactory)
                 # Calls stated: one active, one inactive.
                 _pubchem_row("pubchem:9000008", 1, "active", "101"),
                 _pubchem_row("pubchem:9000008", 2, "inactive", "102"),
+                # The same molecule the literature profiled, called in a deposit: the
+                # call pair's numerator and denominator both come from here.
+                {
+                    **_pubchem_row("pubchem:9000008", 3, "active", "104"),
+                    "molecule_chembl_id": MACOZINONE,
+                },
+                {
+                    **_pubchem_row("pubchem:9000007", 1, "inactive", "104"),
+                    "molecule_chembl_id": MACOZINONE,
+                },
                 # No cutoff deposited: no call, which is not inactive.
                 _pubchem_row("pubchem:9000001", 1, None, "103"),
             ],
@@ -396,7 +425,7 @@ def test_no_call_is_not_inactive(screens: TestClient) -> None:
 
 def test_stage_counts_come_from_the_rows_per_stage(screens: TestClient) -> None:
     (stage,) = screens.get("/screens/pubchem:9000008").json()["stages"]
-    assert (stage["n_active_rows"], stage["n_inactive_rows"], stage["n_no_call_rows"]) == (1, 1, 0)
+    assert (stage["n_active_rows"], stage["n_inactive_rows"], stage["n_no_call_rows"]) == (2, 1, 0)
 
 
 def test_result_rows_are_paged_and_never_dumped(screens: TestClient) -> None:
@@ -422,9 +451,42 @@ def test_hit_profiling_counts_coverage_in_three_buckets(screens: TestClient) -> 
     assert (
         population["compounds"],
         population["beyond_potency"],  # macozinone (cytotox), the ADME-only compound
-        population["potency_only"],  # whole-cell only, and dprE1's own protein
+        population["potency_only"],  # two whole-cell only, and dprE1's own protein
         population["elsewhere_only"],  # S. aureus and nothing else
-    ) == (5, 2, 2, 1)
+    ) == (6, 2, 3, 1)
+
+
+def test_a_published_selectivity_index_is_served_and_a_bound_is_not(screens: TestClient) -> None:
+    """The ratio is the paper's own number. `> 1000` says the experiment never reached
+    it, so it is counted apart and never becomes the value -- the `pmic` rule again."""
+    (row,) = screens.get("/hits", params={"q": MACOZINONE}).json()["items"]
+    assert (row["n_selectivity"], row["selectivity_min"], row["selectivity_max"]) == (1, 40, 40)
+    assert row["n_selectivity_censored"] == 1
+    # A compound whose only reported ratio is a bound has no measured one at all.
+    (bound,) = screens.get("/hits", params={"q": "CHEMBL_BOUND_ONLY"}).json()["items"]
+    assert bound["n_selectivity"] is None and bound["n_selectivity_censored"] == 1
+    assert "CHEMBL_BOUND_ONLY" not in {
+        i["molecule_chembl_id"]
+        for i in screens.get("/hits", params={"has": "n_selectivity"}).json()["items"]
+    }
+
+
+def test_a_stated_call_is_counted_against_its_own_denominator(screens: TestClient) -> None:
+    """Only 25 of 999 campaigns state calls, so an actives count alone would read as
+    'never a hit' for a compound nobody called either way."""
+    (row,) = screens.get("/hits", params={"q": MACOZINONE}).json()["items"]
+    assert (row["n_active_campaigns"], row["n_call_campaigns"]) == (1, 2)
+    (quiet,) = screens.get("/hits", params={"q": "CHEMBL_POTENCY_ONLY"}).json()["items"]
+    assert quiet["n_call_campaigns"] is None and quiet["n_active_campaigns"] is None
+
+
+def test_a_mic_and_nothing_else_is_the_strict_count(screens: TestClient) -> None:
+    """The loose reading counts compounds carrying other-pathogen or unclassified
+    assays, which is not nothing else."""
+    population = screens.get("/hits").json()["population"]
+    # The third `potency_only` compound was measured on a protein, not a cell.
+    assert population["whole_cell_and_nothing_else"] == 2
+    assert population["potency_only"] == 3
 
 
 def test_an_unmeasured_tier_is_null_not_zero(screens: TestClient) -> None:

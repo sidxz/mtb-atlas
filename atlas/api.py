@@ -1582,9 +1582,35 @@ PROFILE_COLUMNS = {
     "n_cytotox": "mammalian_cytotox",
     "n_adme": "adme",
     "n_in_vivo": "in_vivo_efficacy",
+    # The classifier's fallback, and a real label: prose that matched no pattern.
+    # Listed so "measured nothing but Mtb potency" can mean exactly that.
+    "n_other": "other",
 }
 TIERS = ("n_cytotox", "n_adme", "n_in_vivo")
-PROFILE_SORTS = (*PROFILE_COLUMNS, "n_papers", "first_year", "latest_year", "molecule_chembl_id")
+# The ratio of a cytotoxicity endpoint to a potency one, AS THE AUTHORS REPORTED IT.
+# It lives on the `derived` stages, which are not measurements of this atlas's making
+# -- but a published ratio is the paper's own number, not arithmetic performed here,
+# and it is the first thing triage asks after potency. Only endpoints that name
+# selectivity, and only dimensionless rows: 5 rows carry a `10^4No_unit` scale factor,
+# and mixing those in would read as 10,000-fold more selective.
+SELECTIVITY = (
+    "st.derived AND r.standard_value IS NOT NULL"
+    " AND (lower(r.endpoint) LIKE '%selectivity%' OR lower(r.endpoint) LIKE '%cc50/ic50%')"
+    " AND (r.standard_units IS NULL OR r.standard_units = 'SI')"
+)
+# A bound is not a value, the same rule `pmic` follows for a censored MIC: "> 100-fold"
+# says the experiment never reached the number, so it is counted and not averaged in.
+MEASURED_SELECTIVITY = "r.standard_relation IS NULL OR r.standard_relation = '='"
+PROFILE_SORTS = (
+    *PROFILE_COLUMNS,
+    "n_papers",
+    "first_year",
+    "latest_year",
+    "n_selectivity",
+    "selectivity_max",
+    "n_active_campaigns",
+    "molecule_chembl_id",
+)
 # ChEMBL only, because no PubChem stage carries a modality, and measured stages only:
 # a derived ratio occupies no funnel position and does not make a compound "tested".
 # Each count is of distinct assays, and NULL where there are none, so an unmeasured
@@ -1594,16 +1620,41 @@ _PROFILE_COUNTS = ", ".join(
     for column, modality in PROFILE_COLUMNS.items()
 )
 PROFILE_SQL = f"""
-SELECT r.molecule_chembl_id,
-       count(DISTINCT r.screen_id) AS n_papers,
-       min(sc.year) AS first_year,
-       max(sc.year) AS latest_year,
-       {_PROFILE_COUNTS}
-FROM screen_results r
-JOIN screen_stages st USING (stage_id)
-JOIN screens sc ON sc.screen_id = r.screen_id
-WHERE st.source = 'chembl' AND NOT st.derived AND r.molecule_chembl_id IS NOT NULL
-GROUP BY 1
+WITH tested AS (
+    SELECT r.molecule_chembl_id,
+           count(DISTINCT r.screen_id) AS n_papers,
+           min(sc.year) AS first_year,
+           max(sc.year) AS latest_year,
+           {_PROFILE_COUNTS}
+    FROM screen_results r
+    JOIN screen_stages st USING (stage_id)
+    JOIN screens sc ON sc.screen_id = r.screen_id
+    WHERE st.source = 'chembl' AND NOT st.derived AND r.molecule_chembl_id IS NOT NULL
+    GROUP BY 1
+), selectivity AS (
+    SELECT r.molecule_chembl_id,
+           nullif(count(*) FILTER (WHERE {MEASURED_SELECTIVITY}), 0) AS n_selectivity,
+           min(r.standard_value) FILTER (WHERE {MEASURED_SELECTIVITY}) AS selectivity_min,
+           max(r.standard_value) FILTER (WHERE {MEASURED_SELECTIVITY}) AS selectivity_max,
+           count(*) FILTER (WHERE NOT ({MEASURED_SELECTIVITY})) AS n_selectivity_censored
+    FROM screen_results r JOIN screen_stages st USING (stage_id)
+    WHERE {SELECTIVITY} AND r.molecule_chembl_id IS NOT NULL
+    GROUP BY 1
+), calls AS (
+    -- How often a stated call went this compound's way, with its own denominator:
+    -- only 25 campaigns state calls at all, so `n_active_campaigns` alone would read
+    -- as "never a hit" for a compound nobody ever called either way. Both or neither.
+    SELECT molecule_chembl_id,
+           count(DISTINCT screen_id) AS n_call_campaigns,
+           count(DISTINCT screen_id) FILTER (WHERE outcome = 'active') AS n_active_campaigns
+    FROM screen_results WHERE outcome IS NOT NULL AND molecule_chembl_id IS NOT NULL
+    GROUP BY 1
+)
+SELECT t.*, s.n_selectivity, s.selectivity_min, s.selectivity_max,
+       s.n_selectivity_censored, c.n_call_campaigns, c.n_active_campaigns
+FROM tested t
+LEFT JOIN selectivity s USING (molecule_chembl_id)
+LEFT JOIN calls c USING (molecule_chembl_id)
 """
 
 
@@ -1611,7 +1662,17 @@ GROUP BY 1
 def hits(
     q: Annotated[str | None, Query(description="ChEMBL id or name")] = None,
     has: Annotated[
-        list[Literal["n_mtb_whole_cell", "n_mtb_protein", "n_other_pathogen", *TIERS]] | None,
+        list[
+            Literal[
+                "n_mtb_whole_cell",
+                "n_mtb_protein",
+                "n_other_pathogen",
+                "n_other",
+                "n_selectivity",
+                *TIERS,
+            ]
+        ]
+        | None,
         Query(description="Measured in every one of these"),
     ] = None,
     beyond_potency: Annotated[
@@ -1626,6 +1687,10 @@ def hits(
 
     Coverage, not a verdict: nothing here is ranked, weighted or combined into a
     score, and a compound with a MIC and nothing else is an answer, not a low one.
+
+    Every count is of distinct ChEMBL assays, so this is the literature census. A
+    compound tested only in a PubChem deposit has no row here, because no PubChem
+    stage carries a modality; `/compounds/{id}` reaches it either way.
     """
     _require_screens()
     if sort not in PROFILE_SORTS:
@@ -1656,11 +1721,20 @@ def hits(
     # The tier counts overlap -- a compound can carry several -- so they are not a split.
     tiered = " OR ".join(f"{t} IS NOT NULL" for t in TIERS)
     potency = "n_mtb_whole_cell IS NOT NULL OR n_mtb_protein IS NOT NULL"
+    # "A MIC and nothing else" is the strict reading: whole-cell Mtb potency and no
+    # other measurement of any kind. The looser count includes compounds carrying
+    # other-pathogen or unclassified assays, which is not nothing else.
+    nothing_else = " AND ".join(
+        f"{column} IS NULL" for column in PROFILE_COLUMNS if column != "n_mtb_whole_cell"
+    )
     population = connection.sql(
         "SELECT count(*) AS compounds,"
         f" count(*) FILTER (WHERE {tiered}) AS beyond_potency,"
         f" count(*) FILTER (WHERE NOT ({tiered}) AND ({potency})) AS potency_only,"
         f" count(*) FILTER (WHERE NOT ({tiered}) AND NOT ({potency})) AS elsewhere_only,"
+        f" count(*) FILTER (WHERE n_mtb_whole_cell IS NOT NULL AND {nothing_else})"
+        " AS whole_cell_and_nothing_else,"
+        " count(n_selectivity) AS with_selectivity,"
         f" {', '.join(f'count({t}) AS {t}' for t in TIERS)} FROM profile"
     )
     return {

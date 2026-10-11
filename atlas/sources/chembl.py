@@ -370,6 +370,111 @@ def classify_condition(description: str | None) -> str:
     return "unspecified"
 
 
+# --- what was measured, and where in the funnel -------------------------------
+#
+# ChEMBL has no modality or stage field, so these read the depositor's prose
+# the same way `classify_condition` does, and carry the same standing: the
+# description is stored beside the label so a reader can check it, and the
+# table records `stages_source = 'from_prose'` wherever that is what happened.
+
+MODALITIES = (
+    "phenotypic_mtb",
+    "biochemical_mtb",
+    "mammalian_cytotox",
+    "adme",
+    "in_vivo_efficacy",
+    "other_pathogen",
+    "other",
+)
+
+# A ratio ChEMBL computed from two other rows. 6,577 compounds in the Mtb
+# whole-cell literature carry one, and counting them as cytotoxicity readings
+# inflated that coverage before they were excluded. The number is real; it is
+# just not a measurement, so it is labelled and left out of the counts.
+_DERIVED = re.compile(
+    r"^\s*(selectivity|therapeutic|resistance)\s+(index|ratio)\b|\bratio of\b", re.I
+)
+
+# An animal, a bacterial readout, and the organism named. All three, because
+# "Toxicity in BALB/c mouse" is an animal study and not an efficacy result,
+# and a mouse PK curve is ADME.
+_ANIMAL = re.compile(r"\b(mice|mouse|murine|guinea pig|marmoset|rabbit|rat|rats)\b", re.I)
+_BACTERIAL_READOUT = re.compile(r"\b(cfu|lung|spleen|bacterial load|burden|survival)\b", re.I)
+_ADME = re.compile(
+    r"pharmacokinetic|\bauc\b|cmax|half[- ]life|\bt1/2\b|bioavailab|clearance|microsom|"
+    r"hepatocyte|solubility|permeab|caco|plasma protein|metabolic stability|\bcyp\b",
+    re.I,
+)
+_CYTOTOX = re.compile(r"cytotox|\bcc50\b|cell viability|\bvero\b|hepg2", re.I)
+_MTB = re.compile(r"tubercul", re.I)
+
+
+def is_derived(description: str | None) -> bool:
+    """Whether this assay reports a ratio of two other assays' numbers."""
+    return bool(description and _DERIVED.search(description))
+
+
+def classify_modality(
+    description: str | None, target_type: str | None, organism: str | None
+) -> str:
+    """What this assay measured, from its own target record and its prose.
+
+    The target record is checked before the prose wherever it is decisive: a
+    `CELL-LINE` target is a mammalian reading whatever the sentence says, and
+    an `ORGANISM` target that is not Mtb is another pathogen even when the
+    sentence contains the word "inhibition".
+    """
+    text = description or ""
+    organism = organism or ""
+    if _ANIMAL.search(text) and _BACTERIAL_READOUT.search(text) and _MTB.search(text):
+        return "in_vivo_efficacy"
+    if target_type == "ADMET" or _ADME.search(text):
+        return "adme"
+    if target_type == "CELL-LINE" or _CYTOTOX.search(text):
+        return "mammalian_cytotox"
+    if organism.startswith("Mycobacterium tuberculosis"):
+        if target_type == "ORGANISM":
+            return "phenotypic_mtb"
+        if target_type in ("SINGLE PROTEIN", "PROTEIN COMPLEX", "PROTEIN FAMILY"):
+            return "biochemical_mtb"
+    if target_type == "ORGANISM":
+        return "other_pathogen"
+    return "other"
+
+
+# PubChem states the stage; ChEMBL leaves it in the prose. `primary` is the
+# fallback for an Mtb assay that names no stage, because a paper's MIC table
+# is the first time its compounds met the organism.
+_COUNTER = re.compile(r"counter-?screen|selectivity against|counterscreen", re.I)
+_CONFIRM = re.compile(r"dose[- ]?response|confirmat|retest|titration|\bqhts\b", re.I)
+_PROFILING = re.compile(
+    r"cytotox|\bcc50\b|cell viability|hepg2|pharmacokinetic|microsom|hepatocyte|solubility|"
+    r"permeab|clearance|\bcfu\b|lung|spleen",
+    re.I,
+)
+
+
+def classify_stage(description: str | None, *, pubchem_type: str | None = None) -> str:
+    """Where in the funnel this assay sits.
+
+    `pubchem_type` is the depositor's own word and wins outright when present.
+    """
+    if pubchem_type:
+        stated = pubchem_type.strip().lower()
+        if stated == "confirmatory":
+            return "confirmatory"
+        if stated == "screening":
+            return "primary"
+    text = description or ""
+    if _COUNTER.search(text):
+        return "counter_screen"
+    if _CONFIRM.search(text):
+        return "confirmatory"
+    if _PROFILING.search(text):
+        return "profiling"
+    return "primary"
+
+
 def annotate_activities(
     rows: Iterable[dict[str, Any]], compounds: Iterable[dict[str, Any]]
 ) -> list[dict[str, Any]]:

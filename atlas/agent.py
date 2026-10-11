@@ -440,6 +440,12 @@ Rv0678 is a regulator. A co-crystal is physical evidence the two meet, not a mec
 Say which link an answer rests on.
 - Trials link to drugs through ChEMBL's own trial references or an exact \
 intervention-name match. An unlinked trial may still have tested a drug.
+- Screens: `outcome` NULL is not `inactive` -- it means the source stated no call (every \
+ChEMBL row, and every row of a deposit with no cutoff); only `outcome = 'inactive'` is a \
+non-hit. A screen filed against a complex is not a screen of either subunit: shown, not \
+counted. `stage` and `modality` are different axes (a primary screen can be phenotypic or \
+biochemical), and `n_screen_actives` counts only the screens that stated calls, so it shares \
+no denominator with `n_target_screens`.
 
 Be concise and quantitative. Prefer a short table to a paragraph when the answer is \
 a list of genes."""

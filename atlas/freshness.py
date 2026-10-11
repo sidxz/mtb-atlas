@@ -203,15 +203,20 @@ SOURCES: tuple[Source, ...] = (
     Source("mtbtndb", "conditional_tnseq", "evidence", _mtbtndb),
     # `screens` is PubChem's first and ChEMBL's after, so `provenance()` reads PubChem's.
     Source("pubchem", "screens", "evidence", _pubchem),
-    # Registered so `atlas refresh unichem` works, and deliberately neither probed nor frozen.
-    # The bridge has no release label and is stamped on no table: the version `check` prints
-    # beside it is PubChem's, because `screen_results` carries no other. The server does send
-    # Last-Modified and an ETag, but there is nothing stored to compare them to short of
-    # reading the raw sidecar, which `check` would need a second way of reading a stored
-    # version to do. It is not `frozen`: it moves on its own (the whole directory was
-    # regenerated 2026-10-10, five months after ChEMBL 37, so it does not move with ChEMBL),
-    # and `refresh` says a frozen source "cannot bring new data". So it reads `unknown`
-    # for ever, which is true: it is not asked, and not stale to a scheduler.
+    # Registered so `atlas refresh unichem` works, and neither probed nor frozen.
+    #
+    # Not `frozen`, because it demonstrably moves independently of ChEMBL: its whole
+    # directory was regenerated 2026-10-10, five months after ChEMBL 37 (2026-05-01), and
+    # `refresh` says a frozen source "cannot bring new data" when this one can.
+    #
+    # `unknown` rather than probed, because no table stores a UniChem version to compare
+    # against: `screen_results` carries PubChem's label and nothing else. The server does
+    # send Last-Modified and an ETag, and `fetch.py` keeps them in the raw sidecar, so
+    # comparing the live header to the stored one is the right eventual probe -- but
+    # `check` reads a stored version from a table only, so it needs its own small change.
+    #
+    # So it reads `unknown` for ever, which is true (not asked) and not stale to a
+    # scheduler, and `check` shows no stored version for it: the table's is PubChem's.
     Source("unichem", "screen_results", "evidence"),
     Source("dejesus-2017", "essentiality", "evidence", frozen="a 2017 paper's supplementary table"),
     Source("bosch-2021", "vulnerability", "evidence", frozen="a 2021 paper's supplementary table"),
@@ -303,6 +308,11 @@ def check(*, expensive: bool = False, only: str | None = None) -> list[Report]:
             except Exception as error:  # noqa: BLE001 - a dead endpoint is a result
                 print(f"  {source.name}: {str(error)[:90]}", file=sys.stderr)
         state, detail = state_of(stored, upstream, source.frozen)
+        if state == "unknown" and source.probe is None:
+            # Neither asked nor frozen: this source stamps no table of its own, so the one
+            # `stored` came from is another source's, and printing it beside this name
+            # would present that version as this source's.
+            stored, detail = None, "not asked: no table stores a version of this source"
         reports.append(
             Report(
                 source=source.name,

@@ -94,19 +94,47 @@ def test_pubchem_and_unichem_are_checkable() -> None:
     assert freshness.BY_NAME["pubchem"].table == "screens"
 
 
-def test_unichem_is_not_asked_and_not_called_frozen() -> None:
+def _as_if_built(monkeypatch) -> str:
+    """`screen_results` exists and is stamped with PubChem's label, which is all it carries."""
+    label = pubchem.version_label(28)
+    monkeypatch.setattr(freshness, "built", lambda table: True)
+    monkeypatch.setattr(freshness, "provenance", lambda table: (label, "2026-10-11"))
+    return label
+
+
+def test_unichem_is_not_asked_not_called_frozen_and_shows_no_borrowed_version(
+    monkeypatch,
+) -> None:
     """The bridge moves on its own (its Last-Modified is 2026-10-10, five months after ChEMBL
     37), so calling it frozen would make `atlas refresh unichem` announce that it "cannot bring
     new data", and no table stores a UniChem version to probe against. So it is not asked, and
-    the report says what is true of a source that was not asked: unknown, and not stale."""
+    the report says what is true of a source that was not asked: unknown, and not stale.
+
+    The one version on its table is PubChem's. Printed beside `unichem` it would read as
+    UniChem's, so the report carries none."""
     unichem = freshness.BY_NAME["unichem"]
     assert unichem.probe is None
     assert not unichem.frozen
-    state = freshness.state_of(stored="x", upstream=None, frozen=unichem.frozen)[0]
-    assert state == "unknown"
-    assert not freshness.any_stale(
-        [freshness.Report("unichem", "x", None, state, "", unichem.stage)]
-    )
+    label = _as_if_built(monkeypatch)
+    (report,) = freshness.check(only="unichem")
+    assert report.state == "unknown"
+    assert report.stored is None, label
+    assert freshness.as_dict(report)["stored"] is None
+    assert "no table stores a version" in report.detail
+    assert not freshness.any_stale([report])
+
+
+def test_a_probed_source_whose_probe_fails_still_shows_its_own_version(monkeypatch) -> None:
+    """The line above must not spread: a source that stamps its own table keeps its version
+    when its probe cannot be answered, and reads `unknown` rather than `current`."""
+
+    def refused(url, **kw):
+        raise RuntimeError("503")
+
+    label = _as_if_built(monkeypatch)
+    monkeypatch.setattr(freshness, "_get", refused)
+    (report,) = freshness.check(only="pubchem")
+    assert (report.state, report.stored) == ("unknown", label)
 
 
 def test_the_pubchem_probe_asks_for_the_count_and_not_the_ids(monkeypatch) -> None:

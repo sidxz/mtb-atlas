@@ -217,6 +217,19 @@ def test_the_schema_warns_about_every_screens_trap() -> None:
             assert phrase in agent.TABLE_NOTES[table], (table, phrase)
 
 
+def test_system_prompt_states_the_screening_rules() -> None:
+    """`describe_store` is only called "if you are unsure of a column", and a model that does
+    not know screening evidence exists will not look for its traps, so the four distinctions
+    that are not interchangeable are in the prompt itself."""
+    for phrase in (
+        "`outcome` NULL is not `inactive`",
+        "not a screen of either subunit",
+        "different axes",
+        "shares no denominator with `n_target_screens`",
+    ):
+        assert phrase in agent.SYSTEM, phrase
+
+
 def test_the_schema_dump_carries_the_screens_notes() -> None:
     """The notes reach the model only through `describe`, and only for tables that exist."""
     text = agent.describe()

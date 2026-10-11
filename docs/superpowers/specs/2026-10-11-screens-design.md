@@ -49,9 +49,20 @@ inhibition, which is wherever there was a campaign. One deposit
 
 `docs/data-sources.md` therefore states a finding that is false: "two genes
 have a public assay reaching 1,000 compounds — `recA` (1,875) and `dnaB`
-(1,642)". The true count is seven, five of them above 60,000. The scarcity
-claim inverts, and that correction is prerequisite to this layer rather than
-part of it.
+(1,642)". The scarcity claim inverts, and that correction is prerequisite to
+this layer rather than part of it.
+
+**Measured after the fix landed: six genes, three of them above 60,000** —
+`dfp`/CoaBC (66,942), `pks13` (66,592), `trpS` (65,366), `aspS` (8,841),
+`dnaB` (2,123) and `recA` (2,118). Even `recA` and `dnaB` move, because the
+old numbers counted only rows carrying a `pchembl_value`.
+
+An earlier draft of this section predicted seven genes with five above 60,000.
+That was wrong, and wrong in an instructive way: it counted ClpP1P2's
+68,611-compound screen as two genes, `clpP1` and `clpP2`. The complex rule
+below forbids exactly that, so the prediction contradicted this spec's own
+trap 5. The screen is real and is reported in `n_complex_assays`; it is not
+either subunit's own.
 
 ## Scope
 

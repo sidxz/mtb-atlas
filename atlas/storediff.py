@@ -55,8 +55,13 @@ KEYS: dict[str, tuple[str, ...]] = {
     # A PubChem row has a `result_tag` and a NULL `activity_id`; a ChEMBL row the
     # reverse. That is sound here because EXCEPT treats two NULLs as equal, though
     # `NULL = NULL` is not true, so a row with a NULL in its key still compares.
-    # Not the compound and not the SID, which both repeat: see `pubchem.RESULT_KEY`.
-    "screen_results": ("stage_id", "result_tag", "activity_id"),
+    # `pubchem.RESULT_KEY` is what makes a row unique (the compound and the SID alone
+    # both repeat). The SID is added because `compare` is a key-set difference: it sees
+    # which keys exist and nothing under them, so a key made only of the row's number
+    # stays silent when a re-download puts different substances into the same slots.
+    # With the SID, content moving between slots shows as added and removed. An outcome
+    # edited in place under the same SID is still invisible, as in every table here.
+    "screen_results": ("stage_id", "result_tag", "activity_id", "pubchem_sid"),
     "target_summary": ("rv_id",),
 }
 

@@ -144,6 +144,7 @@ def build_evidence(*, force: bool = False) -> list[Path]:
         for (document,) in read("activities")
         .filter("evidence = 'whole_cell'")
         .project("document_chembl_id")
+        .distinct()
         .fetchall()
     ]
     screens, stages, results = chembl.build_campaigns(

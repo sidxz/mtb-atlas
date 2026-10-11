@@ -963,7 +963,7 @@ def test_the_modalities_a_campaign_reached_are_listed_not_scored():
 
 
 def test_a_campaign_whose_document_record_is_missing_is_an_error_not_a_guess():
-    with pytest.raises(KeyError, match="CHEMBL_DOC1"):
+    with pytest.raises(KeyError, match=r"no document record for CHEMBL_DOC1.*chembl:CHEMBL_DOC1"):
         chembl.campaign_screens(_stages(), _activities(), {})
 
 
@@ -1048,7 +1048,9 @@ def test_an_activity_with_no_compound_or_no_campaign_assay_has_no_results_row():
     ]
 
 
-def _patch_chembl_network(monkeypatch: pytest.MonkeyPatch, calls: dict) -> None:
+def _patch_chembl_network(
+    monkeypatch: pytest.MonkeyPatch, calls: dict, extra_activities: list[dict] | None = None
+) -> None:
     meta = {
         "CHEMBL_DOC1": _documents()["CHEMBL_DOC1"],
         "CHEMBL3988442": {"doc_type": "DATASET", "title": "A library", "year": None},
@@ -1065,7 +1067,7 @@ def _patch_chembl_network(monkeypatch: pytest.MonkeyPatch, calls: dict) -> None:
 
     def fake_activities(documents, *, force):
         calls["activities"] = (list(documents), force)
-        return _activities()
+        return [*_activities(), *(extra_activities or [])]
 
     monkeypatch.setattr(chembl, "campaign_document_meta", fake_meta)
     monkeypatch.setattr(chembl, "campaign_assays", fake_assays)
@@ -1101,6 +1103,29 @@ def test_only_publications_have_their_activities_fetched_and_the_rows_say_chembl
         assert row["retrieved_at"] == "2026-10-11"
 
 
+def test_activities_the_campaigns_cannot_place_are_counted_not_dropped_in_silence(
+    monkeypatch, capsys
+):
+    """An activity whose assay is not in the stage list is left out of the tables, and so
+    is one with no compound. If an assay page were lost, its activities would vanish and read
+    as compounds that were never tested, which is the reading this layer must not produce by
+    accident. The build says how many it left out."""
+    outside = {"activity_id": 77, "assay_chembl_id": "CHEMBL999", "molecule_chembl_id": "M9"}
+    nameless = {"activity_id": 78, "assay_chembl_id": "CHEMBL100", "molecule_chembl_id": None}
+    assert chembl.unplaced(_stages(), [*_activities(), outside, outside, nameless]) == (2, 1)
+    assert chembl.unplaced(_stages(), _activities()) == (0, 0)
+
+    _patch_chembl_network(monkeypatch, {}, extra_activities=[outside, nameless])
+    chembl.build_campaigns(
+        [{"evidence": "whole_cell", "document_chembl_id": "CHEMBL_DOC1"}],
+        retrieved_at="2026-10-11",
+    )
+    err = capsys.readouterr().err
+    assert "1 activities in assays outside the campaigns" in err
+    assert "1 with no compound" in err
+    assert "6 activities" in err
+
+
 def test_a_lost_document_record_stops_the_campaign_build(monkeypatch):
     calls: dict = {}
     _patch_chembl_network(monkeypatch, calls)
@@ -1127,7 +1152,12 @@ def _eutils(aid: str, members: list[str]) -> dict:
 
 
 def _fake_pubchem(
-    monkeypatch, tmp_path: Path, *, project: list[str] | None = None, overlap: bool = False
+    monkeypatch,
+    tmp_path: Path,
+    *,
+    project: list[str] | None = None,
+    overlap: bool = False,
+    blank_sid: bool = False,
 ) -> dict:
     """Two campaigns' worth of PubChem, from the committed fixtures and no network.
 
@@ -1158,12 +1188,16 @@ def _fake_pubchem(
         "1626": FIXTURES / "pubchem_aid_results.csv",
         "1671170": FIXTURES / "pubchem_aid_unspecified.csv",
     }
-    if overlap:
-        # The second assay re-tests two of the first's substances, as a confirmatory stage
-        # re-tests a primary screen's: SIDs 26660563 and 49681785 stand in for two of its own.
+    if overlap or blank_sid:
         text = files["1671170"].read_text()
-        text = text.replace("312400166", "26660563").replace("312401710", "49681785")
-        files["1671170"] = tmp_path / "overlapping.csv"
+        if overlap:
+            # The second assay re-tests two of the first's substances, as a confirmatory stage
+            # re-tests a primary screen's: SIDs 26660563 and 49681785 stand in for two of its.
+            text = text.replace("312400166", "26660563").replace("312401710", "49681785")
+        if blank_sid:
+            # A row that lost its SID. The three real SIDs are all still there.
+            text += "99999,,,,Unspecified,,,,,Percent Effect,=,1.0,%,\n"
+        files["1671170"] = tmp_path / "edited.csv"
         files["1671170"].write_text(text)
     monkeypatch.setattr(pubchem, "fetch_aids", lambda *, force=False: ["1626", "1671170"])
     monkeypatch.setattr(pubchem, "fetch_summaries", lambda aids, *, force=False: summaries)
@@ -1275,6 +1309,22 @@ def test_a_declared_project_is_one_campaign_row_and_no_result_is_orphaned(monkey
     ) == [(0,)]
 
 
+def test_a_row_with_no_sid_is_not_a_substance_of_the_projects_distinct_count(monkeypatch, tmp_path):
+    """The count is published as `n_tested`. A row that lost its SID is a row, kept, and
+    not one more substance: `check_complete` already leaves it out of the count it checks."""
+    env, _ = _build(
+        monkeypatch, tmp_path, project=["1626", "1671170"], overlap=True, blank_sid=True
+    )
+    assert _sql(
+        env,
+        "SELECT count(*) FROM <screen_results> "
+        "WHERE stage_id LIKE 'pubchem:%' AND pubchem_sid IS NULL",
+    ) == [(1,)]
+    assert _sql(env, "SELECT n_tested FROM <screens> WHERE screen_id = 'pubchem:project:1626'") == [
+        (6,)
+    ]
+
+
 def test_assays_with_no_declared_project_are_each_their_own_campaign(monkeypatch, tmp_path):
     env, _ = _build(monkeypatch, tmp_path)
     assert _sql(
@@ -1310,8 +1360,12 @@ def test_each_row_says_which_source_it_came_from(monkeypatch, tmp_path):
 
 def test_the_columns_keep_their_types_when_one_source_leaves_them_empty(monkeypatch, tmp_path):
     """The ChEMBL rows have no outcome, CID or SID, and the PubChem 1671170 rows no outcome
-    at all. A column that is NULL in what DuckDB sees first types as JSON and stores
-    every later string in quotation marks, so `outcome = 'active'` finds nothing."""
+    at all, and the table's types come out as the code writes them.
+
+    Fourteen rows is far inside DuckDB's 20,480-row sample, so the sampling bug is not
+    pinned here: `test_store.py::test_a_column_is_typed_from_every_row_not_from_the_first_20480`
+    is the pin. What this does catch is the end-to-end shape: a column that nothing fills
+    types as JSON even in a small table, and a mixed column that came out as text."""
     import duckdb
 
     env, _ = _build(monkeypatch, tmp_path)
@@ -1423,6 +1477,65 @@ def test_a_pubchem_row_listed_twice_stops_the_build_and_writes_nothing(monkeypat
     assert not env["store"].exists()
 
 
+def _extras(monkeypatch):
+    _patch_chembl_network(monkeypatch, {})
+    return chembl.build_campaigns(
+        [{"evidence": "whole_cell", "document_chembl_id": "CHEMBL_DOC1"}],
+        retrieved_at="2026-10-09",
+    )
+
+
+def test_an_assay_listed_twice_stops_the_build_and_writes_nothing(monkeypatch, tmp_path):
+    """`screen_stages.stage_id` is a diff key. PubChem's are unique by construction, but a
+    ChEMBL assay is unique only if the API never repeats it across pages."""
+    from atlas.sources import pubchem
+
+    env = _fake_pubchem(monkeypatch, tmp_path)
+    screens, stages, results = _extras(monkeypatch)
+    with pytest.raises(ValueError, match=r"screen_stages.*stage_id.*repeats 1 time.*CHEMBL100"):
+        pubchem.build(
+            retrieved_at="2026-10-11",
+            bridge=env["bridge"],
+            rv_by_acc={},
+            extra_screens=screens,
+            extra_stages=[*stages, stages[0]],
+            extra_results=results,
+            store=env["store"],
+        )
+    assert not env["store"].exists()
+
+
+def test_a_campaign_listed_twice_stops_the_build_and_writes_nothing(monkeypatch, tmp_path):
+    from atlas.sources import pubchem
+
+    env = _fake_pubchem(monkeypatch, tmp_path)
+    screens, stages, results = _extras(monkeypatch)
+    with pytest.raises(ValueError, match=r"screens.*screen_id.*repeats 1 time.*CHEMBL_DOC1"):
+        pubchem.build(
+            retrieved_at="2026-10-11",
+            bridge=env["bridge"],
+            rv_by_acc={},
+            extra_screens=[*screens, *screens],
+            extra_stages=stages,
+            extra_results=results,
+            store=env["store"],
+        )
+    assert not env["store"].exists()
+    # And across the two sources: a ChEMBL row that claims a PubChem campaign's id.
+    clash = {**screens[0], "screen_id": "pubchem:1626"}
+    with pytest.raises(ValueError, match=r"screen_id.*repeats 1 time.*pubchem:1626"):
+        pubchem.build(
+            retrieved_at="2026-10-11",
+            bridge=env["bridge"],
+            rv_by_acc={},
+            extra_screens=[clash],
+            extra_stages=stages,
+            extra_results=results,
+            store=env["store"],
+        )
+    assert not env["store"].exists()
+
+
 def test_a_chembl_activity_listed_twice_stops_the_build(monkeypatch, tmp_path):
     from atlas.sources import pubchem
 
@@ -1496,6 +1609,9 @@ def test_the_evidence_stage_hands_the_campaigns_and_the_crosswalk_to_pubchems_bu
     }
     assert wanted, "the fixture store must hold a whole-cell activity for this to prove anything"
     assert {row["document_chembl_id"] for row in activities} == wanted
+    # One row per document, not one per activity: 6,752 rows reach `campaign_documents` only
+    # to be reduced to 977 documents there.
+    assert len(activities) == len(wanted)
     assert {row["evidence"] for row in activities} == {"whole_cell"}
     assert kwargs == {"retrieved_at": "2026-10-09", "force": True}
 
@@ -1528,7 +1644,7 @@ def test_the_diff_compares_a_result_on_the_key_that_tells_rows_apart(tmp_path):
 
     assert storediff.KEYS["screens"] == ("screen_id",)
     assert storediff.KEYS["screen_stages"] == ("stage_id",)
-    assert storediff.KEYS["screen_results"] == pubchem.RESULT_KEY
+    assert storediff.KEYS["screen_results"] == (*pubchem.RESULT_KEY, "pubchem_sid")
 
     pubchem_rows = list(pubchem.normalize_results(FIXTURES / "pubchem_aid_results.csv", "1626", {}))
     chembl_rows = chembl.campaign_results(_stages(), _activities())
@@ -1544,7 +1660,57 @@ def test_the_diff_compares_a_result_on_the_key_that_tells_rows_apart(tmp_path):
         )
     (diff,) = storediff.compare(old, new)
     assert (diff.before, diff.after, diff.added, diff.removed) == (9, 8, 0, 1)
-    assert diff.examples_removed == ["chembl:CHEMBL100 None 14"]
+    assert diff.examples_removed == ["chembl:CHEMBL100 None 14 None"]
+
+
+def _two_results_stores(tmp_path: Path) -> tuple[Path, Path]:
+    """The same row slots, with the substance under tag 1 replaced and its outcome flipped."""
+    from atlas.sources import pubchem
+    from atlas.store import write_parquet
+
+    rows = list(pubchem.normalize_results(FIXTURES / "pubchem_aid_results.csv", "1626", {}))
+    assert rows[0]["result_tag"] == 1 and rows[0]["outcome"] == "active"
+    moved = [{**rows[0], "pubchem_sid": "999999999", "outcome": "inactive"}, *rows[1:]]
+    old, new = tmp_path / "old", tmp_path / "new"
+    for store, content in ((old, rows), (new, moved)):
+        write_parquet(
+            "screen_results",
+            content,
+            source="x",
+            source_version="1",
+            retrieved_at="2026-10-11",
+            store=store,
+        )
+    return old, new
+
+
+def test_the_diff_sees_a_substance_move_between_row_slots(tmp_path):
+    """`compare` is a key-set EXCEPT: it knows which keys exist and nothing about what sits
+    under them. A key made only of PubChem's row number would therefore stay silent when a
+    re-download put different substances, with different outcomes, into the same slots. The
+    SID is in the key so that content moving between slots shows as one added and one removed.
+
+    What it does not see is an outcome edited in place under the same SID: that is true of
+    every table here, `compare` being a key-set difference by design."""
+    from atlas import storediff
+
+    old, new = _two_results_stores(tmp_path)
+    (diff,) = storediff.compare(old, new)
+    assert (diff.added, diff.removed) == (1, 1)
+    assert diff.changed
+    assert diff.examples_removed == ["pubchem:1626 1 None 26660563"]
+    assert diff.examples_added == ["pubchem:1626 1 None 999999999"]
+
+
+def test_the_row_number_alone_would_leave_the_diff_blind(tmp_path, monkeypatch):
+    """The reason the SID is in the key, shown by taking it out."""
+    from atlas import storediff
+    from atlas.sources import pubchem
+
+    monkeypatch.setitem(storediff.KEYS, "screen_results", pubchem.RESULT_KEY)
+    old, new = _two_results_stores(tmp_path)
+    (diff,) = storediff.compare(old, new)
+    assert (diff.added, diff.removed) == (0, 0)
 
 
 def test_both_sources_emit_one_key_set_per_table():

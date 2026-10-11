@@ -749,6 +749,25 @@ def _tested(
     return tested
 
 
+def unplaced(
+    stages: Iterable[Mapping[str, Any]], activities: Iterable[Mapping[str, Any]]
+) -> tuple[int, int]:
+    """(activities in an assay that is not a stage, activities with no compound).
+
+    Both are left out of the tables, so they are counted: if an assay page were lost, its
+    activities would vanish and read as compounds that were never tested, which is the one
+    reading this layer must not produce by accident.
+    """
+    known = {stage["stage_id"] for stage in stages}
+    outside = nameless = 0
+    for row in activities:
+        if f"chembl:{row.get('assay_chembl_id')}" not in known:
+            outside += 1
+        elif not row.get("molecule_chembl_id"):
+            nameless += 1
+    return outside, nameless
+
+
 def stamp_stage_counts(
     stages: Sequence[dict[str, Any]], activities: Iterable[Mapping[str, Any]]
 ) -> list[dict[str, Any]]:
@@ -774,7 +793,8 @@ def campaign_screens(
     activity calls, so `n_active` is NULL rather than 0 here. What exists is a count of
     compounds tested, which is a count of rows and not a claim about what worked, and
     all of them are `n_unspecified`: that is what keeps the four outcome counts summing
-    to `n_tested` on both sources' rows.
+    to `n_tested` here, as on a PubChem campaign of one assay (and not on one of several:
+    see `pubchem.campaign_row`).
 
     The key set is `pubchem.normalize_screens`'s, with the PubChem-only fields NULL or
     empty, so that the two fill one table. A document with no record raises: a missing
@@ -788,6 +808,11 @@ def campaign_screens(
     rows = []
     for screen_id, members in sorted(by_screen.items()):
         document_id = members[0]["document_chembl_id"]
+        if document_id not in documents:
+            raise KeyError(
+                f"no document record for {document_id}, the document of {screen_id}: "
+                "a metadata batch was lost, so its type and title are unknown"
+            )
         document = documents[document_id]
         compounds = set().union(*(tested[stage["stage_id"]] for stage in members))
         rows.append(
@@ -877,10 +902,12 @@ def build_campaigns(
     assays = campaign_assays(documents, force=force)
     acts = campaign_activities(documents, force=force)
     stages = stamp_stage_counts(normalize_campaign_assays(assays, campaign_targets(assays)), acts)
+    outside, nameless = unplaced(stages, acts)
     print(
         f"  chembl campaigns: {len(documents)} publications of {len(candidates)} candidate "
         f"documents ({len(candidates) - len(documents)} left to PubChem), {len(stages)} stages, "
-        f"{len(acts):,} activities",
+        f"{len(acts):,} activities; not carried: {outside:,} activities in assays outside the "
+        f"campaigns, {nameless:,} with no compound",
         file=sys.stderr,
     )
     label = {"source": SOURCE, "source_version": release_from_api(), "retrieved_at": retrieved_at}

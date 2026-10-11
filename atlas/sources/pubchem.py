@@ -371,28 +371,36 @@ def normalize_results(
 RESULT_KEY = ("stage_id", "result_tag", "activity_id")
 
 
-def check_result_key(rows: Iterable[Mapping[str, Any]]) -> None:
-    """Raise unless every row has an identity and no two share one.
+def check_unique(table: str, rows: Iterable[Mapping[str, Any]], key: Sequence[str]) -> None:
+    """Raise unless no two rows share `key`, which `atlas diff` compares the table on.
 
-    The key has been wrong twice, so it is proved on every build rather than trusted.
-    A repeat would otherwise reach `atlas diff` as a row that appears to change when it
-    does not, or as one of two rows that disappears without a count noticing.
+    A repeat would otherwise reach the diff as a row that appears to change when it does
+    not, or as one of two rows that disappears without a count noticing.
     """
     seen: set[tuple[Any, ...]] = set()
     repeats: list[tuple[Any, ...]] = []
     for row in rows:
-        key = tuple(row[column] for column in RESULT_KEY)
-        if row["result_tag"] is None and row["activity_id"] is None:
-            raise ValueError(f"screen_results row has neither result_tag nor activity_id: {key}")
-        if key in seen:
-            repeats.append(key)
-        seen.add(key)
+        values = tuple(row[column] for column in key)
+        if values in seen:
+            repeats.append(values)
+        seen.add(values)
     if repeats:
         raise ValueError(
-            f"screen_results key {RESULT_KEY} repeats {len(repeats):,} times, "
-            f"e.g. {repeats[:3]}. Two rows of one stage share an identity, so `atlas diff` "
-            "could not tell them apart."
+            f"{table} key {tuple(key)} repeats {len(repeats):,} times, e.g. {repeats[:3]}. "
+            "Two rows share an identity, so `atlas diff` could not tell them apart."
         )
+
+
+def check_result_key(rows: Sequence[Mapping[str, Any]]) -> None:
+    """Raise unless every result row has an identity and no two share one.
+
+    The key has been wrong three times, so it is proved on every build rather than trusted.
+    """
+    for row in rows:
+        if row["result_tag"] is None and row["activity_id"] is None:
+            key = tuple(row[column] for column in RESULT_KEY)
+            raise ValueError(f"screen_results row has neither result_tag nor activity_id: {key}")
+    check_unique("screen_results", rows, RESULT_KEY)
 
 
 def check_complete(aid: str, rows: Sequence[Mapping[str, Any]], expected: int) -> None:
@@ -621,12 +629,19 @@ def campaign_row(
       two assays tested it once, and the sum flatters the screen by the overlap (AIDs
       588335 and 588726 share a project and both reach 10,000 SIDs). There is no fallback
       to the sum, so a campaign of several stages without the count is an error.
-    - `n_active`, `n_inactive`, `n_inconclusive` and `n_unspecified` are NULL. Distinct
-      counting is possible but is not a partition across stages: a substance called
-      active in the primary and inactive in the confirmatory is in both counts, or in one
-      by a rule this pipeline would have to invent. NULL says "not counted here"; the
-      figures are on each stage (`screen_stages.n_active`) and in `screen_results`.
+    - `n_active`, `n_inactive` and `n_inconclusive` are NULL. Distinct counting is
+      possible but is not a partition across stages: a substance called active in the
+      primary and inactive in the confirmatory is in both counts, or in one by a rule
+      this pipeline would have to invent. NULL says "not counted here"; the figures are
+      on each stage (`screen_stages.n_active`) and in `screen_results`.
       `outcome_stated` is true if any stage stated its calls.
+    - `n_unspecified` is NULL as well, except where no stage stated a call and each one
+      counts every SID of its own `Unspecified`: then every substance is, with no rule
+      needed, and it is `n_tested` as it is for a single assay or a ChEMBL campaign. A
+      stage that does not say so itself is not assumed to.
+
+    So `n_active + n_inactive + n_inconclusive + n_unspecified == n_tested` holds for a
+    campaign of one assay, and for a ChEMBL campaign, and not for a campaign of several.
     """
     lead = max(members, key=lambda member: member["n_tested"])
     if len(members) == 1:
@@ -637,6 +652,7 @@ def campaign_row(
             "across them, counted from the results; the sum would count a substance twice"
         )
     stated = [member for member in members if member["outcome_stated"]]
+    all_unspecified = not stated and all(m["n_unspecified"] == m["n_tested"] for m in members)
     methods = sorted({member["outcome_method"] for member in members if member["outcome_method"]})
     targets = {(t["accession"], t["name"]): t for member in members for t in member["targets"]}
     return {
@@ -649,7 +665,7 @@ def campaign_row(
         "n_active": None,
         "n_inactive": None,
         "n_inconclusive": None,
-        "n_unspecified": None,
+        "n_unspecified": n_tested if all_unspecified else None,
         "outcome_stated": bool(stated),
         "outcome_method": "; ".join(methods) or None,
         "project_declared": declared,
@@ -662,8 +678,8 @@ def build(
     retrieved_at: str,
     bridge: Path,
     rv_by_acc: Mapping[str, Sequence[str]],
-    extra_screens: Iterable[Mapping[str, Any]] = (),
-    extra_stages: Iterable[Mapping[str, Any]] = (),
+    extra_screens: Sequence[Mapping[str, Any]] = (),
+    extra_stages: Sequence[Mapping[str, Any]] = (),
     extra_results: Sequence[Mapping[str, Any]] = (),
     store: Path | None = None,
     force: bool = False,
@@ -697,7 +713,8 @@ def build(
         check_result_key(rows)
         cids.update(row["pubchem_cid"] for row in rows if row["pubchem_cid"])
         if campaign_of[aid] in distinct:
-            distinct[campaign_of[aid]].update(row["pubchem_sid"] for row in rows)
+            # A row with no SID is a row, not a substance (`check_complete` leaves it out too).
+            distinct[campaign_of[aid]].update(r["pubchem_sid"] for r in rows if r["pubchem_sid"])
     # A key carries its stage_id, so each source is checked on its own.
     check_result_key(extra_results)
     chembl_by_cid = unichem.chembl_by_cid(bridge, only=cids)
@@ -716,6 +733,10 @@ def build(
         for campaign, members in campaigns.items()
     ]
     stages = [stage_row(s, campaign_of[s["aid"]]) for s in summaries]
+    # Both are diff keys. PubChem's are unique by construction here; ChEMBL's stage ids are
+    # unique only if the API never repeated an assay across pages.
+    check_unique("screens", [*screens, *extra_screens], ("screen_id",))
+    check_unique("screen_stages", [*stages, *extra_stages], ("stage_id",))
 
     def results() -> Iterator[dict[str, Any]]:
         # Streamed to the writer: the tables hold millions of rows between them.

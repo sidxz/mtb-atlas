@@ -432,9 +432,12 @@ one SID and `Inconclusive` as another), so a result row is a SID, not a compound
 both AIDs checked. The SID is not enough: AID 1671170 has 65,646 rows over 65,366
 SIDs, because a SID can be measured twice for one endpoint (6 replicate `Percent
 Effect` rows and 15 SIDs with two `IC50`), and for 15 of those the value repeats too.
-Every build asserts the key `(stage_id, result_tag, activity_id)` is unique, and
-that each download holds exactly as many distinct SIDs as the summary counts, since
-a truncated download parses as a smaller screen.
+Every build asserts the key `(stage_id, result_tag, activity_id)` is unique (and the
+`screens` and `screen_stages` keys too), and that each download holds exactly as many
+distinct SIDs as the summary counts, since a truncated download parses as a smaller
+screen. `atlas diff` compares `screen_results` on that key plus the SID: it compares
+which keys exist and not what sits under them, so a key of the row number alone would
+stay silent when a re-download put different substances into the same slots.
 
 **A declared project is one campaign.** PubChem's project links give the funnel the
 depositor stated (AID 449775 groups 39 AIDs); 10 of the 20 largest non-ChEMBL
@@ -474,9 +477,11 @@ public domain and then carves PubChem out by name:
 
 (<https://www.ncbi.nlm.nih.gov/home/about/policies/>, read 2026-10-11.) So
 `screens.depositor` is recorded on every campaign and no blanket licence is claimed.
-Nothing is redistributed: the pipeline fetches at build time and `data/raw` is
-gitignored. `depositor` is stored as PubChem gives it, and is not resolved to a
-licence: AID 2060911's is the bare string `11908`.
+The pipeline fetches at build time and the raw downloads (`data/raw`) are gitignored,
+so none is committed. The normalized per-SID outcomes are another matter: the store
+holds them and the API and UI serve them, with the depositor recorded on every campaign
+and no blanket licence claimed. `depositor` is stored as PubChem gives it and is not
+resolved to a licence: AID 2060911's is the bare string `11908`.
 
 ## RCSB PDB
 

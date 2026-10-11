@@ -1042,8 +1042,36 @@ def test_a_campaign_none_of_whose_assays_stated_a_call_states_none():
     )
     assert campaign["outcome_stated"] is False
     assert campaign["n_tested"] == 100000
-    for part in ("n_active", "n_inactive", "n_inconclusive", "n_unspecified"):
+    for part in ("n_active", "n_inactive", "n_inconclusive"):
         assert campaign[part] is None, part
+    # No stage called anything and every SID in each is `Unspecified`, so every substance
+    # in the campaign is, with no rule needed to say which call wins. The same knowledge as
+    # a single assay's or a ChEMBL campaign's `n_unspecified == n_tested`.
+    assert campaign["n_unspecified"] == campaign["n_tested"]
+
+
+def test_unspecified_is_not_assumed_for_a_stage_that_did_not_say_so_itself():
+    """No call was stated here either, but 65,366 SIDs were tested and PubChem counts none
+    of them `Unspecified` (they might all be probes, say). Equating the two for this stage
+    would turn a count PubChem did not make into one it did."""
+    rows = _rows()
+    odd = {**rows["1671170"], "n_unspecified": 0}
+    campaign = pubchem.campaign_row(
+        "pubchem:project:1671170", [odd, rows["1671178"]], declared=True, n_tested=100000
+    )
+    assert campaign["outcome_stated"] is False
+    assert campaign["n_unspecified"] is None
+
+
+def test_the_mixed_campaign_has_no_unspecified_count_either():
+    """One stage called its SIDs and the other did not: a substance can be in the first's
+    calls and the second's unspecified, so how many are unspecified depends on a rule."""
+    rows = _rows()
+    campaign = pubchem.campaign_row(
+        "pubchem:project:1626", [rows["1626"], rows["1671170"]], declared=True, n_tested=270000
+    )
+    assert campaign["outcome_stated"] is True
+    assert campaign["n_unspecified"] is None
 
 
 def test_a_campaign_of_several_assays_is_refused_without_its_distinct_count():

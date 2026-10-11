@@ -1121,9 +1121,15 @@ def test_activities_the_campaigns_cannot_place_are_counted_not_dropped_in_silenc
         retrieved_at="2026-10-11",
     )
     err = capsys.readouterr().err
-    assert "1 activities in assays outside the campaigns" in err
+    assert "1 in assays outside the campaigns" in err
     assert "1 with no compound" in err
     assert "6 activities" in err
+    # One activity must not read "1 activities"; neither count carries a noun of its own.
+    assert "1 activities" not in err
+    # Only the Dundee deposit of the five non-publications has an AID large enough to be
+    # ingested from PubChem, so "left to PubChem" overstated the other four.
+    assert "left to PubChem" not in err
+    assert "0 are datasets or patents" in err
 
 
 def test_a_lost_document_record_stops_the_campaign_build(monkeypatch):

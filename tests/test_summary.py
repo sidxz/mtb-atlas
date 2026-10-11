@@ -408,8 +408,8 @@ def test_an_unbuilt_screening_layer_is_null_not_zero(
 ) -> None:
     """ "No screen exists for this gene" and "the screening layer was never built" are different
     answers. A 0 from a table that is not there is not an answer at all, so every screen column
-    reads NULL, as the clinical ones do. (The census is different: built, its 0 is a real answer.)
-    One table missing is as unbuilt as both: the layer is written by one stage."""
+    reads NULL, as the clinical ones do. One table missing is as unbuilt as both: the layer is
+    written by one stage."""
     out = tmp_path_factory.mktemp("no-screens")
     for parquet in evidence_store.glob("*.parquet"):
         if parquet.stem not in (*missing, "target_summary"):

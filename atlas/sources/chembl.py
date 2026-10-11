@@ -577,6 +577,12 @@ def campaign_documents(activities: Iterable[Mapping[str, Any]]) -> list[str]:
     profiling. These are candidates only: `campaign_publications` keeps the papers,
     once `campaign_document_meta` has said which they are. Sorted and unique, so
     that the batches built from this list are the same on every build.
+
+    Not every document ChEMBL has whole-cell Mtb data for: the rows come from
+    `activities`, whose whole-cell half is pulled compound-first, for compounds that
+    already have a protein-level pChEMBL value. Measured 2026-10-11, 977 documents
+    arrive here of the 1,932 that have a whole-cell assay on CHEMBL360 or
+    CHEMBL2111188; the 955 absent (954 publications) are in no campaign.
     """
     return sorted(
         {
@@ -904,10 +910,10 @@ def build_campaigns(
     stages = stamp_stage_counts(normalize_campaign_assays(assays, campaign_targets(assays)), acts)
     outside, nameless = unplaced(stages, acts)
     print(
-        f"  chembl campaigns: {len(documents)} publications of {len(candidates)} candidate "
-        f"documents ({len(candidates) - len(documents)} left to PubChem), {len(stages)} stages, "
-        f"{len(acts):,} activities; not carried: {outside:,} activities in assays outside the "
-        f"campaigns, {nameless:,} with no compound",
+        f"  chembl campaigns: {len(documents)} of {len(candidates)} candidate documents are "
+        f"publications ({len(candidates) - len(documents)} are datasets or patents), "
+        f"{len(stages)} stages, {len(acts):,} activities; not carried: {outside:,} in assays "
+        f"outside the campaigns, {nameless:,} with no compound",
         file=sys.stderr,
     )
     label = {"source": SOURCE, "source_version": release_from_api(), "retrieved_at": retrieved_at}

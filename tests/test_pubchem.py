@@ -825,6 +825,23 @@ def test_a_uniprot_accession_joins_the_crosswalk_directly(monkeypatch):
     assert asked == []
 
 
+def test_a_uniprot_accession_the_crosswalk_does_not_hold_is_recorded_unmatched(monkeypatch):
+    """AID 493033 (MbtI, 104,781 SIDs) names `P9WFX0`, UniProt's CDC 1551 entry. The crosswalk,
+    which is H37Rv, holds the sibling `P9WFX1` for Rv2386c, so a well-formed UniProt accession
+    reached no locus: 1 of the 7 UniProt targets among the 28 AIDs. It keeps its accession and
+    resolves to nothing, and the H37Rv sibling is not guessed from it."""
+    asked = _uniprot_answers(monkeypatch)
+    (linked,) = pubchem.link_targets(
+        [{"accession": "P9WFX0", "name": "Salicylate synthase"}],
+        {**RV_BY_ACC, "P9WFX1": ["Rv2386c"]},
+    )
+    assert linked["accession"] == "P9WFX0"
+    assert linked["accession_kind"] == "uniprot"
+    assert linked["uniprot_accessions"] == ["P9WFX0"]
+    assert linked["rv_ids"] == []
+    assert asked == []
+
+
 def test_a_refseq_accession_is_bridged_through_uniprot(monkeypatch):
     asked = _uniprot_answers(monkeypatch)
     (linked,) = pubchem.link_targets([{"accession": "NP_214877", "name": "fba"}], RV_BY_ACC)

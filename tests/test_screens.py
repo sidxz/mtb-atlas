@@ -319,6 +319,8 @@ def test_a_monkey_kidney_cell_line_is_not_an_animal_study():
         "mouse macrophages assessed as reduction in bacterial burden",
         "mouse J774A.1 cells assessed as reduction in bacterial burden",
         "mouse RAW 264.7 cells assessed as reduction in bacterial burden",
+        "mouse RAW264.7 cells assessed as reduction in colony forming units",
+        "mouse BMDM assessed as reduction in colony forming units",
         "mouse bone marrow cells assessed as reduction in bacterial burden",
         "monolayers of mouse cells assessed as reduction in bacterial burden",
         "mouse cells assessed as reduction in intracellular bacterial burden",
@@ -335,6 +337,31 @@ def test_an_infected_cell_culture_is_not_an_animal_study(culture):
             _MTB,
         )
         == "phenotypic_mtb"
+    )
+
+
+@pytest.mark.parametrize(
+    "readout",
+    [
+        "reduction of bacterial count in lungs",
+        "reduction of bacterial count in spleens",
+        "reduction in colony forming units",
+        "reduction in colony forming unit",
+        "reduction in colony-forming units",
+    ],
+)
+def test_the_readout_takes_plural_organs_and_the_spelled_out_cfu(readout):
+    """A trailing word boundary after `lung` missed "lungs", and nothing matched "colony
+    forming units", so about 70 mouse and guinea-pig efficacy studies read phenotypic_mtb.
+    Each case here has no other readout word, so only the alternative under test can match."""
+    assert (
+        classify_modality(
+            "Antitubercular activity against Mycobacterium tuberculosis H37Rv infected in "
+            f"BALB/c mouse assessed as {readout}",
+            "ORGANISM",
+            _MTB,
+        )
+        == "in_vivo_efficacy"
     )
 
 

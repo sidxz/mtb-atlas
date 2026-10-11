@@ -403,14 +403,21 @@ _DERIVED = re.compile(
 # no cell culture. "Toxicity in BALB/c mouse" is an animal without a readout, a mouse
 # PK curve is ADME, and a mouse macrophage infected with Mtb names an animal, a CFU
 # and the organism without being an animal study. `_CULTURE` carries unambiguous culture
-# words only: a bare "cells" would exclude a real study that counts "lung cells".
+# words only: a bare "cells" would exclude a real study that counts "lung cells". The readout
+# takes the plural organ ("CFU in lungs") and the spelled-out "colony forming units", which
+# a trailing `\b` after `lung` and a bare `cfu` both missed; `RAW264.7` has no space and
+# BMDM is the usual abbreviation for a bone-marrow macrophage culture.
 _ANIMAL = re.compile(
     r"\b(mice|mouse|murine|guinea[- ]pigs?|marmosets?|rabbits?|rats?|hamsters?|macaques?"
     r"|monkeys?|zebrafish)\b",
     re.I,
 )
-_BACTERIAL_READOUT = re.compile(r"\b(cfu|lung|spleen|bacterial load|burden|survival)\b", re.I)
-_CULTURE = re.compile(r"macrophage|intracellular|monolayer|thp-?1|j774|raw 264|bone marrow", re.I)
+_BACTERIAL_READOUT = re.compile(
+    r"\b(cfu|colony[- ]forming units?|lungs?|spleens?|bacterial load|burden|survival)\b", re.I
+)
+_CULTURE = re.compile(
+    r"macrophage|intracellular|monolayer|thp-?1|j774|raw ?264|bmdm|bone marrow", re.I
+)
 # ADME. An AUC arrives as AUC, AUC0-24, AUC (0 to 24 hrs), AUClast, AUCinfinity or fAUC, so
 # a trailing word boundary alone misses most of them. A CYP isoform is a family digit and a
 # subfamily letter (CYP3A4, CYP2D6, CYP2C19), CYP450, or a bare CYP; *M. tuberculosis*' own

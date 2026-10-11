@@ -319,10 +319,14 @@ This is the rule that outranks completeness.
   a subset by construction: its candidate documents come from `activities`,
   whose whole-cell rows are pulled only for compounds with a protein-level pChEMBL
   value, so 972 publications are in and 954 publications with a whole-cell Mtb
-  assay are not. Four of the five non-publication candidates (GSK's TB set, the
-  Malaria and Pathogen Boxes, a patent) reach neither source. 50 genes have a
+  assay are not. **A count from `screens` is a count of ingested campaigns**,
+  and the agent's schema and system prompt say so. Four of the five
+  non-publication candidates (GSK's TB set, the Malaria and Pathogen Boxes, a
+  patent) reach neither source: the Pathogen Box is not in the layer, and a
+  query for it returns nothing that means "absent", not "no hits". 50 genes have a
   protein assay and no screen. An absent campaign is not a campaign that found
-  nothing.
+  nothing. Widening the enumeration is a costed follow-up at the end of
+  `docs/data-sources.md`, not a gap to patch in passing.
 - **A campaign reaches a gene through a stage on that gene's own protein, and
   nothing else.** `SINGLE PROTEIN` only, the rule `n_complex_drugs` already
   follows: the ClpP1P2 target maps to both `clpP1` and `clpP2`, so counting
@@ -331,7 +335,9 @@ This is the rule that outranks completeness.
   deposit naming two proteins is the complex. A target accession must reach a
   locus or be recorded unmatched, never guessed: 14 of the 18 across 16 AIDs
   did, and AID 493033 names `P9WFX0`, the CDC 1551 entry, where the crosswalk has
-  `P9WFX1`, so mbtI reads no PubChem screen. The 199 publications that report
+  `P9WFX1`, so mbtI reads no PubChem screen. This atlas is keyed to H37Rv and
+  mapping one strain's accession to its sibling would let that strain's data
+  stand in for another's, so an unresolved target is recorded, not bridged. The 199 publications that report
   both a protein assay and a whole-cell MIC have reported both -- that is not
   target deconvolution, and calling it that would invent the resistant-mutant
   experiment nobody deposited.

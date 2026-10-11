@@ -2638,8 +2638,8 @@ Under "Evidence must stay honest", add:
   documents that report both a protein assay and a whole-cell MIC have
   reported both — that is not target deconvolution, and calling it that would
   invent the resistant-mutant experiment nobody deposited.
-- **Hit profiling is coverage, not a score.** 17,763 compounds have a tier
-  beyond potency and 20,000 have a MIC and nothing else, which is the answer
+- **Hit profiling is coverage, not a score.** 9,602 compounds have a tier
+  beyond potency and 10,695 have a MIC and nothing else, which is the answer
   and not a low grade. No column is ranked, weighted or combined with another.
   A derived selectivity index is labelled `derived`: ChEMBL computes it from
   two other rows, so it is a number but not a measurement.

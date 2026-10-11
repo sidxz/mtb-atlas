@@ -371,7 +371,14 @@ compound-first, for compounds that already have a protein-level pChEMBL value
 compound). So a paper that measured MICs on compounds nobody ever assayed against a
 protein is not a candidate: 955 documents, 954 of them publications with 3,990 whole-cell
 assays, are in no campaign. Nor is a paper with biochemical assays and no MIC. Reading it
-the wrong way round — "every ChEMBL screening campaign is here" — is the mistake to avoid.
+the wrong way round — "every ChEMBL screening campaign is here" — is the mistake to avoid:
+**a count from `screens` is a count of ingested campaigns**, and "how many ChEMBL screening
+campaigns are there" is not a question this table answers (the answer it gives is 972; the
+universe is at least 1,926 publications). The boundary is stated in four places so that no
+one reads a complete-looking table as the universe: here, the `screens` note and the system
+prompt in `atlas/agent.py` (each pinned by a test), and `CLAUDE.md`. Widening the enumeration
+is a named extension with a cost, under *Follow-ups the first build named* at the end of this
+file.
 The 38,335 assays (on 1,949 documents) the design spec quotes are this wider universe;
 37,988 over 1,932 today. They are not what the build holds, and the 11,686 assays on Mtb
 targets are not reproducible against the 977 either (6,822 of the 17,502 stages name an
@@ -391,6 +398,13 @@ The campaign builder keeps publications only, so the four small ones are skipped
 among the 28 AIDs that would bring it in through PubChem (all 8 ChEMBL-deposited AIDs among
 them are Dundee's). The code's old log line called all five "left to PubChem". They are
 absent, not zero.
+
+**Is the Pathogen Box in the layer? No. Is GSK's TB set? No. The Malaria Box's TB screen? No.**
+These three public screening sets and that patent are not in `screens`, `screen_stages` or
+`screen_results`, so a query for them returns nothing, and that nothing is not "screened, no
+hits". It is the `caseum` rule applied to coverage: a zero that is really an absence has to
+say which it is. ChEMBL still holds their activities (3,857, 1,406, 966 and 47), and the
+potency layer sees whichever of their compounds also hit an Mtb protein.
 
 **Two caveats travel with every row.** `screens.stages_source` is `from_prose` on all 999
 campaigns: ChEMBL files the funnel position in the assay description, so `stage` and
@@ -623,8 +637,11 @@ UniProt, 6 of the 7 UniProt ones joined the crosswalk directly, and the 3 others
 nothing, as expected. The seventh UniProt one is a finding: AID 493033 (salicylate synthase
 MbtI, 104,781 SIDs) names `P9WFX0`, UniProt's CDC 1551 entry, while the crosswalk holds
 `P9WFX1` for Rv2386c. It reaches no locus and is recorded unmatched with its accession and
-name; `mbtI` reads no PubChem screen, and the sibling accession is not guessed. The four
-unmatched are CCE37082 (`bioA`), CAB06100 (`fadD28`), `2A88_A` (a PDB chain of pantothenate
+name; `mbtI` reads no PubChem screen, and the sibling accession is not guessed. That is
+the point of recording an unresolved target rather than bridging it: this atlas is keyed to
+H37Rv, and silently mapping a CDC 1551 accession to its H37Rv sibling is a convenience that
+would let one strain's data stand in for another's. (Whether the two proteins are identical is
+a separate question nothing here has asked.) The four unmatched are CCE37082 (`bioA`), CAB06100 (`fadD28`), `2A88_A` (a PDB chain of pantothenate
 synthetase) and `P9WFX0`.
 
 **One campaign, one source.** No ChEMBL publication is also a PubChem AID: the eight
@@ -1748,6 +1765,35 @@ pocket call or a druggability score. The options are to compute pockets
 dependency and a compute step), to use ligand presence as a weak proxy, or to
 drop the question. Deferred past M1; the UI should not claim a pocket it cannot
 source.
+
+## Follow-ups the first build named
+
+Each is a decision someone can pick up, with what it would cost. None is started.
+
+1. **Widen the ChEMBL enumeration to every whole-cell Mtb document.** Today 977 of 1,932
+   documents are candidates, because the list is read from `activities` (compound-first); 954
+   publications with a whole-cell Mtb assay are in no campaign. The extension is a different
+   candidate source: documents with an assay on `CHEMBL360` or `CHEMBL2111188` (10,067 assays,
+   about ten pages of 1,000), then the existing `build_campaigns` over the 955 absent
+   documents. Cost: those documents hold 20,355 assays (37,988 − 17,633), against 17,633
+   assays and 144,826 activities that took 1,272 s cold for the first 977, so on the order of
+   25 minutes cold (an estimate: their activities are not counted); a larger store and
+   `screen_results`; and a rebuild of every number in the README, since each gene's
+   `n_target_screens` and the 999 campaigns would change. It needs its own review. The
+   potency layer's compound-first rule stays as it is: only the campaign list widens.
+2. **The four absent screening sets** (Pathogen Box, GSK TB set, Malaria Box TB screen, one
+   patent: 6,276 activities between them). The builder keeps publications only because one
+   DATASET (Dundee's, 1,413,047 activities) is too big to fetch. A size cap would bring the
+   small ones in; the cost is a policy about what a dataset is, and a few thousand rows.
+3. **A real freshness probe for UniChem**: compare the live `Last-Modified` with the one
+   `fetch.py` keeps in the raw sidecar. About 50 lines; until then `atlas check` reads
+   `unknown`.
+4. **The `/ask` sandbox's memory.** `screen_results` takes the process from 0.5 GB to 1.9 GB
+   resident. A pre-aggregated table for the agent, or a different sandbox, belongs to the API
+   plan.
+5. **Row level against campaign level on `outcome`** (218 `IC50` rows `Active` inside
+   campaigns with `outcome_stated` false), and **one of `max_assay_compounds` and
+   `max_screen_compounds`** retiring. Both belong to the plan that changes the API.
 
 ## Extension point: per-compound annotations
 

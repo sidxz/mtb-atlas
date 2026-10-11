@@ -82,10 +82,17 @@ an Mtb MIC. Beyond potency:
 | efficacy in an infected animal | 625 |
 | cytotoxicity **and** ADME | 3,735 |
 | cytotoxicity **and** ADME **and** animal | 267 |
-| any tier beyond potency | **17,763** |
+| any tier beyond potency, over all 1,942 publications (the layer holds 9,602) | 17,763 |
 | also a measurement on an Mtb protein | 3,836 |
 
-17,763 compounds is the second-largest object population in the atlas after
+*Correction, from the first build (Task 11).* The table above counts all 1,942 publications.
+The store ingests 972 of them (those reachable from `activities`, see
+`docs/data-sources.md`) and holds 23,730 compounds, **9,602 with a tier beyond potency**, 12,449
+with potency only and 10,695 with a MIC and nothing else. The figures in this section and the
+nav below are the design-phase count over the wider set, not what the layer holds, and the
+17,763 should not be quoted for the layer.
+
+9,602 compounds is the second-largest object population in the atlas after
 genes — larger than drugs (112), trials (1,137) and `compounds` (5,178)
 together. PubChem adds 45 counter-screen/cytotoxicity AIDs and 13 confirmatory
 assays across the 124 declared project members, at thousands of compounds
@@ -93,8 +100,8 @@ each.
 
 **The view is named for coverage, not for a verdict.** "Hit assessment" is the
 pipeline stage and stays in prose; the view is **Hit profiling**, and its
-content is what was measured, with the absences visible. 20,000 compounds have
-a MIC and nothing else, which is the answer and not a low score. No column in
+content is what was measured, with the absences visible. 10,695 compounds have
+a MIC and nothing else (20,000 over the 1,942 publications), which is the answer and not a low score. No column in
 it is ranked, weighted or summed.
 
 **M12 — chemical genetics.** PROSPECT (Broad, CC0): compound × hypomorph
@@ -359,7 +366,7 @@ The nav becomes the pipeline, early to late:
 
 ```
 [ Genome ]   [ Screens ]   [ Hit profiling ]   [ Drugs & trials ]
-   4,031        ~200            17,763            112 / 1,137
+   4,031        ~200             9,602            112 / 1,137
    genes      campaigns        compounds         drugs / trials
 
  target selection ──▶ screening ──▶ hit assessment ──▶ the clinic
@@ -400,7 +407,7 @@ tiers exist rather than on values. The ADME cell shows *how many* of
 {microsomes, solubility, permeability, PK} were measured — a count of
 measurements, not a grade — and an unmeasured tier reads `—`, never 0.
 
-The view's own copy carries the rule: 20,000 compounds have a MIC and nothing
+The view's own copy carries the rule: 10,695 compounds have a MIC and nothing
 else, and that is the answer. Sorting is allowed on any column because a
 reader may want the most-profiled compounds first; no column is combined with
 another, because that would be the score this layer refuses to compute.

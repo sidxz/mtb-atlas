@@ -255,10 +255,12 @@ function layout(root: MapNode) {
 
 const START = ["dprE1", "inhA", "mmpL3", "groEL2", "trpS"];
 
-export function AtlasMap({ all, seed, onOpen }: {
+export function AtlasMap({ all, root: rootGene, onPick, onOpen }: {
   all: TargetSummary[];
-  /** A new object re-seeds the map. */
-  seed: { rv: string } | null;
+  /** The gene the map is rooted at, from the URL. */
+  root: string | null;
+  /** Re-root the map: the parent puts it in the URL, which comes back as `root`. */
+  onPick: (rv: string) => void;
   onOpen: (kind: MapOpenKind, id: string) => void;
 }) {
   const genes = useMemo(() => all.filter(g => g.feature === "CDS"), [all]);
@@ -363,12 +365,18 @@ export function AtlasMap({ all, seed, onOpen }: {
       if (token === current.current) setRoot({ ...node, error: true });
     }
   };
-  // `start` closes over state setters only, so the seed is all the effect needs.
-  useEffect(() => { if (seed && genes.length) void start(seed.rv); }, [seed, genes.length]);
+  // Start only when the URL names a different gene: coming back to the map, or
+  // Back to the same root, keeps the walk as it was.
+  const started = useRef<string | null>(null);
+  useEffect(() => {
+    if (!rootGene || !genes.length || rootGene === started.current) return;
+    started.current = rootGene;
+    void start(rootGene);
+  }, [rootGene, genes.length]);
 
   const submit = () => {
     const rv = byName.get(query.trim().toLowerCase());
-    if (rv) void start(rv);
+    if (rv) onPick(rv);
     else setMissing(true);
   };
 
@@ -393,13 +401,13 @@ export function AtlasMap({ all, seed, onOpen }: {
               const native = event.nativeEvent;
               const picked = !(native instanceof InputEvent) || native.inputType === "insertReplacementText";
               const rv = picked ? byName.get(event.target.value.trim().toLowerCase()) : undefined;
-              if (rv) void start(rv);
+              if (rv) onPick(rv);
             }} />
           <datalist id="map-genes">{genes.filter(g => g.gene_name).map(g => <option key={g.rv_id} value={g.gene_name!}>{g.rv_id}</option>)}</datalist>
           {missing && <p className="note" role="status">No CDS locus by that name.</p>}
         </form>
         <div className="group map-starts">
-          {START.map(name => <button type="button" className="chip" key={name} onClick={() => { const rv = byName.get(name.toLowerCase()); if (rv) void start(rv); }}>{name}</button>)}
+          {START.map(name => <button type="button" className="chip" key={name} onClick={() => { const rv = byName.get(name.toLowerCase()); if (rv) onPick(rv); }}>{name}</button>)}
         </div>
         {opened && <p className="group note map-opened" role="status">{opened}</p>}
         <div className="group map-legend">

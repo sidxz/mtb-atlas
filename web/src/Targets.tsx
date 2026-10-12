@@ -422,16 +422,20 @@ export function Targets({
   onOpenScreens,
   onOpenDrug,
   onOpenMap,
+  selected,
+  onSelect,
 }: {
   all: TargetSummary[];
   onOpenGene: (rvId: string) => void;
   onOpenScreens: (rvId: string) => void;
   onOpenDrug: (id: string) => void;
   onOpenMap: (rvId: string) => void;
+  /** The open profile lives in the URL, so a reload or a link lands on it. */
+  selected: string | null;
+  onSelect: (rvId: string | null, options?: { replace?: boolean }) => void;
 }) {
   const [picks, setPicks] = useState<Record<string, Verdict>>({});
   const [status, setStatus] = useState<ValidationStatus | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
   const [profileTab, setProfileTab] = useState<ProfileTab>("overview");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
@@ -442,7 +446,7 @@ export function Targets({
   const returnFocus = useRef<HTMLButtonElement | null>(null);
 
   function closeProfile() {
-    setSelected(null);
+    onSelect(null);
     requestAnimationFrame(() => returnFocus.current?.focus());
   }
 
@@ -567,9 +571,11 @@ export function Targets({
   useEffect(() => {
     setPage(0);
   }, [query, picks, status]);
+  // A filter that drops the open target closes it. Not before the genome has
+  // loaded: an empty cohort then would close a profile a link just opened.
   useEffect(() => {
-    if (selected && !cohort.some(row => row.rv_id === selected)) setSelected(null);
-  }, [cohort, selected]);
+    if (genes.length && selected && !cohort.some(row => row.rv_id === selected)) onSelect(null, { replace: true });
+  }, [genes.length, cohort, selected, onSelect]);
   useEffect(() => { if (tableRef.current) tableRef.current.scrollTop = 0; }, [currentPage, sort, query, picks, status]);
 
   function clearFilters() {
@@ -670,7 +676,7 @@ export function Targets({
                 <tr key={row.rv_id} aria-selected={selected === row.rv_id} onClick={event => {
                   returnFocus.current = event.currentTarget.querySelector<HTMLButtonElement>(".row-open");
                   setProfileTab("overview");
-                  setSelected(row.rv_id);
+                  onSelect(row.rv_id);
                 }}>
                   <td className="targets-identity">
                     <button type="button" className="row-open" aria-label={`View ${row.gene_name ?? row.rv_id} target profile`}>
@@ -688,7 +694,7 @@ export function Targets({
                     event.stopPropagation();
                     returnFocus.current = event.currentTarget.closest("tr")?.querySelector<HTMLButtonElement>(".row-open") ?? null;
                     setProfileTab("assays");
-                    setSelected(row.rv_id);
+                    onSelect(row.rv_id);
                   }}>{n0(row.n_protein_assays) ?? "—"}</button></td>}
                   {(!chosen || sort.key === "n_compounds") && <td className="num">{n0(row.n_compounds) ?? "—"}</td>}
                 </tr>

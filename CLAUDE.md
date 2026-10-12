@@ -519,6 +519,13 @@ nearest relative), and empty groups stay on the map as absences. It reuses the
 detail endpoints; the only route it added is `/concepts/{kind}?id=`, whose test
 walks every concept on every fixture gene back to that gene.
 
+**The URL is where the reader is.** React Router owns it: `/genome/Rv3790`,
+`/targets/Rv1484`, `/screens/pubchem:1671178`, `/hits/CHEMBL64`,
+`/clinical/drug/CHEMBL64`, `/map/Rv0206c`. The view and the one object open in it
+come from the path (`parseRoute` in `App.tsx`), not from `useState`, so a reload,
+Back or a pasted link lands on the same thing. A new view, or a new "thing open"
+in one, gets a path; a filter or a cohort does not.
+
 The screening tables are reachable through the agent and through the Screens
 and Hit profiling views (`/screens`, `/hits`, `/compounds/{id}`).
 

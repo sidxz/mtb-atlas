@@ -18,6 +18,7 @@ import { Search } from "./Search";
 import { TableControls, useTablePreferences } from "./TableControls";
 import { cellFormatting, scaleRanges, type Rule, type Range } from "./table-formatting";
 import { InterfaceIcon } from "./InterfaceIcon";
+import { Link, matchPath, useLocation, useNavigate } from "react-router";
 
 const ESSENTIALITY: [string, string][] = [
   ["ES", "Essential"],
@@ -355,6 +356,41 @@ function useTheme() {
   return { theme, toggle };
 }
 
+type View = "genome" | "targets" | "screens" | "hits" | "clinical" | "map";
+const VIEWS: View[] = ["genome", "targets", "screens", "hits", "clinical", "map"];
+const FOCUS_KINDS = ["drug", "trial", "compound"] as const;
+
+/**
+ * The view and the one object open in it, from the path:
+ * `/genome/Rv3790`, `/targets/Rv1484`, `/screens/pubchem:1671178`, `/hits/CHEMBL64`,
+ * `/clinical/drug/CHEMBL64`, `/map/Rv0206c`. `/` is the genome with nothing open.
+ */
+function parseRoute(pathname: string): { view: View; id: string | null; focus: Focus } {
+  const clinical = matchPath("/clinical/:kind/:id", pathname);
+  const kind = FOCUS_KINDS.find(k => k === clinical?.params.kind);
+  if (clinical && kind) {
+    const id = decode(clinical.params.id!);
+    return { view: "clinical", id, focus: { kind, id } };
+  }
+  const match = matchPath("/:view/:id?", pathname);
+  const view = VIEWS.find(v => v === match?.params.view);
+  if (!view) return { view: "genome", id: null, focus: null };
+  const id = match?.params.id;
+  return { view, id: view === "clinical" || !id ? null : decode(id), focus: null };
+}
+
+// matchPath hands params back still encoded; `path` encodes them (screen ids carry
+// colons). A malformed escape in a hand-typed URL is kept as typed, not thrown.
+function decode(segment: string) {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
+const path = (view: View, id?: string | null) => (id ? `/${view}/${encodeURIComponent(id)}` : `/${view}`);
+
 export function App() {
   const { theme, toggle } = useTheme();
   const [meta, setMeta] = useState<Meta | null>(null);
@@ -372,24 +408,49 @@ export function App() {
   const { preferences, saved, change: changePreferences } = useTablePreferences(COLUMNS);
   const [colourBy, setColourBy] = useState<ColourBy>("essentiality");
   const [zoomed, setZoomed] = useState(false);
+  const zoomedRef = useRef(zoomed);
+  zoomedRef.current = zoomed;
   const [sort, setSort] = useState<{ key: string; order: "asc" | "desc" }>({
     key: "start",
     order: "asc",
   });
 
-  const [view, setView] = useState<"genome" | "targets" | "screens" | "hits" | "clinical" | "map">("genome");
+  // The URL is the source of truth for the view and what is open in it. Each view
+  // remembers its own last path, so a view kept mounted while hidden keeps what it
+  // had open, and its nav link goes back to it.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const route = parseRoute(location.pathname);
+  const view = route.view;
+  const lastPath = useRef<Partial<Record<View, string>>>({});
+  lastPath.current[view] = location.pathname;
+  const routeIn = (v: View) => (v === view ? route : lastPath.current[v] ? parseRoute(lastPath.current[v]!) : null);
+  const routeRef = useRef(route);
+  routeRef.current = route;
   const [visitedViews, setVisitedViews] = useState<string[]>([]);
   useEffect(() => { setVisitedViews(previous => previous.includes(view) ? previous : [...previous, view]); }, [view]);
-  const [hitFocus, setHitFocus] = useState<string | null>(null);
+  const hitFocus = routeIn("hits")?.id ?? null;
+  const setHitFocus = useCallback((id: string | null) => navigate(path("hits", id)), [navigate]);
   // A campaign opened from a gene page or the search box, so those routes reach
   // the same page rather than a second copy of it.
-  const [screenFocus, setScreenFocus] = useState<string | null>(null);
+  const screenFocus = routeIn("screens")?.id ?? null;
+  const setScreenFocus = useCallback((id: string | null) => navigate(path("screens", id)), [navigate]);
   const [screenGene, setScreenGene] = useState<{ rv: string } | null>(null);
-  const [mapSeed, setMapSeed] = useState<{ rv: string } | null>(null);
+  const mapRoot = routeIn("map")?.id ?? null;
+  const targetSelected = routeIn("targets")?.id ?? null;
+  const selectTarget = useCallback(
+    (rv: string | null, options?: { replace?: boolean }) => navigate(path("targets", rv), options),
+    [navigate],
+  );
   // A campaign handed to hit profiling: its compounds, each with its own whole profile.
   const [profileScreen, setProfileScreen] = useState<{ id: string; title: string | null } | null>(null);
-  const [focus, setFocus] = useState<Focus>(null);
-  const [selected, setSelected] = useState<string | null>(null);
+  const focus = routeIn("clinical")?.focus ?? null;
+  const setFocus = useCallback(
+    (next: Focus) => navigate(next ? `/clinical/${next.kind}/${encodeURIComponent(next.id)}` : "/clinical"),
+    [navigate],
+  );
+  const selected = routeIn("genome")?.id ?? null;
+  const setSelected = useCallback((rv: string | null) => navigate(path("genome", rv)), [navigate]);
   const [detail, setDetail] = useState<TargetDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
 
@@ -411,16 +472,17 @@ export function App() {
       if (event.key !== "Escape") return;
       // Esc closes the thing most recently in front of you: the full-size
       // genome if it is open, otherwise the detail panel.
-      setZoomed((open) => {
-        if (open) return false;
-        setSelected(null);
-        setFocus(null);
-        return false;
-      });
+      if (zoomedRef.current) {
+        setZoomed(false);
+        return;
+      }
+      const current = routeRef.current;
+      if (current.view === "genome" && current.id) navigate("/genome");
+      if (current.view === "clinical" && current.focus) navigate("/clinical");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [navigate]);
 
   useEffect(() => {
     if (!selected) return;
@@ -505,14 +567,9 @@ export function App() {
     [all],
   );
 
-  const openGene = useCallback((rvId: string) => {
-    setSelected(rvId);
-    setView("genome");
-  }, []);
-  const openClinical = useCallback((next: Focus) => {
-    setFocus(next);
-    setView("clinical");
-  }, []);
+  const openGene = setSelected;
+  const openClinical = setFocus;
+  const openMap = useCallback((rv: string) => navigate(path("map", rv)), [navigate]);
 
   const toggleIn = <T,>(set: Set<T>, value: T, apply: (next: Set<T>) => void) => {
     const next = new Set(set);
@@ -540,33 +597,33 @@ export function App() {
           <h1><i title="Mycobacterium tuberculosis">M. tuberculosis</i> Atlas</h1>
         </div>
         <div className="viewswitch" role="group" aria-label="View">
-          <button type="button" aria-pressed={view === "genome"} onClick={() => setView("genome")}>
+          <Link to={lastPath.current.genome ?? "/genome"} aria-current={view === "genome" ? "page" : undefined}>
             <InterfaceIcon name="genome" /> Genome
-          </button>
+          </Link>
           {/* The nav is the early discovery pipeline, in order: target selection,
               screening, hit assessment, then the clinic. */}
-          <button type="button" aria-pressed={view === "targets"} onClick={() => setView("targets")}>
+          <Link to={lastPath.current.targets ?? "/targets"} aria-current={view === "targets" ? "page" : undefined}>
             <InterfaceIcon name="targets" /> Targets
-          </button>
-          <button type="button" aria-pressed={view === "screens"} onClick={() => setView("screens")}>
+          </Link>
+          <Link to={lastPath.current.screens ?? "/screens"} aria-current={view === "screens" ? "page" : undefined}>
             <InterfaceIcon name="screens" /> Screens
-          </button>
-          <button type="button" aria-pressed={view === "hits"} onClick={() => setView("hits")}>
+          </Link>
+          <Link to={lastPath.current.hits ?? "/hits"} aria-current={view === "hits" ? "page" : undefined}>
             <InterfaceIcon name="profiling" /> Hit profiling
-          </button>
-          <button type="button" aria-pressed={view === "clinical"} onClick={() => setView("clinical")}>
+          </Link>
+          <Link to={lastPath.current.clinical ?? "/clinical"} aria-current={view === "clinical" ? "page" : undefined}>
             <InterfaceIcon name="clinical" /> Drugs &amp; trials
-          </button>
-          <button type="button" aria-pressed={view === "map"} onClick={() => setView("map")}>
+          </Link>
+          <Link to={lastPath.current.map ?? "/map"} aria-current={view === "map" ? "page" : undefined}>
             <InterfaceIcon name="map" /> Map
-          </button>
+          </Link>
         </div>
         <Search
           onPick={(kind, id) => {
             if (kind === "genes") openGene(id);
             else if (kind === "trials") openClinical({ kind: "trial", id });
             else if (kind === "compounds") openClinical({ kind: "compound", id });
-            else if (kind === "screens") { setScreenFocus(id); setView("screens"); }
+            else if (kind === "screens") setScreenFocus(id);
             else openClinical({ kind: "drug", id });
           }}
         />
@@ -583,32 +640,34 @@ export function App() {
           focus={screenFocus}
           geneFocus={screenGene}
           onFocus={setScreenFocus}
-          onProfile={(id, title) => { setProfileScreen({ id, title }); setHitFocus(null); setView("hits"); }}
-          onCompound={id => { setProfileScreen(null); setHitFocus(id); setView("hits"); }}
+          onProfile={(id, title) => { setProfileScreen({ id, title }); setHitFocus(null); }}
+          onCompound={id => { setProfileScreen(null); setHitFocus(id); }}
         />
       </div>}
       {(view === "hits" || visitedViews.includes("hits")) && <div className="workspace-view" hidden={view !== "hits"}>
         <HitProfiling screen={profileScreen} onClearScreen={() => setProfileScreen(null)}
           focus={hitFocus} onFocus={setHitFocus} onSelectGene={openGene}
-          onCampaign={id => { setScreenFocus(id); setView("screens"); }} />
+          onCampaign={setScreenFocus} />
       </div>}
       {/* Kept mounted, so a cohort survives a trip to Screens or Drugs and back. */}
       {(view === "targets" || visitedViews.includes("targets")) && <div className="workspace-view" hidden={view !== "targets"}>
         <Targets
           all={all}
           onOpenGene={openGene}
-          onOpenScreens={rv => { setScreenFocus(null); setScreenGene({ rv }); setView("screens"); }}
+          onOpenScreens={rv => { setScreenGene({ rv }); setScreenFocus(null); }}
           onOpenDrug={id => openClinical({ kind: "drug", id })}
-          onOpenMap={rv => { setMapSeed({ rv }); setView("map"); }}
+          onOpenMap={openMap}
+          selected={targetSelected}
+          onSelect={selectTarget}
         />
       </div>}
       {/* Kept mounted too: a walk several hops deep is worth coming back to. */}
       {(view === "map" || visitedViews.includes("map")) && <div className="workspace-view" hidden={view !== "map"}>
-        <AtlasMap all={all} seed={mapSeed} onOpen={(kind: MapOpenKind, id) => {
+        <AtlasMap all={all} root={mapRoot} onPick={openMap} onOpen={(kind: MapOpenKind, id) => {
           if (kind === "gene") openGene(id);
           else if (kind === "drug" || kind === "trial") openClinical({ kind, id });
-          else if (kind === "screen") { setScreenFocus(id); setView("screens"); }
-          else { setProfileScreen(null); setHitFocus(id); setView("hits"); }
+          else if (kind === "screen") setScreenFocus(id);
+          else { setProfileScreen(null); setHitFocus(id); }
         }} />
       </div>}
       {view === "clinical" ? (
@@ -858,7 +917,7 @@ export function App() {
                 detail={detail}
                 meta={meta}
                 onOpen={openClinical}
-                onOpenScreen={id => { setScreenFocus(id); setView("screens"); }}
+                onOpenScreen={setScreenFocus}
               />
             ) : (
               <div className="empty">Loading {selected}…</div>

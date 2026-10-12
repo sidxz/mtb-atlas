@@ -1434,8 +1434,11 @@ def screens(
         params.append(modality)
     if rv_id:
         side = "" if own is None else f" AND {'own' if own else 'via_complex'}"
-        where.append(f"sc.screen_id IN (SELECT screen_id FROM reach WHERE rv_id = ?{side})")
-        params.append(rv_id)
+        where.append(
+            "sc.screen_id IN (SELECT screen_id FROM reach WHERE"
+            f" (lower(rv_id) = ? OR lower(gene_name) = ?){side})"
+        )
+        params.extend([rv_id.lower(), rv_id.lower()])
     if has_own_gene is not None:
         where.append("(sc.screen_id IN (SELECT screen_id FROM reach WHERE own)) = ?")
         params.append(has_own_gene)
@@ -1480,6 +1483,12 @@ def screens(
             f"SELECT count(*) FROM screens sc WHERE len({UNPLACED}) > 0"
         ).fetchone()[0],
         "not_ingested": list(NOT_INGESTED),
+        "n_own_genes": connection.sql(
+            "SELECT count(DISTINCT rv_id) FROM reach WHERE own"
+        ).fetchone()[0],
+        "n_genes": connection.sql(
+            "SELECT count(*) FROM target_summary WHERE feature = 'CDS'"
+        ).fetchone()[0],
     }
 
 
@@ -1734,6 +1743,7 @@ def hits(
     beyond_potency: Annotated[
         bool | None, Query(description="Has cytotoxicity, ADME or in-vivo data")
     ] = None,
+    coverage: Literal["beyond_potency", "potency_only", "elsewhere_only"] | None = None,
     screen: Annotated[
         str | None, Query(description="Tested in this campaign; the profile stays the whole one")
     ] = None,
@@ -1772,6 +1782,16 @@ def hits(
     if beyond_potency is not None:
         where.append(f"({' OR '.join(f'p.{t} IS NOT NULL' for t in TIERS)}) = ?")
         params.append(beyond_potency)
+    if coverage:
+        tiered_filter = " OR ".join(f"p.{t} IS NOT NULL" for t in TIERS)
+        potency_filter = "p.n_mtb_whole_cell IS NOT NULL OR p.n_mtb_protein IS NOT NULL"
+        where.append(
+            {
+                "beyond_potency": f"({tiered_filter})",
+                "potency_only": f"NOT ({tiered_filter}) AND ({potency_filter})",
+                "elsewhere_only": f"NOT ({tiered_filter}) AND NOT ({potency_filter})",
+            }[coverage]
+        )
     clause = f"WHERE {' AND '.join(where)}" if where else ""
     connection = _db()
     connection.sql(
@@ -1818,6 +1838,51 @@ def hits(
         "items": items,
         "population": dict(zip(population.columns, population.fetchone(), strict=True)),
     }
+
+
+@app.get("/compounds/{molecule_chembl_id}/screen-evidence")
+def compound_screen_evidence(
+    molecule_chembl_id: str,
+    category: Literal[
+        "phenotypic_mtb",
+        "biochemical_mtb",
+        "mammalian_cytotox",
+        "adme",
+        "in_vivo_efficacy",
+        "other_pathogen",
+        "other",
+        "selectivity",
+    ]
+    | None = None,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, Any]:
+    """Bounded evidence for one compound, with the same definitions as profile counts."""
+    _require_screens()
+    connection = _db()
+    where = ["r.molecule_chembl_id = ?"]
+    params: list[Any] = [molecule_chembl_id]
+    if category == "selectivity":
+        where.append(f"({SELECTIVITY})")
+    elif category:
+        where.append("st.source = 'chembl' AND NOT st.derived AND st.modality = ?")
+        params.append(category)
+    base = (
+        " FROM screen_results r JOIN screen_stages st USING (stage_id)"
+        " JOIN screens sc ON sc.screen_id = r.screen_id"
+        f" WHERE {' AND '.join(where)}"
+    )
+    total = connection.execute(f"SELECT count(*){base}", params).fetchone()[0]
+    items = _query(
+        connection,
+        "SELECT r.*, st.stage, st.modality, st.derived, st.description, st.strain,"
+        " st.assay_condition, sc.title AS screen_title, sc.year,"
+        " sc.document_chembl_id, sc.pubmed_id"
+        f"{base} ORDER BY sc.year DESC NULLS LAST, r.screen_id, r.stage_id,"
+        " r.result_tag, r.activity_id LIMIT ? OFFSET ?",
+        [*params, limit, offset],
+    )
+    return {"total": total, "limit": limit, "offset": offset, "items": items}
 
 
 def _query(

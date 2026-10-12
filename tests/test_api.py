@@ -578,3 +578,68 @@ def test_search_and_meta_know_the_campaigns(screens: TestClient) -> None:
 def test_a_store_without_screen_results_says_so(client: TestClient) -> None:
     assert client.get("/screens").status_code == 503
     assert "screens" not in client.get("/meta").json()["counts"]
+
+
+@pytest.mark.parametrize(
+    ("coverage", "expected"),
+    [
+        ("beyond_potency", {MACOZINONE, "CHEMBL_ADME_ONLY"}),
+        ("potency_only", {"CHEMBL_POTENCY_ONLY", "CHEMBL_BOUND_ONLY", "CHEMBL_PROTEIN"}),
+        ("elsewhere_only", {"CHEMBL_ELSEWHERE"}),
+    ],
+)
+def test_profile_coverage_filters_partition_population(
+    screens: TestClient, coverage: str, expected: set[str]
+) -> None:
+    page = screens.get("/hits", params={"coverage": coverage}).json()
+    assert {row["molecule_chembl_id"] for row in page["items"]} == expected
+    assert page["total"] == page["population"][coverage]
+
+
+def test_profile_filters_combine_with_campaign_and_measurements(screens: TestClient) -> None:
+    page = screens.get(
+        "/hits",
+        params={
+            "coverage": "beyond_potency",
+            "has": ["n_mtb_whole_cell", "n_cytotox"],
+            "screen": "chembl:CHEMBL_DOC3",
+        },
+    ).json()
+    assert [row["molecule_chembl_id"] for row in page["items"]] == [MACOZINONE]
+    assert screens.get("/hits", params={"coverage": "unknown"}).status_code == 422
+
+
+def test_campaign_gene_search_accepts_name_or_locus(screens: TestClient) -> None:
+    locus = screens.get("/screens", params={"rv_id": "rv3790"}).json()
+    name = screens.get("/screens", params={"rv_id": "DPRE1"}).json()
+    assert locus["total"] > 0
+    assert locus["items"] == name["items"]
+    assert 0 < locus["n_own_genes"] <= locus["n_genes"]
+
+
+def test_compound_evidence_matches_profile_and_preserves_provenance(screens: TestClient) -> None:
+    evidence = screens.get(
+        f"/compounds/{MACOZINONE}/screen-evidence", params={"category": "mammalian_cytotox"}
+    ).json()
+    profile = screens.get("/hits", params={"q": MACOZINONE}).json()["items"][0]
+    assert len({row["stage_id"] for row in evidence["items"]}) == profile["n_cytotox"]
+    assert all(row["molecule_chembl_id"] == MACOZINONE for row in evidence["items"])
+    assert all(row["source"] == "chembl" and not row["derived"] for row in evidence["items"])
+    assert all(row["source_version"] and row["retrieved_at"] for row in evidence["items"])
+    assert evidence["items"][0]["description"]
+    assert evidence["items"][0]["screen_title"]
+
+
+def test_compound_evidence_paginates_and_selectivity_keeps_bounds(screens: TestClient) -> None:
+    url = f"/compounds/{MACOZINONE}/screen-evidence"
+    full = screens.get(url).json()
+    first = screens.get(url, params={"limit": 1}).json()
+    second = screens.get(url, params={"limit": 1, "offset": 1}).json()
+    assert first["total"] == second["total"] == full["total"] > 1
+    assert first["items"] + second["items"] == full["items"][:2]
+    ratios = screens.get(url, params={"category": "selectivity"}).json()
+    assert ratios["total"] == 2
+    assert {row["standard_value"] for row in ratios["items"]} == {40, 1000}
+    assert any(row["standard_relation"] == ">" for row in ratios["items"])
+    assert screens.get(url, params={"limit": 1001}).status_code == 422
+    assert screens.get(url, params={"category": "unknown"}).status_code == 422

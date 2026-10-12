@@ -384,7 +384,17 @@ export function AtlasMap({ all, seed, onOpen }: {
         <form className="group" onSubmit={event => { event.preventDefault(); submit(); }}>
           <label className="lab" htmlFor="map-start">Start from a gene</label>
           <input id="map-start" className="search" value={query} placeholder="Gene name or Rv ID" list="map-genes"
-            onChange={event => { setQuery(event.target.value); setMissing(false); }} />
+            onChange={event => {
+              setQuery(event.target.value);
+              setMissing(false);
+              // A datalist pick arrives as a replacement (Chrome) or a plain Event
+              // (Safari, Firefox); typing stays a draft until Enter, so "fadD1"
+              // does not start before "fadD10" is finished.
+              const native = event.nativeEvent;
+              const picked = !(native instanceof InputEvent) || native.inputType === "insertReplacementText";
+              const rv = picked ? byName.get(event.target.value.trim().toLowerCase()) : undefined;
+              if (rv) void start(rv);
+            }} />
           <datalist id="map-genes">{genes.filter(g => g.gene_name).map(g => <option key={g.rv_id} value={g.gene_name!}>{g.rv_id}</option>)}</datalist>
           {missing && <p className="note" role="status">No CDS locus by that name.</p>}
         </form>

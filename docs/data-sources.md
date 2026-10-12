@@ -558,6 +558,62 @@ version to probe against: `screen_results` carries PubChem's label. The real fix
 compare the live `Last-Modified` with the one `fetch.py` already keeps in the `.meta.json`
 sidecar, roughly 50 lines, because `check` reads a stored version from a table only.
 
+## ChEMBL chemreps: structures for the screened compounds
+
+Fetched **2026-10-12** (UTC, the date `fetch.py` and the table record) from
+`https://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/releases/chembl_37/chembl_37_chemreps.txt.gz`:
+292,540,141 bytes gzipped, `Last-Modified` 29 May 2026. One header line
+(`chembl_id canonical_smiles standard_inchi standard_inchi_key`), then one compound per
+tab-separated line: 2,897,819 lines, one per `chembl_id`, none with a blank SMILES.
+
+**Licence: CC BY-SA 3.0**, ChEMBL's.
+
+**Why one file.** `compounds` is the potency set, and before this table the pages drew from it:
+2,013 of the 23,730 hit-profiling compounds and 187 of the 11,506 ChEMBL ids among the actives of
+`pubchem:project:588335` had a SMILES. A request per id to the molecule endpoint would have been
+about 9,500 requests at 50 ids each. One download covers all of them, and it is the UniChem
+reasoning again: to map a whole key set, use the bulk file. ChEMBL's SQLite release (5.76 GB) was
+rejected, because it would bring a second database engine into the pipeline for one column.
+
+**What is kept.** Only the ids the store references: every `molecule_chembl_id` in
+`screen_results` or `compounds`, 479,893 of them. The file is streamed and the other 2.4M lines
+are dropped as they pass; the step takes 3.3 s and peaks at 0.92 GB. `canonical_smiles` and
+`standard_inchi_key` are stored. The key is the one `compounds.inchi_key` and `ligands.inchikey`
+already use. `standard_inchi` is not stored.
+
+**Three states, and the third is having no row** (`compound_structures`, keyed on
+`molecule_chembl_id`, measured on the 2026-10-11 build):
+
+| state | meaning | ids |
+|---|---|---|
+| `has_structure` true | the file has a SMILES | 479,853 |
+| `has_structure` false | looked up, and this release's structure file has no line for it | 40 |
+| no row | never looked up: every PubChem-only CID (361,870 distinct CIDs on 572,581 result rows) | -- |
+
+`false` is what the file says, not a claim that the molecule has no structure: the file omits
+molecules without one and any id outside the release. Five of the 40 are in `compounds`, and
+they are exactly the five whose `smiles` is NULL there. A LEFT JOIN onto this table gives
+`has_structure IS NULL` for the third state, so it cannot be mistaken for `false`.
+
+**Agreement with `compounds`.** Both come from ChEMBL 37: one through the API, the other
+through this file. They agree on all 5,173 SMILES `compounds` holds, with 0 differences, and on
+every InChIKey. `compounds` is unchanged. If a later release makes them disagree, both values
+stay side by side and nothing reconciles them.
+
+**Coverage after this build**, each over its own denominator:
+
+- screened ChEMBL ids: 478,985 of 479,023 (38 not in the file);
+- hit-profiling compounds (`/hits`): 23,692 of 23,730;
+- actives of `pubchem:project:588335`: 11,506 of its 11,506 ChEMBL ids. The project has 12,274
+  distinct active compounds; the other 768 are PubChem-only CIDs;
+- result rows: 4,849,636 of 5,422,604. 572,581 rows carry no ChEMBL id, and 387 carry an id the
+  file lacks.
+
+**Release.** The URL is built from the release the ChEMBL mapping file states (`chembl_37`), and
+`source_version` is that name. `atlas refresh chembl` drops the raw cache, which is held under
+`data/raw/chembl/chemreps/`, and a new release is a new URL. ChEMBL's existing freshness probe
+already covers when the release moves.
+
 ## PubChem BioAssay
 
 The only public source that states an outcome per compound at screening scale.
@@ -802,17 +858,9 @@ things per row. `screen_results.activity_score` is PubChem's depositor-defined
 `PUBCHEM_ACTIVITY_SCORE`, populated on 4,584,652 rows (PubChem's only) and ranging from -8,525 to
 228 overall but 0 to 80 in AID 1626 and -8,525 to 100 in AID 2221: comparable within one deposit,
 meaningless across them, so `ORDER BY activity_score` over the table ranks across incompatible
-scales. `compounds` is the ChEMBL potency set (5,178 compounds), not the screened set: 5,173 of them
-have a SMILES, but only 2,013 of the 23,730 compounds in the ChEMBL campaigns and about 4,300 of
-the 479,023 ChEMBL ids on any screen result do (the API session counted 4,308), so most of this
-layer cannot be drawn and a structure may not be assumed for a screened compound.
-`screens.library_name` is NULL on all 999 rows and is **dead by construction**, hardcoded
-`None` in both ingesters because no source states it (a prose size is in `library_size_stated`).
-`screens.deposit_kind` restates `source` (`dataset` on all 27 PubChem rows, `publication` on all
-972 ChEMBL ones), and its `dataset` is a PubChem deposit, **not** ChEMBL's DATASET document type,
-which the campaign builder excludes: a reader joining the two would conclude that datasets are
-excluded and 27 are here. Both columns are named for removal in the follow-ups, and neither is
-dropped yet because the API is being built against this schema.
+scales. `compounds` is the ChEMBL potency set (5,178 compounds), not the screened set, so a
+screened compound is drawn from `compound_structures` (below), not from `compounds`. A result
+row with no `molecule_chembl_id` is PubChem-only and has no structure anywhere in the store.
 
 **Cost.** 1,430 s cold (ChEMBL's campaign fetch 1,272 s, PubChem 158 s); 60 s warm. The raw cache
 grew by 669 MB (PubChem 591, ChEMBL campaigns 56, UniChem 22) to 1.1 GB, and the store from 19
@@ -1914,7 +1962,7 @@ source.
 
 ## Follow-ups the first build named
 
-Each is a decision someone can pick up, with what it would cost. None is started.
+Each is a decision someone can pick up, with what it would cost. 5, 7 and 8 are done; the rest are not started.
 
 1. **A defect: `fadD28` reads a false absence.** AID 588549 (355,326 substances, the third
    largest target-based screen in the store) names the EMBL protein `CAB06100`, an H37Rv protein
@@ -1958,23 +2006,26 @@ Each is a decision someone can pick up, with what it would cost. None is started
 4. **A real freshness probe for UniChem**: compare the live `Last-Modified` with the one
    `fetch.py` keeps in the raw sidecar. About 50 lines; until then `atlas check` reads
    `unknown`.
-5. **The `/ask` sandbox's memory.** `screen_results` takes the process from 0.5 GB to 1.9 GB
-   resident. A pre-aggregated table for the agent, or a different sandbox, belongs to the API
-   plan.
+5. **Done: the `/ask` sandbox's memory**, and the API's. The sandbox now caps itself at
+   512 MB and spills to disk past that, so it no longer holds 1.98 GB resident: on the real store
+   it peaks at 0.64 GB after loading and 0.97 GB under a 5.4M-row self-join. The API was a DuckDB
+   instance per request, each allowed 80% of RAM, and `/hits` re-aggregated every screen result
+   on each call, so eight concurrent `/hits` held 8.67 GB. Now every request is a cursor on one
+   512 MB instance per process, and the 23,730-row profile is built once per store build: eight
+   concurrent `/hits` take 0.81 GB and 32 take 0.82 GB. `/hits` does not fit in 256 MB, so a
+   larger screening layer (follow-up 2) must re-measure the ceiling. Still open: `make build`
+   itself peaks at 6.5 GB (2026-10-11, `/usr/bin/time -l`). The structure step accounts for
+   at most 0.92 GB of that, its own peak when run alone; where the rest goes is not measured.
 6. **Row level against campaign level on `outcome`** (218 `IC50` rows `Active` inside
    campaigns with `outcome_stated` false), and **one of `max_assay_compounds` and
    `max_screen_compounds`** retiring. Both belong to the plan that changes the API.
-8. **A SMILES fetch for the screened compounds**, if depictions are ever wanted on the
-   screens pages: `compounds` holds a SMILES for about 4,300 of 479,023. The potency layer pulls
-   compounds compound-first by `molecule_chembl_id__in` batches (`molecules`), so the route
-   exists; the cost is roughly 475,000 more compounds at 50 ids a request, about 9,500 requests,
-   and a larger `compounds` table. It also decides what a PubChem-only compound (no ChEMBL id,
-   361,870 CIDs) is drawn from, which this fetch does not answer. Not started.
-7. **Remove `screens.library_name` and `screens.deposit_kind`.** The first is NULL on all 999
-   rows by construction; the second only restates `source`, in a vocabulary that collides with
-   ChEMBL's document types. Cost: a few lines in each ingester and the tests that name them, and
-   a schema change that the API plan has to know about, which is why it is not done in this
-   branch.
+7. **Done: `screens.library_name` and `screens.deposit_kind` are removed.** The first was NULL
+   on all 999 rows by construction; the second only restated `source`, in a word that collides
+   with ChEMBL's document types.
+8. **Done, from the bulk file rather than the API: structures for the screened compounds.** See
+   "ChEMBL chemreps" above. Still open, and a different problem: what a PubChem-only compound
+   (361,870 CIDs with no ChEMBL id) is drawn from. It needs the UniChem bridge to reach it first,
+   or a PubChem structure source of its own.
 
 ## Extension point: per-compound annotations
 

@@ -267,8 +267,9 @@ def test_the_schema_warns_about_every_screens_trap() -> None:
             "outcome IS NULL",  # ... and the filter that is not them
             "not a compound",  # a row is a SID or an activity
             "unmapped",  # NULL molecule_chembl_id is not untested
-            "most of this layer cannot be drawn",  # `compounds` is the potency set
-            "not the screened set",  # ... and a screened compound has no SMILES to assume
+            "not the screened set",  # `compounds` is the potency set ...
+            "`compound_structures`",  # ... and the screened set's structures are here ...
+            "PubChem-only and was never looked up",  # ... except a CID with no ChEMBL id
             "AID 1626 do: 8",  # the 11 disagreeing CIDs: never active against inactive
             "depositor-defined",  # `activity_score` has a scale per deposit ...
             "never order or filter it across `screen_id`s",  # ... so no 'strongest hits'

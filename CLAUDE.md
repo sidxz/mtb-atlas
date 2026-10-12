@@ -383,12 +383,16 @@ This is the rule that outranks completeness.
   MIC -- so choose an endpoint family and check the units (21 `SI` rows in
   `ug ml-1` are one mislabelled assay, `CHEMBL874728`). **The column mixes
   organisms as well as quantities, and the organism is invisible in the endpoint
-  string**: 389 rows of the selectivity-index family are not TB (HIV, *Yersinia
-  pestis*, *Plasmodium*, influenza A, ...), filed as `Selectivity Index` by
-  endpoint, so only the stage description tells a TB index from an HIV one and a
-  filter on the right quantity alone gives a clean table about the wrong
-  pathogen. A large minority are censored, so the `pmic` rule applies.
-- **Five screen columns carry their own honesty rule.**
+  string**: 389 rows of the selectivity-index family have a stage description
+  that does not say tuberculosis, about 250 of them naming another pathogen (HIV,
+  *Yersinia pestis*, *Plasmodium*, influenza A, ...), filed as `Selectivity
+  Index` by endpoint, so only the stage description tells a TB index from an HIV
+  one and a filter on the right quantity alone gives a clean table about the
+  wrong pathogen. **And that filter leaks the other way: 32 of the 389 are
+  tuberculosis, written `TBMIC`** ("Selectivity is the ratio of cytotoxicity
+  compared to TBMIC"), which no match on the word finds. A large minority are
+  censored, so the `pmic` rule applies.
+- **Three screen columns carry their own honesty rule.**
   `screen_stages.assay_condition` is set only on whole-cell stages and has four
   states: NULL on 12,184 ChEMBL stages is classified, not whole-cell; NULL on the
   28 PubChem stages is never classified, and several are whole-cell Mtb screens
@@ -396,15 +400,18 @@ This is the rule that outranks completeness.
   (4,763) is not `standard_media`. `strain` mixes Mtb strains, host animals and
   879 strains of other pathogens, and means something only beside `modality`.
   `screen_results.activity_score` is depositor-defined: comparable within
-  a deposit and never across them. `library_name` is dead by construction and
-  `deposit_kind` restates `source` (and its `dataset` is not ChEMBL's DATASET
-  type); both are named for removal.
+  a deposit and never across them.
 - **The bridge is incomplete, and a gap is recorded rather than patched.**
   UniChem gives 89.2% of PubChem rows a ChEMBL id (96.6% for AID 1626, 9.6% for
   AID 2060911). A compound with no mapping was still tested. And `compounds`
-  is the ChEMBL potency set, not the screened set: 2,013 of the 23,730 profiled
-  compounds and about 4,300 of the 479,023 screened ones have a SMILES, so most
-  of this layer cannot be drawn.
+  is the ChEMBL potency set, not the screened set; a screened compound is drawn
+  from `compound_structures` (ChEMBL's release-wide structure file), which has
+  one for 478,985 of the 479,023 screened ChEMBL ids and 23,692 of the 23,730
+  profiled compounds. **A structure has three states**: `has_structure` true;
+  false, meaning looked up and absent from that release's file (40 ids), which
+  is not "has no structure"; and no row, meaning never looked up, which is
+  every PubChem-only CID (361,870 of them). A LEFT JOIN reads the third as
+  NULL, so it must not be counted as the second.
 
 ## Validation targets
 
@@ -452,10 +459,19 @@ target), because a model that writes a plausible wrong join gets silent
 nonsense rather than an error.
 
 The sandbox copies every table into memory, and `screen_results` (5.4M rows,
-122 MB of Parquet) is the one that matters: the process goes from 0.5 GB to
-1.9 GB resident with it, and `connection()` takes 0.4 s. A pre-aggregated
-table for the agent, or a different sandbox, is the API plan's call; a view
-cannot replace the copy, because the lock lands before it would be resolved.
+122 MB of Parquet) is the one that matters: uncapped, the copy held the process
+at 1.98 GB. **It is capped at 512 MB and spills to disk past that**, with the
+limit and the spill directory set before the lock so SQL cannot lift them: 0.64
+GB after loading, 0.97 GB under a 5.4M-row self-join. A view cannot replace the
+copy, because the lock lands before it would be resolved.
+
+**The API has one memory ceiling per process, not per request.** Every request
+is a cursor on one 512 MB DuckDB instance with TEMP views, and the hit profile
+(all 5.4M results aggregated) is built once per store build, keyed on its
+inputs' modification times. Before this, each request was its own instance
+allowed 80% of RAM, and eight concurrent `/hits` held 8.67 GB; now they take
+0.81 GB. Do not go back to `duckdb.connect()` per request, and do not move an
+aggregate over `screen_results` into a route's per-request SQL.
 
 ## Querying it
 
@@ -464,9 +480,8 @@ and trials view, `/search` over every object at once, and the agent. A new kind
 of evidence is not finished until the agent's schema carries its trap, because
 that is the only surface where a wrong join is silent.
 
-The screening tables are reachable through the agent today and nowhere else:
-`screen_results` and `screen_stages` are not in `atlas/api.py` or `web/src`.
-The Screens and Hit profiling views are a separate plan.
+The screening tables are reachable through the agent and through the Screens
+and Hit profiling views (`/screens`, `/hits`, `/compounds/{id}`).
 
 **The genome view has two states, and the point is that they are different.**
 With nothing selected the gene table takes the whole width — 15 columns,

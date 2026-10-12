@@ -80,13 +80,14 @@ TABLES = (
     # The one big table: millions of rows, and `connection()` copies every name here into
     # the in-memory DuckDB. Unbounded, that copy held the process at 1.98 GB resident
     # (2026-10-11, 5,422,604 rows, with `compound_structures` in). It is bounded by
-    # MEMORY_LIMIT instead, past which DuckDB moves blocks to SPILL files: measured the same
-    # day, peak RSS 0.82 GB, `connection()` 1.1 s rather than 0.4 s, and four representative
-    # joins and aggregates under 0.1 s each. The copy is deliberate and a view cannot
-    # replace it: `CREATE VIEW ... AS SELECT * FROM '<parquet>'` reads its file at query
-    # time, after `enable_external_access` is off and the configuration locked, and DuckDB
-    # 1.5.6 refuses it ("file system operations are disabled by configuration"). Spilling
-    # is DuckDB's own buffer manager, not a file the SQL names, so the lock does not stop it.
+    # MEMORY_LIMIT instead, past which DuckDB moves blocks to spill files. Measured on the
+    # rebuilt store: 0.64 GB after `connection()`, which takes 1.4 s rather than 0.4 s, and
+    # 0.97 GB at peak under a 5.4M-row self-join that answers in 0.4 s. The copy is
+    # deliberate and a view cannot replace it: `CREATE VIEW ... AS SELECT * FROM
+    # '<parquet>'` reads its file at query time, after `enable_external_access` is off and
+    # the configuration locked, and DuckDB 1.5.6 refuses it ("file system operations are
+    # disabled by configuration"). Spilling is DuckDB's own buffer manager, not a file the
+    # SQL names, so the lock does not stop it.
     "screen_results",
     "drugs",
     "drug_mechanisms",
@@ -495,9 +496,11 @@ TABLE_NOTES = {
     "A compound carries `pubchem_cid` (PubChem rows) or `molecule_chembl_id` or both; the "
     "bridge between them is UniChem and it is incomplete, so a NULL molecule_chembl_id on a "
     "PubChem row means unmapped, not untested. **`compounds` is the ChEMBL potency set "
-    "(5,178), not the screened set**: about 4,300 of the 479,023 screened ChEMBL ids and "
-    "2,013 of the 23,730 in ChEMBL campaigns have a SMILES there, so most of this layer "
-    "cannot be drawn, and no structure may be assumed for a screened compound. There is no "
+    "(5,178), not the screened set**: a screened compound's structure is in "
+    "`compound_structures`, which has one for 478,985 of the 479,023 screened ChEMBL ids. A "
+    "row with a NULL molecule_chembl_id (572,581 of them, 361,870 distinct CIDs) is "
+    "PubChem-only and was never looked up there, so no structure may be assumed for it. "
+    "There is no "
     "target column: a ChEMBL result's target is its stage's, a PubChem result's is on "
     "`screens.targets`. `activity_comment` is ChEMBL's own words, including 'Not "
     "Determined' -- a measurement that failed, with no "

@@ -381,9 +381,13 @@ This is the rule that outranks completeness.
   therapeutic index in name only (an in-vitro ratio of cytotoxicity to an MIC,
   not an animal dose ratio), and `PI`, mostly a protection index of cell CC50 to
   MIC -- so choose an endpoint family and check the units (21 `SI` rows in
-  `ug ml-1` are one mislabelled assay, `CHEMBL874728`); `Ratio CC50/IC50` also
-  holds HIV, *Plasmodium* and influenza ratios, so filter Mtb on the stage
-  description; a large minority are censored, so the `pmic` rule applies.
+  `ug ml-1` are one mislabelled assay, `CHEMBL874728`). **The column mixes
+  organisms as well as quantities, and the organism is invisible in the endpoint
+  string**: 389 rows of the selectivity-index family are not TB (HIV, *Yersinia
+  pestis*, *Plasmodium*, influenza A, ...), filed as `Selectivity Index` by
+  endpoint, so only the stage description tells a TB index from an HIV one and a
+  filter on the right quantity alone gives a clean table about the wrong
+  pathogen. A large minority are censored, so the `pmic` rule applies.
 - **Five screen columns carry their own honesty rule.**
   `screen_stages.assay_condition` is set only on whole-cell stages and has four
   states: NULL on 12,184 ChEMBL stages is classified, not whole-cell; NULL on the
@@ -397,7 +401,10 @@ This is the rule that outranks completeness.
   type); both are named for removal.
 - **The bridge is incomplete, and a gap is recorded rather than patched.**
   UniChem gives 89.2% of PubChem rows a ChEMBL id (96.6% for AID 1626, 9.6% for
-  AID 2060911). A compound with no mapping was still tested.
+  AID 2060911). A compound with no mapping was still tested. And `compounds`
+  is the ChEMBL potency set, not the screened set: 2,013 of the 23,730 profiled
+  compounds and about 4,300 of the 479,023 screened ones have a SMILES, so most
+  of this layer cannot be drawn.
 
 ## Validation targets
 

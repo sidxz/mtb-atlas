@@ -424,9 +424,16 @@ quantities in one column** (23 strings; 161 rows, 3%, fit none of the four: `AUC
 `Delta Tm`, `Kcat/Km`, `Ratio Ki`, `MIC>99`, `RatioAUC/MIC`), and a reader must choose an
 endpoint family rather than trust it. Counts are rows with a value. `Selectivity Index` (1,951),
 `Selectivity index` (145; a distinct string, so an exact match on one case silently loses the
-other), `Ratio CC50/IC50` (183) and `Selectivity ratio` (116) are selectivity indices, though
-`Ratio CC50/IC50` also holds HIV, *Plasmodium*, influenza, *Leishmania* and *Giardia* ones, so an
-Mtb query filters on the stage description. A bare `Ratio` (1,350) and `Ratio IC50` (630) say
+other), `Ratio CC50/IC50` (183) and `Selectivity ratio` (116) are selectivity indices. **The column
+mixes organisms as well as quantities, and the organism is invisible in the endpoint string.** The
+API session counted 389 rows of this family on stages that are not TB at all, all filed as
+`Selectivity Index` or `Ratio CC50/IC50` by endpoint: HIV-1 3B (33) and HIV-2 ROD (32),
+*Yersinia pestis* (32), *P. falciparum* 3D7 (28) and K1 (47), influenza A (17), *Acinetobacter*
+(16), *M. abscessus* (12), *Trichophyton* (12) and atypical mycobacteria (20), among others
+(a regex over the stage descriptions here finds 299 rows and reproduces those named counts). Only
+the stage's own description tells a TB selectivity index from an HIV one, so a reader who filters
+for the right quantity and forgets the organism gets a clean-looking selectivity table about the
+wrong pathogen; an Mtb query filters on the stage description. A bare `Ratio` (1,350) and `Ratio IC50` (630) say
 nothing about what was divided by what. `TI` (63) is a therapeutic index in name only: all ten of
 its stage descriptions are an in-vitro ratio of red-cell MHC50 or cell-line IC50, CC50 or
 cytotoxicity to an MIC or GI50 (nine on *M. tuberculosis*, one on *S. aureus*), the most
@@ -785,7 +792,11 @@ things per row. `screen_results.activity_score` is PubChem's depositor-defined
 `PUBCHEM_ACTIVITY_SCORE`, populated on 4,584,652 rows (PubChem's only) and ranging from -8,525 to
 228 overall but 0 to 80 in AID 1626 and -8,525 to 100 in AID 2221: comparable within one deposit,
 meaningless across them, so `ORDER BY activity_score` over the table ranks across incompatible
-scales. `screens.library_name` is NULL on all 999 rows and is **dead by construction**, hardcoded
+scales. `compounds` is the ChEMBL potency set (5,178 compounds), not the screened set: 5,173 of them
+have a SMILES, but only 2,013 of the 23,730 compounds in the ChEMBL campaigns and about 4,300 of
+the 479,023 ChEMBL ids on any screen result do (the API session counted 4,308), so most of this
+layer cannot be drawn and a structure may not be assumed for a screened compound.
+`screens.library_name` is NULL on all 999 rows and is **dead by construction**, hardcoded
 `None` in both ingesters because no source states it (a prose size is in `library_size_stated`).
 `screens.deposit_kind` restates `source` (`dataset` on all 27 PubChem rows, `publication` on all
 972 ChEMBL ones), and its `dataset` is a PubChem deposit, **not** ChEMBL's DATASET document type,
@@ -1943,6 +1954,12 @@ Each is a decision someone can pick up, with what it would cost. None is started
 6. **Row level against campaign level on `outcome`** (218 `IC50` rows `Active` inside
    campaigns with `outcome_stated` false), and **one of `max_assay_compounds` and
    `max_screen_compounds`** retiring. Both belong to the plan that changes the API.
+8. **A SMILES fetch for the screened compounds**, if depictions are ever wanted on the
+   screens pages: `compounds` holds a SMILES for about 4,300 of 479,023. The potency layer pulls
+   compounds compound-first by `molecule_chembl_id__in` batches (`molecules`), so the route
+   exists; the cost is roughly 475,000 more compounds at 50 ids a request, about 9,500 requests,
+   and a larger `compounds` table. It also decides what a PubChem-only compound (no ChEMBL id,
+   361,870 CIDs) is drawn from, which this fetch does not answer. Not started.
 7. **Remove `screens.library_name` and `screens.deposit_kind`.** The first is NULL on all 999
    rows by construction; the second only restates `source`, in a vocabulary that collides with
    ChEMBL's document types. Cost: a few lines in each ingester and the tests that name them, and

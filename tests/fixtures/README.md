@@ -212,6 +212,21 @@ shapes. Each one exists to exercise one guard in `normalize`.
 The CID-collision case is not a fixture. A collision is not a shape the real
 file has, so its test writes a two-line temporary file.
 
+## `chembl_chemreps.txt`
+
+The header and the first three rows are real lines of `chembl_37_chemreps.txt.gz`, fetched
+2026-10-11, uncompressed (`_lines` opens either). The last two are **deliberately synthetic**;
+the live file has no blank SMILES among its 2,897,819 rows.
+
+| Rows | Exercises |
+|---|---|
+| `CHEMBL3330226` (macozinone), `CHEMBL64` (isoniazid) | A wanted id with a structure |
+| `CHEMBL1` | An id the store does not reference: streamed past, no row |
+| **Synthetic:** `CHEMBL_SHORT`, three fields | The length check |
+| **Synthetic:** `CHEMBL_BLANK`, an empty SMILES | A blank SMILES is no structure |
+
+Headerless and duplicated files are written by their tests from these lines.
+
 ## `pubchem_aid_summary.json`
 
 Five real records from PUG-REST's `assay/aid/<aids>/summary/JSON`, fetched

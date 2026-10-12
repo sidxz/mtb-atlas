@@ -3,7 +3,7 @@
  * atlas/api.py; if they drift, the API's /openapi.json is the arbiter.
  */
 
-const BASE = import.meta.env.VITE_API_BASE ?? "/api";
+export const BASE = import.meta.env.VITE_API_BASE ?? "/api";
 
 export type Essentiality = "ES" | "ESD" | "GD" | "NE" | "GA" | "Uncertain";
 
@@ -950,6 +950,32 @@ export interface Concept {
   genes: { rv_id: string; gene_name: string | null; product: string | null; log2fc: number | null }[];
 }
 
+/** A locus's DNA (a slice of NC_000962.3) and UniProt protein; either is null when absent. */
+export interface GeneSequence {
+  rv_id: string;
+  gene_name: string | null;
+  feature: string;
+  start: number;
+  stop: number;
+  strand: "+" | "-";
+  uniprot_acc: string | null;
+  dna: { accession: string; sequence: string; source_version: string } | null;
+  protein: { uniprot_acc: string; length: number; sequence: string; source_version: string } | null;
+}
+
+/** A gene or regulatory element in browser coordinates (0-based, half-open). */
+export interface GenomeFeature {
+  chr: string;
+  start: number;
+  end: number;
+  strand: string;
+  name: string;
+  rv_id: string;
+  feature: string;
+  product: string | null;
+  track: "gene" | "regulatory";
+}
+
 export const api = {
   meta: () => get<Meta>("/meta"),
   screens: (query: Record<string, unknown> = {}) => get<ScreenPage>("/screens", { limit: 1000, ...query }),
@@ -969,6 +995,8 @@ export const api = {
     ),
   target: (rvId: string) => get<TargetDetail>(`/targets/${rvId}`),
   concept: (kind: ConceptKind, id: string) => get<Concept>(`/concepts/${kind}`, { id }),
+  sequence: (rvId: string) => get<GeneSequence>(`/targets/${encodeURIComponent(rvId)}/sequence`),
+  genomeFeatures: () => get<GenomeFeature[]>("/genome/features"),
   proteinAssays: (rvId: string) => get<ProteinAssay[]>(`/targets/${encodeURIComponent(rvId)}/protein-assays`),
   compound: (id: string) => get<CompoundDetail>(`/compounds/${id}`),
   drugs: () => get<Page<DrugSummary>>("/drugs", { limit: 1000 }),

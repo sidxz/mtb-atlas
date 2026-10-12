@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@rdkit/rdkit": "2026.9.1",
+    "igv": "3.8.9",
     "molstar": "4.9.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",

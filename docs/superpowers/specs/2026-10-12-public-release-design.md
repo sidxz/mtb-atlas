@@ -323,7 +323,8 @@ token endpoint are monkeypatched):
 `ATLAS_STORE` moves where the API reads.
 
 CI smoke-tests the built image before pushing it: started with an empty store,
-`/` must return `index.html` and `/api/meta` must answer. The API's behaviour is
+`/` must return `index.html` and `/api/auth/me` must answer (`/api/meta` needs a
+store, so it is the container's healthcheck instead). The API's behaviour is
 pytest's job, not the smoke test's.
 
 The agent's sandbox tests are untouched.

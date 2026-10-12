@@ -1618,6 +1618,9 @@ TIERS = ("n_cytotox", "n_adme", "n_in_vivo")
 # number: 389 rows of the endpoint family are HIV, Plasmodium, influenza, Yersinia and
 # M. abscessus selectivity, filed on derived stages of the same papers. Requiring the
 # stage's own description to name tuberculosis removes them, and costs one LIKE.
+# Of those 389: 253 name another organism outright, 104 name none, and 32 are TB
+# written as `TBMIC`, which this guard drops with them. Recovering those 32 means a
+# list of spellings, which is the prose classification an ingester should own.
 #
 # The endpoint set, matched on the name rather than parsed out of the prose: the
 # `selectivity`/`cc50/ic50` family, plus `SI`, `TI` and `PI` exactly. The last two read
@@ -1695,7 +1698,7 @@ WITH tested AS (
     GROUP BY 1
 ), calls AS (
     -- How often a stated call went this compound's way, with its own denominator:
-    -- only 25 campaigns state calls at all, so `n_active_campaigns` alone would read
+    -- only 25 campaigns carry a stated call at all, so `n_active_campaigns` alone reads
     -- as "never a hit" for a compound nobody ever called either way. Both or neither.
     SELECT molecule_chembl_id,
            count(DISTINCT screen_id) AS n_call_campaigns,

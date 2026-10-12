@@ -559,7 +559,7 @@ def test_a_compound_known_only_from_a_screen_has_a_page(screens: TestClient) -> 
 
 
 def test_the_gene_table_carries_screen_columns_with_their_nulls(screens: TestClient) -> None:
-    """ChEMBL states no calls, so a gene screened only there has NULL actives, not 0."""
+    """No call is read from ChEMBL, so a gene screened only there has NULL actives, not 0."""
     (dpre1,) = screens.get("/targets", params={"q": "Rv3790"}).json()["items"]
     assert dpre1["n_target_screens"] >= 1
     assert dpre1["n_screen_actives"] is None

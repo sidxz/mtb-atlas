@@ -6,7 +6,7 @@
  * clinical view's classes rather than styling of its own.
  *
  * Two rules the arrangement exists to keep: an actives count is never divided
- * by a screen count (974 of 999 campaigns state no call, so there is nothing
+ * by a screen count (974 of 999 campaigns carry no stated call, so there is nothing
  * to divide), and 71 genes of 4,031 have a screen on their own protein, which
  * is the finding rather than a gap.
  */
@@ -618,7 +618,7 @@ function hitCell(hit: HitProfile, key: string) {
       return hit.latest_year ?? "—";
     case "selectivity_median":
       return selectivity(hit).text;
-    // Never a bare numerator: 974 of 999 campaigns state no call, so an actives
+    // Never a bare numerator: 974 of 999 campaigns carry no stated call, so an actives
     // count without its denominator would read as "never a hit".
     case "n_active_campaigns":
       return hit.n_call_campaigns === null ? "—" : `${hit.n_active_campaigns} / ${hit.n_call_campaigns}`;

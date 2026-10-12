@@ -20,7 +20,10 @@ names the records it came from.
 
 from __future__ import annotations
 
+import atexit
 import json
+import shutil
+import tempfile
 import threading
 from dataclasses import dataclass, field
 from typing import Any
@@ -33,6 +36,12 @@ MODEL = "claude-haiku-5-5"
 MAX_ROWS = 200
 MAX_TURNS = 12
 QUERY_SECONDS = 30
+# The sandbox's ceiling, data and query state together, so a long-lived API worker cannot
+# grow with the store or with one expensive question; see the note on `screen_results` below.
+# A query that cannot fit even with spilling fails as a tool error, which the model sees.
+MEMORY_LIMIT = "512MB"
+# DuckDB's default disk ceiling for spill is 90% of the free disk.
+SPILL_LIMIT = "8GB"
 
 # What to say when the loop ends on anything but a finished answer.
 STOPPED = {
@@ -68,16 +77,16 @@ TABLES = (
     "ligands",
     "screens",
     "screen_stages",
-    # The one big table: millions of rows once built, and `connection()` copies every name
-    # here into the in-memory DuckDB. Measured on the first build (2026-10-11, 5,422,604 rows):
-    # the process goes from 0.5 GB to 1.9 GB resident with this table in, and `connection()`
-    # takes 0.4 s. It stays in; a pre-aggregated table for the agent, or another sandbox,
-    # is the API plan's decision if that cost is too much for a long-lived worker. The copy is
-    # deliberate and a view cannot replace it: `CREATE VIEW ... AS SELECT * FROM '<parquet>'`
-    # reads its file at query time, after `enable_external_access` is off and the
-    # configuration locked, and DuckDB 1.5.6 refuses it ("file system operations are
-    # disabled by configuration"). The copy happens once per process, and every query is
-    # capped at MAX_ROWS and QUERY_SECONDS.
+    # The one big table: millions of rows, and `connection()` copies every name here into
+    # the in-memory DuckDB. Unbounded, that copy held the process at 1.98 GB resident
+    # (2026-10-11, 5,422,604 rows, with `compound_structures` in). It is bounded by
+    # MEMORY_LIMIT instead, past which DuckDB moves blocks to SPILL files: measured the same
+    # day, peak RSS 0.82 GB, `connection()` 1.1 s rather than 0.4 s, and four representative
+    # joins and aggregates under 0.1 s each. The copy is deliberate and a view cannot
+    # replace it: `CREATE VIEW ... AS SELECT * FROM '<parquet>'` reads its file at query
+    # time, after `enable_external_access` is off and the configuration locked, and DuckDB
+    # 1.5.6 refuses it ("file system operations are disabled by configuration"). Spilling
+    # is DuckDB's own buffer manager, not a file the SQL names, so the lock does not stop it.
     "screen_results",
     "drugs",
     "drug_mechanisms",
@@ -604,7 +613,17 @@ def connection() -> duckdb.DuckDBPyConnection:
     global _connection
     if _connection is not None:
         return _connection
-    con = duckdb.connect(":memory:")
+    # Set at open, before the lock below, so the model's SQL cannot lift either ceiling.
+    spill = tempfile.mkdtemp(prefix="atlas-agent-")
+    atexit.register(shutil.rmtree, spill, ignore_errors=True)
+    con = duckdb.connect(
+        ":memory:",
+        config={
+            "memory_limit": MEMORY_LIMIT,
+            "temp_directory": spill,
+            "max_temp_directory_size": SPILL_LIMIT,
+        },
+    )
     for name in TABLES:
         path = STORE / f"{name}.parquet"
         if path.exists():

@@ -119,6 +119,26 @@ def test_external_access_is_off_even_if_a_guard_is_bypassed() -> None:
         connection.execute("SET enable_external_access=true")
 
 
+def test_the_sandbox_has_a_memory_ceiling_the_model_cannot_lift() -> None:
+    """Unbounded, the in-memory copy held 1.98 GB; capped, it spills to disk past the limit.
+
+    The limit and the spill directory are set when the connection opens, before the lock, so
+    the model's SQL can neither raise the ceiling nor point the spill at another directory.
+    """
+    connection = agent.connection()
+    limit = connection.execute("SELECT current_setting('memory_limit')").fetchone()[0]
+    assert limit == "488.2 MiB"  # 512MB as DuckDB reports it
+    spill = connection.execute("SELECT current_setting('temp_directory')").fetchone()[0]
+    assert Path(spill).name.startswith("atlas-agent-")
+    for setting in (
+        "memory_limit='100GB'",
+        "temp_directory='/tmp'",
+        "max_temp_directory_size='1TB'",
+    ):
+        with pytest.raises(duckdb.Error):
+            connection.cursor().execute(f"SET {setting}")
+
+
 def test_describe_names_the_traps() -> None:
     """The schema dump has to carry the gotchas, or the model writes wrong joins."""
     text = agent.describe()

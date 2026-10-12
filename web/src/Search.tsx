@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router";
 import { InterfaceIcon } from "./InterfaceIcon";
 import { api, type Hit, type SearchResults } from "./api";
 
@@ -80,15 +81,21 @@ export function Search({
     else if (item.bottom > bounds.bottom) list.scrollTop += item.bottom - bounds.bottom;
   }, [activeIndex, visible, results]);
 
+  const close = useCallback(() => {
+    setOpen(false);
+    setQuery("");
+    setResults(EMPTY);
+  }, []);
   const pick = useCallback(
     (kind: Kind, id: string) => {
       onPick(kind, id);
-      setOpen(false);
-      setQuery("");
-      setResults(EMPTY);
+      close();
     },
-    [onPick],
+    [onPick, close],
   );
+  // Shift+Enter on a gene opens it in the map: the keyboard route to the Map link.
+  const navigate = useNavigate();
+  const mapPath = (rv: string) => `/map/${encodeURIComponent(rv)}`;
 
   return (
     <div className="globalsearch" ref={box}>
@@ -135,7 +142,10 @@ export function Search({
           }
           if (event.key === "Enter") {
             const [kind, hit] = flat[Math.min(active, flat.length - 1)];
-            pick(kind, hit.id);
+            if (event.shiftKey && kind === "genes") {
+              navigate(mapPath(hit.id));
+              close();
+            } else pick(kind, hit.id);
           }
         }}
       />
@@ -150,7 +160,7 @@ export function Search({
                   <p className="lab">{label}</p>
                   {results[kind].map((hit) => {
                     const index = flat.findIndex(([k, h]) => k === kind && h.id === hit.id);
-                    return (
+                    const option = (
                       <button
                         key={hit.id}
                         id={`${listId}-${index}`}
@@ -170,6 +180,17 @@ export function Search({
                         )}
                       </button>
                     );
+                    // Genes also open in the map. A sibling, not a child: a button
+                    // cannot sit inside the option button.
+                    return kind === "genes" ? (
+                      <div className="search-row" key={hit.id}>
+                        {option}
+                        <Link className="search-map" to={mapPath(hit.id)} tabIndex={-1} onClick={close}
+                          title="Open in map (Shift+Enter)" aria-label={`Open ${hit.label || hit.id} in the map`}>
+                          <InterfaceIcon name="map" />
+                        </Link>
+                      </div>
+                    ) : option;
                   })}
                 </div>
               ) : null,

@@ -1,4 +1,5 @@
 /** Filter and compare H37Rv protein targets. */
+import { Link } from "react-router";
 import { Children, createContext, isValidElement, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { FilterRail } from "./FilterRail";
 import { InterfaceIcon } from "./InterfaceIcon";
@@ -211,12 +212,11 @@ function ProfileEvidence({ children }: { children: React.ReactNode }) {
   return <>{Children.toArray(children).sort((a, b) => matches(b) - matches(a))}</>;
 }
 
-function Profile({ row, onOpenGene, onOpenScreens, onOpenDrug, onOpenMap, picks, statusFilter, tab, onTab }: {
+function Profile({ row, onOpenGene, onOpenScreens, onOpenDrug, picks, statusFilter, tab, onTab }: {
   row: TargetSummary;
   onOpenGene: (rv: string) => void;
   onOpenScreens: (rv: string) => void;
   onOpenDrug: (id: string) => void;
-  onOpenMap: (rv: string) => void;
   picks: Record<string, Verdict>;
   statusFilter: ValidationStatus | null;
   tab: ProfileTab;
@@ -245,9 +245,9 @@ function Profile({ row, onOpenGene, onOpenScreens, onOpenDrug, onOpenMap, picks,
           <button type="button" className="rowbtn" onClick={() => onOpenGene(row.rv_id)}>
             Open gene record
           </button>
-          <button type="button" className="rowbtn" onClick={() => onOpenMap(row.rv_id)}>
+          <Link className="rowbtn" to={`/map/${encodeURIComponent(row.rv_id)}`}>
             Open in map
-          </button>
+          </Link>
         </div>
       </div>
       {status ? (
@@ -421,7 +421,6 @@ export function Targets({
   onOpenGene,
   onOpenScreens,
   onOpenDrug,
-  onOpenMap,
   selected,
   onSelect,
 }: {
@@ -429,7 +428,6 @@ export function Targets({
   onOpenGene: (rvId: string) => void;
   onOpenScreens: (rvId: string) => void;
   onOpenDrug: (id: string) => void;
-  onOpenMap: (rvId: string) => void;
   /** The open profile lives in the URL, so a reload or a link lands on it. */
   selected: string | null;
   onSelect: (rvId: string | null, options?: { replace?: boolean }) => void;
@@ -712,7 +710,7 @@ export function Targets({
       {chosen && (
         <aside className="col detailcol assess-side" aria-label="Target profile" ref={profileRef}>
           <div className="assess-panel-head"><p className="lab">Target profile</p><button ref={closeRef} type="button" className="rowbtn" onClick={closeProfile}>Close</button></div>
-          <Profile key={chosen.rv_id} row={chosen} onOpenGene={onOpenGene} onOpenScreens={onOpenScreens} onOpenDrug={onOpenDrug} onOpenMap={onOpenMap} picks={picks} statusFilter={status} tab={profileTab} onTab={setProfileTab} />
+          <Profile key={chosen.rv_id} row={chosen} onOpenGene={onOpenGene} onOpenScreens={onOpenScreens} onOpenDrug={onOpenDrug} picks={picks} statusFilter={status} tab={profileTab} onTab={setProfileTab} />
         </aside>
       )}
     </div>

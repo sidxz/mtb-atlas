@@ -656,7 +656,6 @@ export function App() {
           onOpenGene={openGene}
           onOpenScreens={rv => { setScreenGene({ rv }); setScreenFocus(null); }}
           onOpenDrug={id => openClinical({ kind: "drug", id })}
-          onOpenMap={openMap}
           selected={targetSelected}
           onSelect={selectTarget}
         />

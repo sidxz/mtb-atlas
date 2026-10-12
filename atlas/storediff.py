@@ -81,6 +81,9 @@ class TableDiff:
     keyed: bool = True
     examples_added: list[str] = field(default_factory=list)
     examples_removed: list[str] = field(default_factory=list)
+    # A key-set diff cannot see a schema change: same keys, same count, same version.
+    columns_added: list[str] = field(default_factory=list)
+    columns_removed: list[str] = field(default_factory=list)
 
     @property
     def changed(self) -> bool:
@@ -88,12 +91,17 @@ class TableDiff:
             self.before != self.after
             or bool(self.added or self.removed)
             or self.version_before != self.version_after
+            or bool(self.columns_added or self.columns_removed)
         )
 
 
 def _version(connection: duckdb.DuckDBPyConnection, path: Path) -> str | None:
     row = connection.sql(f"SELECT source_version FROM '{path}' LIMIT 1").fetchone()
     return row[0] if row else None
+
+
+def _columns(connection: duckdb.DuckDBPyConnection, path: Path) -> list[str]:
+    return [row[0] for row in connection.sql(f"DESCRIBE SELECT * FROM '{path}'").fetchall()]
 
 
 def _keyset(path: Path, key: tuple[str, ...]) -> str:
@@ -120,6 +128,8 @@ def compare(old: Path | None = None, new: Path | None = None) -> list[TableDiff]
         added = removed = 0
         gained: list[str] = []
         lost: list[str] = []
+        columns_was = _columns(connection, before_path) if here else []
+        columns_now = _columns(connection, after_path) if there else []
         if here and there and key:
             # EXCEPT, not EXCEPT ALL: these tables are keyed, so the set
             # difference is the question being asked.
@@ -142,6 +152,10 @@ def compare(old: Path | None = None, new: Path | None = None) -> list[TableDiff]
                 keyed=bool(key),
                 examples_added=gained,
                 examples_removed=lost,
+                # Only where the table is in both stores: a whole table appearing is
+                # already reported as one, not as every column it has.
+                columns_added=[c for c in columns_now if c not in columns_was] if here else [],
+                columns_removed=[c for c in columns_was if c not in columns_now] if there else [],
             )
         )
     return diffs
@@ -161,6 +175,8 @@ def as_dict(diff: TableDiff) -> dict[str, object]:
         "changed": diff.changed,
         "examples_added": list(diff.examples_added),
         "examples_removed": list(diff.examples_removed),
+        "columns_added": list(diff.columns_added),
+        "columns_removed": list(diff.columns_removed),
     }
 
 

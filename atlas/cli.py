@@ -80,6 +80,9 @@ def _diff(as_json: bool, exit_code: bool) -> int:
             print(f"  {'':<{width}}  no key declared; compared on row count only")
         if d.version_before != d.version_after:
             print(f"  {'':<{width}}  version {d.version_before} -> {d.version_after}")
+        for label, columns in (("+", d.columns_added), ("-", d.columns_removed)):
+            if columns:
+                print(f"  {'':<{width}}  {label} column {', '.join(columns)}")
     print(f"\n{len(changed)} of {len(diffs)} tables changed.")
     return status
 

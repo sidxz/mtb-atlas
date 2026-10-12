@@ -278,6 +278,25 @@ def test_a_version_change_is_carried(tmp_path: Path) -> None:
     assert diff.changed is True  # the version moved even though the rows did not
 
 
+def test_a_column_added_or_dropped_is_a_change(tmp_path: Path) -> None:
+    """Same keys, same count, same version: a key-set diff saw nothing when two `screens`
+    columns were removed. A consumer reading the dropped one breaks, so it is a change."""
+    old, new = tmp_path / "old", tmp_path / "new"
+    stamp = {"source": "x", "source_version": "v1", "retrieved_at": "2026-10-10"}
+    for store, extra in ((old, {"deposit_kind": "dataset"}), (new, {"has_structure": True})):
+        store.mkdir()
+        write_parquet("drugs", [{"molecule_chembl_id": "CHEMBL1", **extra}], **stamp, store=store)
+    (diff,) = storediff.compare(old, new)
+    assert (diff.before, diff.after, diff.added, diff.removed) == (1, 1, 0, 0)
+    assert (diff.columns_added, diff.columns_removed) == (["has_structure"], ["deposit_kind"])
+    assert diff.changed is True
+    payload = storediff.as_dict(diff)
+    assert (payload["columns_added"], payload["columns_removed"]) == (
+        ["has_structure"],
+        ["deposit_kind"],
+    )
+
+
 def test_a_table_added_or_dropped_is_not_a_row_count_of_zero(tmp_path: Path) -> None:
     """A table absent from one store is NULL on that side, never 0.
 

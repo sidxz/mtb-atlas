@@ -52,7 +52,8 @@ the middle ground, and they are the whole update policy:
 - **`atlas diff`** compares the two **on each table's key, not its row count**.
   A table that gains ten rows and loses ten has a delta of zero; that is how
   an upstream removal hides, and the outage guard in `fetch.py` cannot see it
-  because the download succeeded.
+  because the download succeeded. It also compares **columns**, because a
+  key-set diff saw nothing when two `screens` columns were dropped.
 
 Cadence: trials monthly, ChEMBL/UniProt/PDB when `check` says so, Mycobrowser
 only when it moves (it re-keys every gene), papers never.

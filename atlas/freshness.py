@@ -206,6 +206,12 @@ SOURCES: tuple[Source, ...] = (
     Source("mycobrowser", "genes", "identity", _mycobrowser),
     Source("uniprot", "proteins", "identity", _uniprot),
     Source("chembl", "activities", "identity", _chembl),
+    Source(
+        "ncbi-refseq",
+        "genome",
+        "identity",
+        frozen="a versioned accession; a re-annotation is NC_000962.4, a new file",
+    ),
     Source("rcsb-pdb", "structures", "evidence", _rcsb, expensive=True),
     Source("alphafold", "predicted_structures", "evidence", _alphafold),
     Source("string-db", "interactions", "evidence", _string),

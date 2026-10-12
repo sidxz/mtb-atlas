@@ -17,9 +17,11 @@ from typing import Annotated, Any, Literal
 import duckdb
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from .clinical import TARGET_LINK_SQL, TARGET_LINKS
+from .sources.genome import dna
 from .store import STORE, built, provenance
 from .summary import EMPTY_CLINICAL, counts
 
@@ -36,6 +38,7 @@ EMPTY = {
 # versions rather than in a footnote.
 LICENCES = {
     "genes": ("Mycobrowser", "none stated (citation requested)"),
+    "genome": ("NCBI RefSeq NC_000962.3", "NCBI: no restriction on its own records"),
     "proteins": ("UniProt", "CC BY 4.0"),
     "chembl_targets": ("ChEMBL", "CC BY-SA 3.0"),
     "activities": ("ChEMBL", "CC BY-SA 3.0"),
@@ -65,6 +68,7 @@ LICENCES = {
 # Store tables with no licence of their own: joins, and a second table from a
 # source already listed above.
 DERIVED = (
+    "regulatory_features",
     "assay_sizes",
     "crosswalk",
     "target_summary",
@@ -695,6 +699,81 @@ def protein_assays(rv_id: str) -> list[dict[str, Any]]:
         " FROM census c LEFT JOIN metadata m USING (assay_chembl_id)"
         " ORDER BY c.n_compounds DESC, c.latest_year DESC NULLS LAST, c.assay_chembl_id",
         [rv_id],
+    )
+
+
+@app.get("/targets/{rv_id}/sequence")
+def sequence(rv_id: str) -> dict[str, Any]:
+    """The locus's DNA (a slice of NC_000962.3) and its UniProt protein, each with its source.
+
+    Either half is None when its table is not built or the locus has no protein, so a
+    tRNA reads DNA and no protein rather than failing.
+    """
+    connection = _db()
+    found = _query(
+        connection,
+        "SELECT g.rv_id, g.gene_name, g.feature, g.start, g.stop, g.strand,"
+        " w.uniprot_acc FROM genes g LEFT JOIN crosswalk w USING (rv_id) WHERE g.rv_id = ?",
+        [rv_id],
+    )
+    if not found:
+        raise HTTPException(404, f"no gene {rv_id} in the atlas")
+    gene = found[0]
+    out: dict[str, Any] = {**gene, "dna": None, "protein": None}
+    if built("genome"):
+        row = _query(
+            connection,
+            "SELECT accession, substring(sequence, ?, ?) AS piece, source_version FROM genome",
+            [gene["start"], gene["stop"] - gene["start"] + 1],
+        )[0]
+        out["dna"] = {
+            "accession": row["accession"],
+            "sequence": dna(row["piece"], 1, len(row["piece"]), gene["strand"]),
+            "source_version": row["source_version"],
+        }
+    if gene["uniprot_acc"]:
+        protein = _query(
+            connection,
+            "SELECT uniprot_acc, length, sequence, source_version FROM proteins"
+            " WHERE uniprot_acc = ?",
+            [gene["uniprot_acc"]],
+        )
+        out["protein"] = protein[0] if protein else None
+    return out
+
+
+@app.get("/genome/sequence.fa", response_class=PlainTextResponse)
+def genome_fasta() -> str:
+    """The chromosome as FASTA, for the genome browser's reference track."""
+    if not built("genome"):
+        raise HTTPException(503, "The genome is not built in this store.")
+    accession, description, seq = (
+        _db().execute("SELECT accession, description, sequence FROM genome").fetchone()
+    )
+    lines = (seq[i : i + 80] for i in range(0, len(seq), 80))
+    return f">{accession} {description}\n" + "\n".join(lines) + "\n"
+
+
+@app.get("/genome/features")
+def genome_features() -> list[dict[str, Any]]:
+    """Every gene and regulatory element in browser coordinates (0-based, half-open)."""
+    connection = _db()
+    regulatory = (
+        "SELECT feature, rv_id, coalesce(gene_name, rv_id) AS name, start, stop, strand,"
+        " NULL AS product FROM regulatory_features"
+        if built("regulatory_features")
+        else "SELECT NULL AS feature, NULL AS rv_id, NULL AS name, NULL::INT AS start,"
+        " NULL::INT AS stop, NULL AS strand, NULL AS product WHERE false"
+    )
+    return _query(
+        connection,
+        "SELECT 'NC_000962.3' AS chr, start - 1 AS start, stop AS \"end\", strand,"
+        " name, rv_id, feature, product,"
+        " CASE WHEN feature IN ('promoter', '-10_signal', '-35_signal')"
+        " THEN 'regulatory' ELSE 'gene' END AS track"
+        " FROM (SELECT feature, rv_id, coalesce(gene_name, rv_id) AS name, start, stop,"
+        f" strand, product FROM genes UNION ALL {regulatory}) ORDER BY start",
+        [],
     )
 
 

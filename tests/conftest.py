@@ -14,6 +14,7 @@ from atlas.sources import (
     clinicaltrials,
     conditional,
     essentiality,
+    genome,
     mtbtndb,
     mycobrowser,
     pdb,
@@ -53,6 +54,34 @@ def store(tmp_path_factory: pytest.TempPathFactory) -> Path:
         source=chembl.SOURCE,
         source_version=chembl.release(FIXTURES / "chembl_uniprot_mapping.txt"),
         retrieved_at="2026-10-09",
+        store=out,
+    )
+    write_parquet(
+        "regulatory_features",
+        mycobrowser.normalize_regulatory(FIXTURES / "mycobrowser_h37rv.txt"),
+        source=mycobrowser.SOURCE,
+        source_version="release 5 (2024-07-11)",
+        retrieved_at="2026-10-09",
+        store=out,
+    )
+    # Real bases at dprE1 and mmpL3, N everywhere else (tests/fixtures/README.md).
+    slices = json.loads((FIXTURES / "ncbi_genome_slices.json").read_text())
+    sequence = bytearray(b"N" * slices["length"])
+    for start, piece in slices["slices"].items():
+        sequence[int(start) - 1 : int(start) - 1 + len(piece)] = piece.encode()
+    write_parquet(
+        "genome",
+        [
+            {
+                "accession": slices["accession"],
+                "description": "Mycobacterium tuberculosis H37Rv, complete genome",
+                "length": slices["length"],
+                "sequence": sequence.decode(),
+            }
+        ],
+        source=genome.SOURCE,
+        source_version=genome.ACCESSION,
+        retrieved_at="2026-10-12",
         store=out,
     )
     crosswalk.build(store=out, with_orthologues=False)

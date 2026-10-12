@@ -24,6 +24,8 @@ from .store import STORE
 # on a key that was guessed.
 KEYS: dict[str, tuple[str, ...]] = {
     "genes": ("rv_id",),
+    "regulatory_features": ("rv_id", "feature", "start"),
+    "genome": ("accession",),
     "proteins": ("uniprot_acc",),
     "chembl_targets": ("uniprot_acc", "chembl_target_id"),
     "crosswalk": ("rv_id",),

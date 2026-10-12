@@ -844,3 +844,44 @@ def test_compound_evidence_paginates_and_selectivity_keeps_bounds(screens: TestC
     assert any(row["standard_relation"] == ">" for row in ratios["items"])
     assert screens.get(url, params={"limit": 1001}).status_code == 422
     assert screens.get(url, params={"category": "unknown"}).status_code == 422
+
+
+def test_a_gene_sequence_reads_on_its_own_strand(client: TestClient) -> None:
+    dpre1 = client.get("/targets/Rv3790/sequence").json()
+    assert dpre1["strand"] == "+"
+    assert dpre1["dna"]["accession"] == "NC_000962.3"
+    assert len(dpre1["dna"]["sequence"]) == 1386
+    assert dpre1["dna"]["sequence"][:3] == "ATG" and dpre1["dna"]["sequence"][-3:] == "TAG"
+    # mmpL3 is on the minus strand: GTG...TAA only once reverse-complemented.
+    mmpl3 = client.get("/targets/Rv0206c/sequence").json()["dna"]["sequence"]
+    assert mmpl3[:3] == "GTG" and mmpl3[-3:] == "TAA"
+    # The protein is UniProt's own, and as long as the entry says.
+    protein = dpre1["protein"]
+    assert protein["uniprot_acc"] == "P9WJF1"
+    assert len(protein["sequence"]) == protein["length"] == 461
+
+
+def test_an_rna_gene_has_dna_and_no_protein(client: TestClient) -> None:
+    rrs = client.get("/targets/MTB000019/sequence").json()
+    assert rrs["feature"] == "rRNA" and rrs["protein"] is None and rrs["dna"] is not None
+
+
+def test_genome_features_carry_genes_and_regulatory_elements(client: TestClient) -> None:
+    features = client.get("/genome/features").json()
+    promoter = next(f for f in features if f["track"] == "regulatory")
+    # Filed under Rv0148 and kept out of `genes`, where it would duplicate the locus.
+    assert promoter == {
+        **promoter,
+        "rv_id": "Rv0148",
+        "feature": "promoter",
+        "start": 174781,  # 0-based in the browser; Mycobrowser says 174782
+        "end": 174803,
+    }
+    assert {f["rv_id"] for f in features if f["track"] == "gene"} >= {"Rv3790", "Rv0206c"}
+
+
+def test_genome_fasta_is_the_whole_chromosome(client: TestClient) -> None:
+    text = client.get("/genome/sequence.fa").text
+    header, *lines = text.splitlines()
+    assert header.startswith(">NC_000962.3 ")
+    assert sum(map(len, lines)) == 4_411_532

@@ -29,7 +29,7 @@ FIELDS = (
     "length,xref_pdb,xref_chembl,xref_alphafolddb,xref_interpro,xref_pfam,"
     "go_id,ec,cc_function,cc_subcellular_location,ft_transmem,ft_signal,cc_pathway,"
     "cc_catalytic_activity,cc_cofactor,go_p,go_f,go_c,cc_disruption_phenotype,"
-    "lit_pubmed_id,protein_existence,annotation_score"
+    "lit_pubmed_id,protein_existence,annotation_score,sequence"
 )
 URL = (
     f"https://rest.uniprot.org/uniprotkb/stream?query=proteome:{PROTEOME}"
@@ -140,6 +140,9 @@ def normalize(path: Path) -> Iterator[dict[str, Any]]:
                 "n_references": len(_ids(row["PubMed ID"])),
                 "protein_existence": row["Protein existence"] or None,
                 "annotation_score": float(row["Annotation"]) if row["Annotation"] else None,
+                # The canonical isoform. UniProt's, not a translation of the genome slice,
+                # which would misread every frameshifted and non-ATG gene.
+                "sequence": row["Sequence"],
             }
 
 

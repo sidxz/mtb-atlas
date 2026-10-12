@@ -305,3 +305,12 @@ answers with a TrEMBL entry (`D3ZNH9`), because RefSeq `NP_` spans organisms,
 which is why the crosswalk and not this answer decides whether a locus is reached.
 `xref:embl-CCE37082` returned zero results the same day and is not a fixture,
 because nothing here queries an EMBL id.
+
+## `ncbi_genome_slices.json`
+
+Two real slices of NC_000962.3 (`efetch db=nuccore rettype=fasta`, fetched
+2026-10-12), keyed by their 1-based start, with the chromosome's real length.
+The test store pads everything else with `N`, which no assertion reads.
+`4235779` is dprE1 on the `+` strand (ATG...TAG, 1,386 bp); `244484` is mmpL3
+on the `-` strand, which reads GTG...TAA only once reverse-complemented, so a
+slice that forgets the strand fails on it.

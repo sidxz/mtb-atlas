@@ -57,6 +57,8 @@ TABLES = (
     "target_summary",
     "crosswalk",
     "genes",
+    "regulatory_features",
+    "genome",
     "proteins",
     "structures",
     "predicted_structures",
@@ -177,7 +179,17 @@ TABLE_NOTES = {
     "`go_component`), `disruption_phenotype`, and `pubmed_ids` / `n_references` (papers "
     "UniProt cites, a curated subset of the literature). NULL or empty means UniProt says "
     "nothing, which is not a negative finding: 0 transmembrane segments is 'none "
-    "annotated', not 'soluble'.",
+    "annotated', not 'soluble'. `sequence` is UniProt's canonical protein, not a "
+    "translation of the genome slice.",
+    "genome": "ONE row: the H37Rv chromosome NC_000962.3, the record Mycobrowser's "
+    "coordinates are on. A gene's DNA is `substring(sequence, start, stop - start + 1)` "
+    "from `genes`, reverse-complemented when `strand = '-'`; do not select the whole "
+    "4.4 Mb `sequence` column into an answer. 35 CDS do not start on ATG/GTG/TTG "
+    "(frameshifted IS6110 transposases, infC's ATC): biology, not an offset.",
+    "regulatory_features": "Mycobrowser's 14 promoters and -10/-35 boxes. `rv_id` is the "
+    "gene the element is FILED UNDER, not the element's own id, so several rows share a "
+    "locus. 14 rows is a curated handful, not a promoter map: a gene with no row has no "
+    "annotated promoter here, not no promoter.",
     "structures": "One row per (pdb_id, uniprot_acc). Join on uniprot_acc, NOT rv_id. "
     "`ligand_ids` excludes cofactors and crystallisation additives. `expression_hosts`, "
     "`plasmids`, `construct_length` and `mutations` are how the protein was PRODUCED, as "

@@ -12,7 +12,8 @@ All sources are public. No consortium data, ever.
 | Source | Version seen | Licence | Used for |
 |---|---|---|---|
 | [Mycobrowser](#mycobrowser) | Release 5 (2024-07-11) | **none stated** | Gene universe, annotation |
-| [UniProt](#uniprot) | 2026_03 (2026-09-02) | CC BY 4.0 | Accessions, cross-references |
+| [UniProt](#uniprot) | 2026_03 (2026-09-02) | CC BY 4.0 | Accessions, cross-references, protein sequences |
+| [NCBI RefSeq genome](#ncbi-refseq-the-h37rv-chromosome) | NC_000962.3 | no NCBI restriction; see below | Gene DNA, the genome browser's reference |
 | [ChEMBL](#chembl) | ChEMBL_37 (2026-05-01) | CC BY-SA 3.0 | Targets, bioactivity (M1) |
 | [UniChem](#unichem-the-chembl-to-pubchem-bridge) | `unknown`: no release stated, fetched 2026-10-11 | CC BY-SA 3.0, inherited from ChEMBL | ChEMBL to PubChem compound bridge |
 | [PubChem BioAssay](#pubchem-bioassay) | E-utilities `txid1773[ORGN] AND 10000:100000000[TSC]`, 28 AIDs on 2026-10-11 | **per depositor**; see below | Screening campaigns, with their inactives |
@@ -59,7 +60,10 @@ committed to this repository beyond the handful in `tests/fixtures/`.
   `-10_signal` (4), `-35_signal` (4), `rRNA` (3), `misc_RNA` (2).
 - **Regulatory rows re-use gene locus tags.** `Rv3571`, `Rv0148`, `Rv1219c`,
   `Rv1964`, `Rv1994c`, `Rv2940c`, `Rv3287c` and `MTB000063` each appear more than
-  once. Filtering to `CDS` makes the locus unique; not filtering duplicates genes.
+  once. Filtering to gene-level features makes the locus unique in `genes`; the
+  14 regulatory rows go to their own table, `regulatory_features`, where `rv_id`
+  is the gene the element is filed under. 14 is a curated handful, not a promoter
+  map: a gene with no row has no promoter *annotated here*.
 - **The header has a duplicate name:** `Orthologues M. tuberculosis` appears
   twice (columns 31 and 35), which `csv.DictReader` silently collapses. The
   ingester reads by index.
@@ -72,6 +76,31 @@ committed to this repository beyond the handful in `tests/fixtures/`.
 
 **Not verified:** whether the `/releases/5/...` URL stays stable once Release 6
 ships, and whether an older release remains downloadable. No API exists.
+
+## NCBI RefSeq: the H37Rv chromosome
+
+The sequence under every Mycobrowser coordinate.
+
+- **File:** `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nuccore&id=NC_000962.3&rettype=fasta&retmode=text`
+  (one FASTA record, 4,411,532 bp, ~4.5 MB).
+- **Version:** the accession is the version. `NC_000962.3` names one sequence for
+  ever; a re-annotation would be `.4`, a new file, so `atlas check` reports it
+  `frozen`.
+- **Why this record:** Mycobrowser's release file states `NC_000962.3` in
+  `Refseq_ID` on every row. Checked on the first build (2026-10-12): 3,996 of the
+  4,031 CDS slices start on ATG (2,446), GTG (1,363) or TTG (187), and every
+  reverse-strand gene does once reverse-complemented. The other 35 are biology, not
+  an offset: 16 read `AAA`, frameshifted IS6110 transposases, and infC starts on
+  ATC. Two CDS are not a whole number of codons.
+- **Stored as one row** in `genome`; a gene's DNA is sliced at read time
+  (`atlas/sources/genome.py:dna`), never stored per gene.
+- **Protein sequence comes from UniProt, not from translating this**: the
+  `sequence` field of the same proteome stream, so frameshifted and non-ATG genes
+  read as UniProt curates them.
+- **Licence:** NCBI states it places no restrictions on the use or distribution of
+  GenBank/RefSeq data, while noting submitters may hold rights in some records.
+  Not re-read for this entry; check it at <https://www.ncbi.nlm.nih.gov/home/about/policies/>
+  before anything here redistributes the sequence beyond serving it to the app.
 
 ## UniProt
 

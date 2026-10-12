@@ -30,6 +30,7 @@ from .sources import (
     clinicaltrials,
     conditional,
     essentiality,
+    genome,
     homology,
     mtbtndb,
     mycobrowser,
@@ -46,7 +47,7 @@ from .sources import (
 )
 from .store import provenance, read
 
-IDENTITY = (mycobrowser, uniprot, chembl)
+IDENTITY = (mycobrowser, uniprot, chembl, genome)
 
 
 def _say(message: str) -> None:
@@ -86,6 +87,7 @@ def build_identity(*, force: bool = False) -> list[Path]:
     for source in IDENTITY:
         _say(f"[identity] {source.SOURCE}")
         paths.append(source.build(force=force))
+    paths.append(mycobrowser.build_regulatory(force=force))
     _say("[identity] crosswalk")
     paths.append(crosswalk.build())
     return paths

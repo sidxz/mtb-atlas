@@ -64,6 +64,7 @@ def test_every_source_is_registered_with_a_stage() -> None:
         "mycobrowser",
         "uniprot",
         "chembl",
+        "ncbi-refseq",
         "rcsb-pdb",
         "alphafold",
         "dejesus-2017",

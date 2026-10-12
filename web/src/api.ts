@@ -356,7 +356,26 @@ export interface PredictedStructure {
   pae_url: string | null;
 }
 
+/** A campaign that reached this gene. `own` is its protein; the rest is shown, not counted. */
+export interface GeneScreen {
+  own: boolean;
+  via_complex: boolean;
+  screen_id: string;
+  title: string | null;
+  depositor: string | null;
+  source: string;
+  year: number | null;
+  n_stages: number;
+  n_tested: number | null;
+  library_size_stated: number | null;
+  outcome_stated: boolean;
+  n_active: number | null;
+  n_inactive: number | null;
+  modalities: string[];
+}
+
 export interface TargetDetail extends TargetSummary {
+  screens: GeneScreen[];
   protein_name: string | null;
   acc_status: string | null;
   shares_accession_with: string[];
@@ -627,7 +646,10 @@ export interface Hit {
   detail: string | null;
 }
 
-export type SearchResults = Record<"genes" | "drugs" | "trials" | "compounds", Hit[]>;
+export type SearchResults = Record<
+  "genes" | "drugs" | "trials" | "compounds" | "screens",
+  Hit[]
+>;
 
 export interface Page<T> {
   total: number;
@@ -663,6 +685,8 @@ export interface CompoundDetail extends Compound {
   activities: Activity[];
   whole_cell: Activity[];
   drug: DrugSummary | null;
+  /** Every campaign stage that tested it, with the outcome as the source gave it. */
+  tested_in: (ScreenResult & { screen_title: string | null; screen_source: string; year: number | null })[];
 }
 
 export interface Meta {
@@ -759,6 +783,7 @@ export interface ScreenStage {
   n_compounds: number | null;
   n_active_rows: number | null;
   n_inactive_rows: number | null;
+  n_inconclusive_rows: number | null;
   n_no_call_rows: number | null;
   endpoints: string[] | null;
 }
@@ -766,7 +791,10 @@ export interface ScreenStage {
 /** One result row as the source deposited it: a sample or an activity, not a compound. */
 export interface ScreenResult {
   stage_id: string;
+  screen_id: string;
   stage: string | null;
+  /** A computed ratio, which holds no funnel position. */
+  derived?: boolean;
   modality: string | null;
   pubchem_cid: string | null;
   pubchem_sid: string | null;
@@ -823,6 +851,8 @@ export interface HitProfile {
   /** The authors' own cytotox/potency ratio. Bounds are counted apart, never averaged. */
   n_selectivity: number | null;
   selectivity_min: number | null;
+  /** What to scan by: the maximum is one paper's best day, the median the literature's. */
+  selectivity_median: number | null;
   selectivity_max: number | null;
   n_selectivity_censored: number | null;
   /** Always read together: only 25 campaigns state calls at all. */

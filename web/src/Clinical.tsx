@@ -598,6 +598,56 @@ function CompoundPanel({
           </div>
         </Section>
 
+        {/* Where a zero becomes provable: "tested in a 215,098-compound library and
+            inactive" is a measurement, and the only public source that records it.
+            A row with no call is printed as that, never as inactive. */}
+        <Section label="Tested in" source="PubChem BioAssay + ChEMBL campaigns">
+          {compound.tested_in.length === 0 ? (
+            <span className="absent">in none of the screening campaigns the atlas holds</span>
+          ) : (
+            <>
+              <div className="scroller" style={{ maxHeight: 320 }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Campaign</th>
+                      <th>Stage</th>
+                      <th>Outcome</th>
+                      <th>Measurement</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {compound.tested_in.map((row, i) => (
+                      <tr key={`${row.stage_id}-${row.activity_id ?? row.pubchem_sid ?? i}`}>
+                        <td>
+                          <span className="clinical-clamp" title={row.screen_title ?? undefined}>
+                            {row.screen_title ?? row.screen_id}
+                          </span>
+                        </td>
+                        <td className="dim">{row.derived ? "derived" : row.stage ?? "—"}</td>
+                        <td className={row.outcome ? undefined : "dim"}>
+                          {row.outcome ?? "no call stated"}
+                        </td>
+                        <td className="dim">
+                          {row.standard_value === null
+                            ? row.activity_comment ?? "—"
+                            : `${row.endpoint ?? ""} ${
+                                row.standard_relation && row.standard_relation !== "=" ? row.standard_relation : ""
+                              }${row.standard_value} ${row.standard_units ?? ""}`.trim()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="note">
+                A campaign that stated no call says nothing about this compound either way. It is
+                not an inactive result.
+              </div>
+            </>
+          )}
+        </Section>
+
         <Section label="Properties" source="ChEMBL · CC BY-SA 3.0">
           <div className="ids">
             <span>MW {number(compound.mw, 0)}</span>

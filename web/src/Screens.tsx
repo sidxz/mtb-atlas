@@ -43,6 +43,32 @@ function count(value: number | null | undefined): string {
   return value === null || value === undefined ? "—" : value.toLocaleString();
 }
 
+type Sort = { key: string; order: "asc" | "desc" };
+
+/** A header that sorts on the server, so it sorts the population and not the page. */
+function SortHeader({ sort, onSort, column, label, numeric }: {
+  sort: Sort;
+  onSort: (next: Sort) => void;
+  column: string;
+  label: string;
+  numeric?: boolean;
+}) {
+  const active = sort.key === column;
+  return (
+    <th scope="col" className={numeric ? "n" : undefined}
+        aria-sort={active ? (sort.order === "asc" ? "ascending" : "descending") : undefined}>
+      <button className="sortbutton" type="button"
+              onClick={() => onSort({
+                key: column,
+                order: active ? (sort.order === "asc" ? "desc" : "asc") : numeric ? "desc" : "asc",
+              })}>
+        {label}
+        <span className="sorticon" aria-hidden="true">{active ? (sort.order === "asc" ? "↑" : "↓") : "↕"}</span>
+      </button>
+    </th>
+  );
+}
+
 /** A stated zero and an absent call are different answers and must not look alike. */
 function actives(screen: ScreenSummary): string {
   if (!screen.outcome_stated) return "no call stated";
@@ -159,6 +185,10 @@ function CampaignPage({ id, onBack, onSelectGene }: {
   }, [id]);
 
   if (!detail) return <main className="col canvascol screen-page"><p className="note">Loading campaign…</p></main>;
+  const called = detail.stages.reduce(
+    (n, s) => n + (s.n_active_rows ?? 0) + (s.n_inactive_rows ?? 0) + (s.n_inconclusive_rows ?? 0),
+    0,
+  );
   const own = detail.genes.filter(g => g.own);
   const complex = detail.genes.filter(g => !g.own);
   const outcomes: [string, string][] = [
@@ -202,6 +232,14 @@ function CampaignPage({ id, onBack, onSelectGene }: {
       <h3>Stage ladder</h3>
       <StageLadder stages={detail.stages} />
       <p className="caveat">Counts are per stage, never summed across them.</p>
+      {/* The deposit's summary and its own rows can disagree, and that is recorded
+          rather than resolved: picking one would hide a real conflict in the source. */}
+      {!detail.outcome_stated && called > 0 && (
+        <p className="caveat">
+          This deposit&rsquo;s summary states no activity call, yet {called.toLocaleString()} of its
+          rows carry one. Both are shown as the source gives them; the atlas does not pick a winner.
+        </p>
+      )}
 
       <h3>Genes reached</h3>
       {own.length ? (
@@ -245,18 +283,23 @@ function CampaignPage({ id, onBack, onSelectGene }: {
   );
 }
 
-function CampaignTable({ page, onOpen }: { page: ScreenPage; onOpen: (id: string) => void }) {
+function CampaignTable({ page, onOpen, sort, onSort }: {
+  page: ScreenPage;
+  onOpen: (id: string) => void;
+  sort: Sort;
+  onSort: (next: Sort) => void;
+}) {
   return (
     <div className="scroller clinical-scroller">
       <table className="clinical-table" aria-label="Screening campaigns">
         <thead>
           <tr>
-            <th scope="col">Campaign</th>
+            <SortHeader sort={sort} onSort={onSort} column="screen_id" label="Campaign" />
             <th scope="col">Depositor</th>
-            <th scope="col" className="n">Year</th>
-            <th scope="col" className="n">Tested</th>
-            <th scope="col" className="n">Actives</th>
-            <th scope="col" className="n">Stages</th>
+            <SortHeader sort={sort} onSort={onSort} column="year" label="Year" numeric />
+            <SortHeader sort={sort} onSort={onSort} column="n_tested" label="Tested" numeric />
+            <SortHeader sort={sort} onSort={onSort} column="n_active" label="Actives" numeric />
+            <SortHeader sort={sort} onSort={onSort} column="n_stages" label="Stages" numeric />
             <th scope="col">Genes reached</th>
           </tr>
         </thead>
@@ -295,13 +338,25 @@ function CampaignTable({ page, onOpen }: { page: ScreenPage; onOpen: (id: string
   );
 }
 
-export function Screens({ onSelectGene }: { onSelectGene?: (rvId: string) => void }) {
+export function Screens({ onSelectGene, focus, onFocus }: {
+  onSelectGene?: (rvId: string) => void;
+  /** A campaign opened from elsewhere -- a gene page, or the search box. */
+  focus?: string | null;
+  onFocus?: (id: string | null) => void;
+}) {
   const [page, setPage] = useState<ScreenPage | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [open, setOpen] = useState<string | null>(null);
+  const [own, setOwn] = useState<string | null>(null);
+  const open = focus !== undefined ? focus : own;
+  const setOpen = onFocus ?? setOwn;
   const [ownOnly, setOwnOnly] = useState(false);
+  // Size first: the public TB screening record is a handful of very large deposits
+  // and a long tail, and that shape is the first thing to see.
+  const [sort, setSort] = useState<Sort>({ key: "n_tested", order: "desc" });
 
-  useEffect(() => { api.screens().then(setPage, e => setError(String(e))); }, []);
+  useEffect(() => {
+    api.screens({ sort: sort.key, order: sort.order }).then(setPage, e => setError(String(e)));
+  }, [sort]);
 
   const shown = useMemo(() => {
     if (!page) return null;
@@ -343,30 +398,46 @@ export function Screens({ onSelectGene }: { onSelectGene?: (rvId: string) => voi
       </FilterRail>
       {open
         ? <CampaignPage id={open} onBack={() => setOpen(null)} onSelectGene={onSelectGene} />
-        : <main className="col canvascol"><CampaignTable page={shown} onOpen={setOpen} /></main>}
+        : <main className="col canvascol">
+            <CampaignTable page={shown} onOpen={setOpen} sort={sort} onSort={setSort} />
+          </main>}
     </div>
   );
 }
 
 // --- hit profiling -----------------------------------------------------------
 
-/** A measured range, with bounds reported as bounds. */
-function selectivity(hit: HitProfile): string {
+/** The median of what the papers reported, with the spread behind it on hover.
+ *
+ * Isoniazid's twelve ratios span 8 to 60,000, so the maximum is one paper's best
+ * day. A bound ("> 100-fold") is counted and never shown as the number.
+ */
+function selectivity(hit: HitProfile): { text: string; title?: string } {
   if (hit.n_selectivity === null) {
-    return hit.n_selectivity_censored ? `bound only (${hit.n_selectivity_censored})` : "—";
+    return hit.n_selectivity_censored
+      ? { text: `bound only (${hit.n_selectivity_censored})`, title: "every reported ratio was a bound" }
+      : { text: "—" };
   }
-  const range = hit.selectivity_min === hit.selectivity_max
-    ? `${hit.selectivity_min}`
-    : `${hit.selectivity_min}–${hit.selectivity_max}`;
-  return hit.n_selectivity > 1 ? `${range} (${hit.n_selectivity})` : range;
+  const round = (v: number | null) => (v === null ? "?" : v >= 100 ? v.toFixed(0) : v.toFixed(1));
+  const spread = `${hit.n_selectivity} reported, ${round(hit.selectivity_min)}–${round(hit.selectivity_max)}`;
+  return {
+    text: hit.n_selectivity > 1 ? `${round(hit.selectivity_median)} (${hit.n_selectivity})` : round(hit.selectivity_median),
+    title: hit.n_selectivity_censored ? `${spread}; ${hit.n_selectivity_censored} further bounds` : spread,
+  };
 }
 
 export function HitProfiling() {
   const [page, setPage] = useState<HitPage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [beyond, setBeyond] = useState(false);
+  // Most-profiled first. Paper count ranks the famous drugs, which is a literature
+  // fact rather than a triage one; cytotoxicity coverage ranks what has been looked
+  // at hardest, which is the question this view is for.
+  const [sort, setSort] = useState<Sort>({ key: "n_cytotox", order: "desc" });
 
-  useEffect(() => { api.hits().then(setPage, e => setError(String(e))); }, []);
+  useEffect(() => {
+    api.hits({ sort: sort.key, order: sort.order }).then(setPage, e => setError(String(e)));
+  }, [sort]);
 
   const shown = useMemo(() => {
     if (!page) return null;
@@ -423,17 +494,17 @@ export function HitProfiling() {
               </tr>
               <tr>
                 <th scope="col">Structure</th>
-                <th scope="col">Compound</th>
-                <th scope="col" className="n">Papers</th>
-                <th scope="col" className="n">Whole cell</th>
-                <th scope="col" className="n">Mtb protein</th>
-                <th scope="col" className="n">Cytotox</th>
-                <th scope="col" className="n">ADME</th>
-                <th scope="col" className="n">Animal</th>
-                <th scope="col" className="n">Other pathogen</th>
-                <th scope="col" className="n">Unclassified</th>
-                <th scope="col" className="n">Selectivity</th>
-                <th scope="col" className="n">Called active</th>
+                <SortHeader sort={sort} onSort={setSort} column="molecule_chembl_id" label="Compound" />
+                <SortHeader sort={sort} onSort={setSort} column="n_papers" label="Papers" numeric />
+                <SortHeader sort={sort} onSort={setSort} column="n_mtb_whole_cell" label="Whole cell" numeric />
+                <SortHeader sort={sort} onSort={setSort} column="n_mtb_protein" label="Mtb protein" numeric />
+                <SortHeader sort={sort} onSort={setSort} column="n_cytotox" label="Cytotox" numeric />
+                <SortHeader sort={sort} onSort={setSort} column="n_adme" label="ADME" numeric />
+                <SortHeader sort={sort} onSort={setSort} column="n_in_vivo" label="Animal" numeric />
+                <SortHeader sort={sort} onSort={setSort} column="n_other_pathogen" label="Other pathogen" numeric />
+                <SortHeader sort={sort} onSort={setSort} column="n_other" label="Unclassified" numeric />
+                <SortHeader sort={sort} onSort={setSort} column="selectivity_median" label="Selectivity" numeric />
+                <SortHeader sort={sort} onSort={setSort} column="n_active_campaigns" label="Called active" numeric />
               </tr>
             </thead>
             <tbody>
@@ -452,7 +523,7 @@ export function HitProfiling() {
                   <td className="n">{count(hit.n_in_vivo)}</td>
                   <td className="n dim">{count(hit.n_other_pathogen)}</td>
                   <td className="n dim">{count(hit.n_other)}</td>
-                  <td className="n">{selectivity(hit)}</td>
+                  <td className="n" title={selectivity(hit).title}>{selectivity(hit).text}</td>
                   {/* Never a bare numerator: most campaigns state no call. */}
                   <td className="n">{hit.n_call_campaigns === null ? "—" : `${hit.n_active_campaigns} / ${hit.n_call_campaigns}`}</td>
                 </tr>

@@ -1649,6 +1649,7 @@ PROFILE_SORTS = (
     "first_year",
     "latest_year",
     "n_selectivity",
+    "selectivity_median",
     "selectivity_max",
     "n_active_campaigns",
     "molecule_chembl_id",
@@ -1678,6 +1679,10 @@ WITH tested AS (
            nullif(count(*) FILTER (WHERE {MEASURED_SELECTIVITY}), 0) AS n_selectivity,
            min(r.standard_value) FILTER (WHERE {MEASURED_SELECTIVITY}) AS selectivity_min,
            max(r.standard_value) FILTER (WHERE {MEASURED_SELECTIVITY}) AS selectivity_max,
+           -- The figure to sort and scan by. Isoniazid's twelve reported ratios span
+           -- 8 to 60,000 across twelve papers, so the maximum is one paper's best day
+           -- and the median is the literature's answer. Both travel, with the count.
+           median(r.standard_value) FILTER (WHERE {MEASURED_SELECTIVITY}) AS selectivity_median,
            count(*) FILTER (WHERE NOT ({MEASURED_SELECTIVITY})) AS n_selectivity_censored
     FROM screen_results r JOIN screen_stages st USING (stage_id)
     WHERE {SELECTIVITY} AND r.molecule_chembl_id IS NOT NULL
@@ -1692,7 +1697,7 @@ WITH tested AS (
     FROM screen_results WHERE outcome IS NOT NULL AND molecule_chembl_id IS NOT NULL
     GROUP BY 1
 )
-SELECT t.*, s.n_selectivity, s.selectivity_min, s.selectivity_max,
+SELECT t.*, s.n_selectivity, s.selectivity_min, s.selectivity_median, s.selectivity_max,
        s.n_selectivity_censored, c.n_call_campaigns, c.n_active_campaigns
 FROM tested t
 LEFT JOIN selectivity s USING (molecule_chembl_id)

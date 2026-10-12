@@ -376,6 +376,9 @@ export function App() {
   });
 
   const [view, setView] = useState<"genome" | "screens" | "hits" | "clinical">("genome");
+  // A campaign opened from a gene page or the search box, so those routes reach
+  // the same page rather than a second copy of it.
+  const [screenFocus, setScreenFocus] = useState<string | null>(null);
   const [focus, setFocus] = useState<Focus>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<TargetDetail | null>(null);
@@ -548,6 +551,7 @@ export function App() {
             if (kind === "genes") openGene(id);
             else if (kind === "trials") openClinical({ kind: "trial", id });
             else if (kind === "compounds") openClinical({ kind: "compound", id });
+            else if (kind === "screens") { setScreenFocus(id); setView("screens"); }
             else openClinical({ kind: "drug", id });
           }}
         />
@@ -559,7 +563,7 @@ export function App() {
       <Ask base={import.meta.env.VITE_API_BASE ?? "/api"} />
 
       {view === "screens" ? (
-        <Screens onSelectGene={openGene} />
+        <Screens onSelectGene={openGene} focus={screenFocus} onFocus={setScreenFocus} />
       ) : view === "hits" ? (
         <HitProfiling />
       ) : view === "clinical" ? (
@@ -805,7 +809,12 @@ export function App() {
             {detailError ? (
               <div className="errbox">{detailError}</div>
             ) : detail ? (
-              <TargetDetailPanel detail={detail} meta={meta} onOpen={openClinical} />
+              <TargetDetailPanel
+                detail={detail}
+                meta={meta}
+                onOpen={openClinical}
+                onOpenScreen={id => { setScreenFocus(id); setView("screens"); }}
+              />
             ) : (
               <div className="empty">Loading {selected}…</div>
             )}

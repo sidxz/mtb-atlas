@@ -726,3 +726,5 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .screen-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
 .screen-gallery figure { margin: 0; border: 1px solid var(--line); border-radius: var(--radius); padding: 6px; }
 .screen-gallery figcaption { display: flex; flex-direction: column; font-size: 12px; gap: 2px; }
+/* A campaign title is a line of prose in a cell, not a centred label. */
+.clinical-table .row-open, .screen-page .row-open { text-align: left; }

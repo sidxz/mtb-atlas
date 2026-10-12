@@ -18,9 +18,10 @@ const KINDS: [Kind, string][] = [
   ["drugs", "Drugs & candidates"],
   ["trials", "Trials"],
   ["compounds", "Compounds"],
+  ["screens", "Screening campaigns"],
 ];
 
-const EMPTY: SearchResults = { genes: [], drugs: [], trials: [], compounds: [] };
+const EMPTY: SearchResults = { genes: [], drugs: [], trials: [], compounds: [], screens: [] };
 
 export function Search({
   onPick,
@@ -83,7 +84,7 @@ export function Search({
         type="search"
         value={query}
         placeholder="Search the atlas…"
-        aria-label="Search genes, drugs, trials and compounds"
+        aria-label="Search genes, drugs, trials, compounds and screening campaigns"
         onChange={(event) => {
           setQuery(event.target.value);
           setOpen(true);

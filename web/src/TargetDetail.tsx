@@ -170,10 +170,12 @@ export function TargetDetailPanel({
   detail,
   meta,
   onOpen,
+  onOpenScreen,
 }: {
   detail: Detail;
   meta: Meta | null;
   onOpen: (focus: Focus) => void;
+  onOpenScreen?: (id: string) => void;
 }) {
   const [tab, setTab] = useState<Tab>("evidence");
   const [structureIndex, setStructureIndex] = useState(0);
@@ -308,7 +310,7 @@ export function TargetDetailPanel({
           </>
         )}
 
-        {tab === "chemistry" && <Chemistry detail={detail} onOpen={onOpen} />}
+        {tab === "chemistry" && <Chemistry detail={detail} onOpen={onOpen} onOpenScreen={onOpenScreen} />}
 
         {tab === "clinical" && <ClinicalTab detail={detail} meta={meta} onOpen={onOpen} />}
 
@@ -1266,7 +1268,80 @@ function AssayReadiness({ detail }: { detail: Detail }) {
   );
 }
 
-function Chemistry({ detail, onOpen }: { detail: Detail; onOpen: (focus: Focus) => void }) {
+/** Has anyone screened this protein, and how big was the biggest one?
+ *
+ * Library size is the question, not hit count: a 350,000-compound campaign and
+ * fourteen five-compound follow-ups are opposite answers. An actives count is
+ * printed only where that campaign stated calls, and is never divided by the
+ * number of campaigns -- the two share no denominator.
+ */
+function ScreenedIn({ detail, onOpenScreen }: { detail: Detail; onOpenScreen?: (id: string) => void }) {
+  const own = detail.screens.filter((s) => s.own);
+  const complex = detail.screens.filter((s) => !s.own);
+  if (!own.length) {
+    return (
+      <p className="caveat">
+        No screening campaign in the atlas was run on this protein alone
+        {complex.length > 0 &&
+          `; ${complex.length} reached it only as part of a complex, which is not a screen of it`}
+        . 71 of 4,031 genes have one.
+      </p>
+    );
+  }
+  const biggest = Math.max(...own.map((s) => s.n_tested ?? 0));
+  return (
+    <>
+      <p className="note" style={{ color: "var(--fg)" }}>
+        <b>{own.length}</b> screening campaign{own.length === 1 ? "" : "s"} on this protein
+        {biggest > 0 && <>, the largest {biggest.toLocaleString()} compounds</>}.
+      </p>
+      <div className="scroller">
+        <table>
+          <thead>
+            <tr>
+              <th>Campaign</th>
+              <th>Depositor</th>
+              <th className="n">Year</th>
+              <th className="n">Tested</th>
+              <th className="n">Actives</th>
+            </tr>
+          </thead>
+          <tbody>
+            {own.map((s) => (
+              <tr key={s.screen_id}>
+                <td>
+                  <button type="button" className="row-open" onClick={() => onOpenScreen?.(s.screen_id)}>
+                    <span className="clinical-clamp" title={s.title ?? undefined}>
+                      {s.title ?? s.screen_id}
+                    </span>
+                  </button>
+                </td>
+                <td className="dim">{s.depositor ?? "—"}</td>
+                <td className="n dim">{s.year ?? "—"}</td>
+                <td className="n">{s.n_tested?.toLocaleString() ?? "—"}</td>
+                <td className={s.outcome_stated ? "n" : "n dim"}>
+                  {!s.outcome_stated ? "no call stated" : (s.n_active?.toLocaleString() ?? "per stage")}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {complex.length > 0 && (
+        <p className="caveat">
+          {complex.length} further campaign{complex.length === 1 ? "" : "s"} reached this gene only
+          as part of a complex. Shown, never counted as its own.
+        </p>
+      )}
+    </>
+  );
+}
+
+function Chemistry({ detail, onOpen, onOpenScreen }: {
+  detail: Detail;
+  onOpen: (focus: Focus) => void;
+  onOpenScreen?: (id: string) => void;
+}) {
   const byCompound = useMemo(() => {
     const index = new Map<string, Compound>();
     for (const c of detail.compounds) index.set(c.molecule_chembl_id, c);
@@ -1299,6 +1374,7 @@ function Chemistry({ detail, onOpen }: { detail: Detail; onOpen: (focus: Focus) 
     return (
       <>
         <AssayReadiness detail={detail} />
+        <ScreenedIn detail={detail} onOpenScreen={onOpenScreen} />
         <p className="absent">
           No ChEMBL activity against this gene. If it is essential and has a structure, that is
           the interesting kind of nothing.
@@ -1311,6 +1387,7 @@ function Chemistry({ detail, onOpen }: { detail: Detail; onOpen: (focus: Focus) 
   return (
     <>
       <AssayReadiness detail={detail} />
+      <ScreenedIn detail={detail} onOpenScreen={onOpenScreen} />
       <p className="note" style={{ marginTop: 0 }}>
         Best measurement per compound. Whole-cell potency is shown only for compounds that already
         have protein-level activity here.

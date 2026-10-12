@@ -32,6 +32,7 @@ KEYS: dict[str, tuple[str, ...]] = {
     "ligands": ("comp_id",),
     "activities": ("activity_id",),
     "compounds": ("molecule_chembl_id",),
+    "compound_structures": ("molecule_chembl_id",),
     "assay_sizes": ("target_chembl_id", "assay_chembl_id"),
     "essentiality": ("rv_id",),
     "vulnerability": ("rv_id",),

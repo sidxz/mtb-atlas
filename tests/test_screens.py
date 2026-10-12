@@ -1581,14 +1581,21 @@ def test_a_chembl_activity_listed_twice_stops_the_build(monkeypatch, tmp_path):
 
 
 def test_the_evidence_stage_hands_the_campaigns_and_the_crosswalk_to_pubchems_build(
-    monkeypatch, evidence_store
+    monkeypatch, evidence_store, tmp_path
 ):
     """`build_evidence` reaches 17 services and cannot run here, so every other builder is
-    stubbed and only this block is real. It reads the store the way a build does."""
+    stubbed and only this block is real. It reads the store the way a build does.
+
+    A copy of the store, because the stubbed PubChem build writes `screen_results` into it
+    for the structure step to read, and the shared fixture store must not gain a table."""
+    import shutil
+
     import duckdb
 
     from atlas import pipeline, store
 
+    shutil.copytree(evidence_store, tmp_path / "store")
+    evidence_store = tmp_path / "store"
     monkeypatch.setattr(store, "STORE", evidence_store)
     marker = Path("/built-elsewhere.parquet")
     for module, name in [
@@ -1618,10 +1625,26 @@ def test_the_evidence_stage_hands_the_campaigns_and_the_crosswalk_to_pubchems_bu
 
     def fake_build(**kwargs):
         seen["build"] = kwargs
+        store.write_parquet(
+            "screen_results",
+            [
+                {"molecule_chembl_id": "CHEMBL_SCREENED"},
+                {"molecule_chembl_id": "CHEMBL_SCREENED"},
+                {"molecule_chembl_id": None},  # a PubChem-only CID: nothing to look up
+            ],
+            source="pubchem",
+            source_version="fixture",
+            retrieved_at="2026-10-09",
+        )
         return [Path("/screens.parquet")]
+
+    def fake_structures(wanted, **kwargs):
+        seen["structures"] = (set(wanted), kwargs)
+        return Path("/compound_structures.parquet")
 
     monkeypatch.setattr(pipeline.chembl, "build_campaigns", fake_campaigns)
     monkeypatch.setattr(pipeline.pubchem, "build", fake_build)
+    monkeypatch.setattr(pipeline.chemreps, "build", fake_structures)
     monkeypatch.setattr(
         pipeline.unichem, "fetch_raw", lambda *, force: _Downloaded(Path("/unichem.txt.gz"))
     )
@@ -1661,6 +1684,20 @@ def test_the_evidence_stage_hands_the_campaigns_and_the_crosswalk_to_pubchems_bu
         a: sorted(rv for acc, rv in walk if acc == a) for a in {acc for acc, _ in walk}
     }
     assert Path("/screens.parquet") in paths
+
+    # Structures are looked up for every ChEMBL id the screens and the potency set name,
+    # after the screens exist, and for no NULL.
+    compounds = {
+        c
+        for (c,) in duckdb.sql(
+            f"SELECT molecule_chembl_id FROM '{evidence_store / 'compounds.parquet'}'"
+        ).fetchall()
+    }
+    assert compounds, "the fixture store must hold compounds for this to prove anything"
+    wanted, kwargs = seen["structures"]
+    assert wanted == compounds | {"CHEMBL_SCREENED"}
+    assert kwargs == {"force": True}
+    assert Path("/compound_structures.parquet") in paths
 
 
 def test_the_diff_compares_a_result_on_the_key_that_tells_rows_apart(tmp_path):

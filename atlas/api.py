@@ -26,6 +26,7 @@ LICENCES = {
     "chembl_targets": ("ChEMBL", "CC BY-SA 3.0"),
     "activities": ("ChEMBL", "CC BY-SA 3.0"),
     "compounds": ("ChEMBL", "CC BY-SA 3.0"),
+    "compound_structures": ("ChEMBL", "CC BY-SA 3.0"),
     "structures": ("RCSB PDB", "CC0 1.0"),
     "orthologue_structures": ("phmmer vs Mycobacteriaceae + RCSB PDB", "CC BY 4.0 / CC0 1.0"),
     "predicted_structures": ("AlphaFold DB", "CC BY 4.0"),

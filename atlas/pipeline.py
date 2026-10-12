@@ -23,6 +23,7 @@ from . import clinical, crosswalk, summary
 from .sources import (
     alphafold,
     chembl,
+    chemreps,
     clinicaltrials,
     conditional,
     essentiality,
@@ -160,6 +161,19 @@ def build_evidence(*, force: bool = False) -> list[Path]:
         extra_results=results,
         force=force,
     )
+    # Every ChEMBL id the store references, so that `compound_structures` can say of each
+    # one whether it was found; an id outside this set has no row, which means not looked up.
+    wanted = {
+        molecule
+        for table in ("screen_results", "compounds")
+        for (molecule,) in read(table)
+        .filter("molecule_chembl_id IS NOT NULL")
+        .project("molecule_chembl_id")
+        .distinct()
+        .fetchall()
+    }
+    _say(f"[evidence] structures for {len(wanted):,} compounds (ChEMBL chemreps)")
+    paths.append(chemreps.build(wanted, force=force))
     _say(f"[evidence] drug precedent for {len(domains)} Pfam domains (ChEMBL mechanisms)")
     paths.append(precedent.build(domains, retrieved_at=retrieved_at, force=force))
     return paths

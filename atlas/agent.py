@@ -50,6 +50,7 @@ TABLES = (
     "predicted_structures",
     "activities",
     "compounds",
+    "compound_structures",
     "assay_sizes",
     "essentiality",
     "conditional_fitness",
@@ -187,6 +188,17 @@ TABLE_NOTES = {
     "is a separate flag for strain, not medium (MDR or clinical isolates), so a row can "
     "be both.",
     "compounds": "One row per compound, with properties. Keyed on molecule_chembl_id.",
+    "compound_structures": "A structure (SMILES, InChIKey) for every ChEMBL compound the "
+    "store references -- the screened set and the potency set -- from ChEMBL's release-wide "
+    "structure file. Join on molecule_chembl_id. **Three states, and two of them look alike "
+    "after a LEFT JOIN.** `has_structure` true: a SMILES is here. `has_structure` false: "
+    "looked up, and the id is not in this release's structure file (a molecule with no "
+    "structure, or an id outside the release) -- not a claim that the molecule has none. No "
+    "row: never looked up, which a LEFT JOIN shows as has_structure IS NULL, never as false; "
+    "every PubChem-only compound (a CID with no molecule_chembl_id) is one, so it cannot be "
+    "drawn from here and was not checked. A structure is a drawing input and not evidence: it "
+    "says nothing about what a compound did. `compounds.smiles` agrees with this table for "
+    "every compound in the potency set.",
     "assay_sizes": "Per-assay census keyed on (target_chembl_id, assay_chembl_id): reach a gene "
     "by unnesting `crosswalk.chembl_targets` and matching `target_id`, never rv_id, and keep "
     "only entries with `evidence` = `direct`, since an `orthologue` entry is a relative's "

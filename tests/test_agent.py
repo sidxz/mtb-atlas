@@ -258,6 +258,14 @@ def test_the_schema_warns_about_every_screens_trap() -> None:
             "does not read as an `outcome`",  # ChEMBL's free-text calls are kept, not read
             "Not Determined",  # ChEMBL's failed measurement
         ),
+        "compound_structures": (
+            "Join on molecule_chembl_id",
+            "never looked up",  # no row: a LEFT JOIN's NULL is not `false` ...
+            "has_structure IS NULL",  # ... and the note says how to tell them apart
+            "not in this release's structure file",  # `false` is that, not 'has no structure'
+            "PubChem-only",  # a CID with no ChEMBL id is never looked up
+            "not evidence",  # a structure is a drawing input
+        ),
         "target_summary": (
             "genome-wide six genes reach 1,000",  # `max_assay_compounds`: six, not two
             "n_screen_actives",  # a sum over the screens that stated calls

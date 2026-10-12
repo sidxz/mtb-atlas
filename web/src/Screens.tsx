@@ -213,10 +213,11 @@ function Results({ screenId, outcome }: { screenId: string; outcome: string }) {
   );
 }
 
-function CampaignPage({ id, onBack, onSelectGene }: {
+function CampaignPage({ id, onBack, onSelectGene, onProfile }: {
   id: string;
   onBack: () => void;
   onSelectGene?: (rvId: string) => void;
+  onProfile?: (id: string, title: string | null) => void;
 }) {
   const [detail, setDetail] = useState<ScreenDetail | null>(null);
   const [outcome, setOutcome] = useState("active");
@@ -314,6 +315,17 @@ function CampaignPage({ id, onBack, onSelectGene }: {
       ))}
 
       <h3>Compounds</h3>
+      {onProfile && (
+        <p className="note">
+          <button type="button" className="row-open" onClick={() => onProfile(detail.screen_id, detail.title)}>
+            Profile these compounds →
+          </button>
+          <span className="src">
+            what else the literature measured on them, which is a different question from
+            this campaign&rsquo;s own result
+          </span>
+        </p>
+      )}
       <div className="tabs" aria-label="Outcome">
         {outcomes.map(([value, label]) => (
           <button key={value} type="button" aria-pressed={outcome === value} onClick={() => setOutcome(value)}>{label}</button>
@@ -441,8 +453,10 @@ function CampaignTable({ page, onOpen, sort, onSort, columns }: {
   );
 }
 
-export function Screens({ onSelectGene, focus, onFocus }: {
+export function Screens({ onSelectGene, focus, onFocus, onProfile }: {
   onSelectGene?: (rvId: string) => void;
+  /** Hand a campaign to the hit profiling page. */
+  onProfile?: (id: string, title: string | null) => void;
   /** A campaign opened from elsewhere -- a gene page, or the search box. */
   focus?: string | null;
   onFocus?: (id: string | null) => void;
@@ -515,7 +529,7 @@ export function Screens({ onSelectGene, focus, onFocus }: {
         </details>
       </FilterRail>
       {open
-        ? <CampaignPage id={open} onBack={() => setOpen(null)} onSelectGene={onSelectGene} />
+        ? <CampaignPage id={open} onBack={() => setOpen(null)} onSelectGene={onSelectGene} onProfile={onProfile} />
         : <main className="col canvascol">
             <div className="clinical-toolbar">
               <Pager total={page.total} offset={offset} onOffset={setOffset} label="campaigns" />
@@ -613,7 +627,11 @@ function hitCell(hit: HitProfile, key: string) {
   }
 }
 
-export function HitProfiling() {
+export function HitProfiling({ screen, onClearScreen }: {
+  /** Opened from a campaign: its compounds, each with its whole-literature profile. */
+  screen?: { id: string; title: string | null } | null;
+  onClearScreen?: () => void;
+} = {}) {
   const [page, setPage] = useState<HitPage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [beyond, setBeyond] = useState(false);
@@ -632,10 +650,11 @@ export function HitProfiling() {
         limit: PAGE,
         offset,
         beyond_potency: beyond ? true : undefined,
+        screen: screen?.id,
       })
       .then(setPage, e => setError(String(e)));
-  }, [sort, offset, beyond]);
-  useEffect(() => setOffset(0), [sort, beyond]);
+  }, [sort, offset, beyond, screen?.id]);
+  useEffect(() => setOffset(0), [sort, beyond, screen?.id]);
 
   if (error) return <div className="errbox">{error}</div>;
   if (!page) return <div className="body"><p className="note">Loading compound profiles…</p></div>;
@@ -650,8 +669,25 @@ export function HitProfiling() {
       <FilterRail label="Profiling filters">
         <div className="rail-heading"><InterfaceIcon name="clinical" /><h2>Hit profiling</h2></div>
         <p className="clinical-count" aria-live="polite">
-          <strong>{shown.items.length.toLocaleString()}</strong> shown of {groups.compounds.toLocaleString()} compounds
+          <strong>{page.total.toLocaleString()}</strong> of {groups.compounds.toLocaleString()} compounds
         </p>
+        {screen && (
+          <div className="group">
+            <p className="lab">From one campaign</p>
+            <p className="note" style={{ color: "var(--fg)" }}>
+              <span className="clinical-clamp" title={screen.title ?? undefined}>
+                {screen.title ?? screen.id}
+              </span>
+            </p>
+            <p className="note">
+              Its compounds, each showing its whole literature rather than this campaign
+              alone. A campaign whose compounds never reached a ChEMBL paper has none here.
+            </p>
+            <button className="clear-filters" type="button" onClick={onClearScreen}>
+              Clear campaign
+            </button>
+          </div>
+        )}
         <div className="group">
           <p className="lab">Coverage</p>
           <div className="seg">

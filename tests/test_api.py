@@ -525,6 +525,18 @@ def test_a_mic_and_nothing_else_is_the_strict_count(screens: TestClient) -> None
     assert population["potency_only"] == 3
 
 
+def test_a_campaign_filters_the_profile_without_redefining_it(screens: TestClient) -> None:
+    """Membership in the campaign, not a profile recomputed over it: the columns count
+    a compound's whole literature, and the headers must keep meaning that."""
+    whole = {h["molecule_chembl_id"]: h for h in screens.get("/hits").json()["items"]}
+    page = screens.get("/hits", params={"screen": "chembl:CHEMBL_DOC3"}).json()
+    assert 0 < page["total"] < len(whole)
+    for hit in page["items"]:
+        assert hit == whole[hit["molecule_chembl_id"]]
+    # A gene's own protein assay is in another campaign, so that compound is excluded.
+    assert "CHEMBL_PROTEIN" not in {h["molecule_chembl_id"] for h in page["items"]}
+
+
 def test_an_unmeasured_tier_is_null_not_zero(screens: TestClient) -> None:
     (row,) = screens.get("/hits", params={"q": "CHEMBL_POTENCY_ONLY"}).json()["items"]
     assert row["n_mtb_whole_cell"] == 1

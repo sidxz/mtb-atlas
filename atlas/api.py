@@ -1731,6 +1731,9 @@ def hits(
     beyond_potency: Annotated[
         bool | None, Query(description="Has cytotoxicity, ADME or in-vivo data")
     ] = None,
+    screen: Annotated[
+        str | None, Query(description="Tested in this campaign; the profile stays the whole one")
+    ] = None,
     sort: str = "n_papers",
     order: Literal["asc", "desc"] = "desc",
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
@@ -1754,6 +1757,15 @@ def hits(
         where.append("(lower(p.molecule_chembl_id) = ? OR lower(c.pref_name) LIKE ? ESCAPE '\\')")
         params += [q.lower(), _like(q.lower())]
     where += [f"p.{column} IS NOT NULL" for column in has or []]
+    if screen:
+        # Membership in that campaign, not a profile recomputed over it: the columns
+        # count a compound's whole literature, and narrowing them to one paper while
+        # the headers stayed the same would change what they mean without saying so.
+        where.append(
+            "p.molecule_chembl_id IN"
+            " (SELECT molecule_chembl_id FROM screen_results WHERE screen_id = ?)"
+        )
+        params.append(screen)
     if beyond_potency is not None:
         where.append(f"({' OR '.join(f'p.{t} IS NOT NULL' for t in TIERS)}) = ?")
         params.append(beyond_potency)

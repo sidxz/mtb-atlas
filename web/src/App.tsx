@@ -379,6 +379,8 @@ export function App() {
   // A campaign opened from a gene page or the search box, so those routes reach
   // the same page rather than a second copy of it.
   const [screenFocus, setScreenFocus] = useState<string | null>(null);
+  // A campaign handed to hit profiling: its compounds, each with its own whole profile.
+  const [profileScreen, setProfileScreen] = useState<{ id: string; title: string | null } | null>(null);
   const [focus, setFocus] = useState<Focus>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<TargetDetail | null>(null);
@@ -563,9 +565,14 @@ export function App() {
       <Ask base={import.meta.env.VITE_API_BASE ?? "/api"} />
 
       {view === "screens" ? (
-        <Screens onSelectGene={openGene} focus={screenFocus} onFocus={setScreenFocus} />
+        <Screens
+          onSelectGene={openGene}
+          focus={screenFocus}
+          onFocus={setScreenFocus}
+          onProfile={(id, title) => { setProfileScreen({ id, title }); setView("hits"); }}
+        />
       ) : view === "hits" ? (
-        <HitProfiling />
+        <HitProfiling screen={profileScreen} onClearScreen={() => setProfileScreen(null)} />
       ) : view === "clinical" ? (
         <DrugsAndTrials meta={meta} focus={focus} onFocus={setFocus} onSelectGene={openGene} />
       ) : (

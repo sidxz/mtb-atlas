@@ -34,6 +34,8 @@ interface MapNode {
   cycle?: boolean;
   /** A group's basis, for its tooltip. */
   basis?: string;
+  /** A drug's highest TB phase, which picks the path opened by default. */
+  phase?: number | null;
 }
 
 type Item = Omit<MapNode, "key">;
@@ -77,9 +79,10 @@ function drugItems(links: { molecule_chembl_id: string; pref_name: string | null
   return [...byId].map(([id, d]) => ({
     kind: "drug" as const, id, label: d.name,
     sub: d.phase == null ? null : d.phase >= 4 ? "approved for TB" : `TB phase ${d.phase}`,
+    phase: d.phase,
     edge: [...d.links].map(l => LINK_LABEL[l]).join(" · "),
     weak: ![...d.links].some(l => COUNTED.includes(l)),
-  })).sort((a, b) => Number(a.weak) - Number(b.weak));
+  })).sort((a, b) => Number(a.weak) - Number(b.weak) || (b.phase ?? -1) - (a.phase ?? -1));
 }
 
 async function neighbours(kind: EntityKind, id: string, byName: Map<string, string>): Promise<Item[]> {
@@ -298,20 +301,74 @@ export function AtlasMap({ all, seed, onOpen }: {
     }
   };
 
-  const start = (rv: string) => {
+  // The latest start wins: a slow load from an earlier pick must not replace it.
+  const current = useRef(0);
+  const [opened, setOpened] = useState<string | null>(null);
+
+  /** Open the gene along its furthest record, in validation_status order. */
+  const start = async (rv: string) => {
+    const token = ++current.current;
     const gene = genes.find(g => g.rv_id === rv);
     const node: MapNode = { key: `gene:${rv}`, kind: "gene", id: rv, label: gene?.gene_name ?? rv, sub: gene?.product ?? rv };
-    setRoot(node);
+    const path = new Set([entityKey(node)]);
+    setRoot({ ...node, loading: true });
+    setOpened(null);
     setMissing(false);
     canvas.current?.scrollTo(0, 0);
-    void expand(node, new Set([entityKey(node)]));
+    try {
+      const groups = (await neighbours("gene", rv, resolveName)).map(i => keyed(i, node.key, path));
+      const find = (label: string) => groups.find(g => g.label === label);
+      let deepest = node.key;
+      let note = "No drug, compound, ChEMBL target or screen reaches this protein itself, so nothing is opened. Dashed links, such as an orthologue's, never choose the path.";
+      // Only a drug a source says acts on the protein picks the path; resistance
+      // and complex links are drawn but never chosen. Drugs arrive phase-first.
+      const drugs = find("Drugs");
+      const counted = drugs?.children?.filter(d => !d.weak) ?? [];
+      // Every drug tied at the top phase opens: inhA's isoniazid and ethionamide
+      // are both approved, and choosing one would be an order this map invented.
+      const tops = counted.filter(d => (d.phase ?? -1) === (counted[0]?.phase ?? -1));
+      if (drugs && tops.length) {
+        const loaded = await Promise.all(tops.map(async top => {
+          const drugPath = new Set([...path, entityKey(top)]);
+          const items = (await neighbours("drug", top.id, resolveName)).map(i => keyed(i, top.key, drugPath));
+          const trials = items.find(g => g.label === "Trials");
+          const leaf = trials?.children?.length ? trials : items.find(g => g.label === "Genes");
+          if (leaf) leaf.open = true;
+          return { top, items, leaf };
+        }));
+        drugs.open = true;
+        drugs.children = drugs.children!.map(d => {
+          const hit = loaded.find(l => l.top === d);
+          return hit ? { ...d, open: true, children: hit.items } : d;
+        });
+        deepest = loaded[0].leaf?.key ?? drugs.key;
+        const names = tops.map(t => t.label);
+        const list = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names[0];
+        note = `Opened along ${list}, ${tops[0].sub ?? "no TB phase recorded"}: the furthest record on this protein${names.length > 1 ? ", tied" : ""}.`;
+      } else {
+        // A group made only of dashed links (an orthologue target, a complex's
+        // screen) is not a record on this protein, so it does not open.
+        const next = ["Compounds", "ChEMBL targets", "Screens"].map(find).find(g => g?.children?.some(c => !c.weak));
+        if (next) {
+          next.open = true;
+          deepest = next.key;
+          note = `No drug acts on this protein; opened ${next.label}, the furthest record on it.`;
+        }
+      }
+      if (token !== current.current) return;
+      setRoot({ ...node, open: true, children: groups });
+      setOpened(note);
+      reveal(deepest);
+    } catch {
+      if (token === current.current) setRoot({ ...node, error: true });
+    }
   };
   // `start` closes over state setters only, so the seed is all the effect needs.
-  useEffect(() => { if (seed && genes.length) start(seed.rv); }, [seed, genes.length]);
+  useEffect(() => { if (seed && genes.length) void start(seed.rv); }, [seed, genes.length]);
 
   const submit = () => {
     const rv = byName.get(query.trim().toLowerCase());
-    if (rv) start(rv);
+    if (rv) void start(rv);
     else setMissing(true);
   };
 
@@ -332,8 +389,9 @@ export function AtlasMap({ all, seed, onOpen }: {
           {missing && <p className="note" role="status">No CDS locus by that name.</p>}
         </form>
         <div className="group map-starts">
-          {START.map(name => <button type="button" className="chip" key={name} onClick={() => { const rv = byName.get(name.toLowerCase()); if (rv) start(rv); }}>{name}</button>)}
+          {START.map(name => <button type="button" className="chip" key={name} onClick={() => { const rv = byName.get(name.toLowerCase()); if (rv) void start(rv); }}>{name}</button>)}
         </div>
+        {opened && <p className="group note map-opened" role="status">{opened}</p>}
         <div className="group map-legend">
           <p className="lab">Reading the map</p>
           <p><svg width="36" height="8" aria-hidden="true"><path d="M0 4h36" className="map-link" /></svg> a source joins the two</p>

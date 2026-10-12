@@ -1069,7 +1069,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 }
 .map-node-main:hover:not(:disabled) { border-color: var(--line-strong); }
 .map-node-main[aria-expanded="true"] { border-color: var(--k, var(--accent)); }
-.map-node-main:disabled { cursor: default; }
+.map-node-main:disabled { cursor: default; opacity: 1; }
 .map-node[data-kind="group"] .map-node-main { background: var(--surface-2); }
 .map-node[data-kind="more"] .map-node-main { background: transparent; border-style: dashed; color: var(--accent); font-weight: 600; font-size: 12px; }
 .map-node.absent .map-node-main { color: var(--fg-faint); background: transparent; border-style: dashed; }
@@ -1088,3 +1088,4 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   color: var(--fg-dim); text-decoration: none; cursor: pointer; font-size: 12px;
 }
 .map-open:hover { color: var(--accent); border-color: var(--line-strong); }
+.map-opened { font-size: 12px; line-height: 1.45; color: var(--fg-dim); }

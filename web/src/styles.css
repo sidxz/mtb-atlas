@@ -728,3 +728,6 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .screen-gallery figcaption { display: flex; flex-direction: column; font-size: 12px; gap: 2px; }
 /* A campaign title is a line of prose in a cell, not a centred label. */
 .clinical-table .row-open, .screen-page .row-open { text-align: left; }
+
+/* Paging sits in the toolbar beside the column controls. */
+.pager { display: flex; align-items: center; gap: 8px; font-size: 13px; }

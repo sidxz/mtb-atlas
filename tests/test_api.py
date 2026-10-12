@@ -434,6 +434,20 @@ def test_a_complex_screen_is_shown_on_the_subunit_and_not_counted(screens: TestC
     assert screens.get("/screens", params={"rv_id": "Rv2461c", "own": False}).json()["total"]
 
 
+def test_filters_and_paging_run_over_the_population(screens: TestClient) -> None:
+    """A filter applied to the loaded page would narrow the page, not the answer."""
+    whole = screens.get("/screens").json()
+    own = screens.get("/screens", params={"has_own_gene": True}).json()
+    complex_only = screens.get("/screens", params={"has_own_gene": False}).json()
+    assert own["total"] + complex_only["total"] == whole["total"]
+    assert all(any(g["own"] for g in s["genes"]) for s in own["items"])
+    assert not any(g["own"] for s in complex_only["items"] for g in s["genes"])
+    # The total is the population's, and a later page is a window into the same one.
+    page = screens.get("/screens", params={"limit": 2, "offset": 2}).json()
+    assert page["total"] == whole["total"]
+    assert [s["screen_id"] for s in page["items"]] == [s["screen_id"] for s in whole["items"][2:4]]
+
+
 def test_no_call_is_not_inactive(screens: TestClient) -> None:
     """A deposit with no cutoff stated no call, and a filter for non-hits must not find it."""
     url = "/screens/pubchem:9000001/results"

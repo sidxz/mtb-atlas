@@ -1399,6 +1399,9 @@ def screens(
     own: Annotated[
         bool | None, Query(description="With rv_id: true for its own protein, false for complex")
     ] = None,
+    has_own_gene: Annotated[
+        bool | None, Query(description="Reaches some gene's own protein, not only a complex")
+    ] = None,
     outcome_stated: bool | None = None,
     unplaced: Annotated[
         bool | None, Query(description="Names a protein the atlas could not key to a locus")
@@ -1433,6 +1436,9 @@ def screens(
         side = "" if own is None else f" AND {'own' if own else 'via_complex'}"
         where.append(f"sc.screen_id IN (SELECT screen_id FROM reach WHERE rv_id = ?{side})")
         params.append(rv_id)
+    if has_own_gene is not None:
+        where.append("(sc.screen_id IN (SELECT screen_id FROM reach WHERE own)) = ?")
+        params.append(has_own_gene)
     if outcome_stated is not None:
         where.append("sc.outcome_stated = ?")
         params.append(outcome_stated)

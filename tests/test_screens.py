@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -1577,6 +1578,38 @@ def test_a_chembl_activity_listed_twice_stops_the_build(monkeypatch, tmp_path):
         )
 
 
+def test_a_heavy_stage_runs_in_its_own_process_and_hands_back_its_result():
+    """phmmer's memory is not returned when a stage ends, so in one process the stages
+    stacked to 5.75 GB. A stage in its own process gives it all back on exit."""
+    import os
+
+    from atlas import pipeline
+
+    path = pipeline._isolated("tests.isolated_probe", retrieved_at="2026-10-12", force=False)
+    pid, arguments = path.parts[1:]
+    assert int(pid) != os.getpid()
+    assert arguments == "force=False,retrieved_at=2026-10-12"
+
+
+def test_an_isolated_stage_does_not_rerun_the_caller(tmp_path):
+    """`spawn` re-imports the calling script, so a script without a `__main__` guard that
+    called `build_all` ran the whole build again in every child. A stage must import only
+    its own module."""
+    import subprocess
+    import sys
+
+    script = tmp_path / "unguarded.py"
+    script.write_text(
+        "from atlas import pipeline\n"
+        "print('caller ran')\n"
+        "print(pipeline._isolated('tests.isolated_probe'))\n"
+    )
+    out = subprocess.run(
+        [sys.executable, str(script)], capture_output=True, text=True, check=True, timeout=60
+    ).stdout
+    assert out.count("caller ran") == 1
+
+
 def test_the_evidence_stage_hands_the_campaigns_and_the_crosswalk_to_pubchems_build(
     monkeypatch, evidence_store, tmp_path
 ):
@@ -1613,6 +1646,10 @@ def test_the_evidence_stage_hands_the_campaigns_and_the_crosswalk_to_pubchems_bu
         monkeypatch.setattr(module, name, lambda *a, **k: marker)
     monkeypatch.setattr(pipeline.chembl, "build_bioactivity", lambda *a, **k: [])
     monkeypatch.setattr(pipeline.mtbtndb, "build", lambda *a, **k: [])
+    # The stubs above are lambdas, which cannot cross into another process.
+    monkeypatch.setattr(
+        pipeline, "_isolated", lambda module, **kwargs: sys.modules[module].build(**kwargs)
+    )
 
     seen: dict = {}
 

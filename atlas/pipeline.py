@@ -14,10 +14,13 @@ the store. The per-gene summary rolls up everything, so it runs once at the end.
 
 from __future__ import annotations
 
+import json
 import shutil
+import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
+from typing import Any
 
 from . import clinical, crosswalk, summary
 from .sources import (
@@ -48,6 +51,34 @@ IDENTITY = (mycobrowser, uniprot, chembl)
 
 def _say(message: str) -> None:
     print(message, file=sys.stderr)
+
+
+# Runs `<module>.build(**kwargs)` and prints the path or paths it wrote as JSON, last.
+_STAGE = (
+    "import json, sys; from importlib import import_module; "
+    "out = import_module(sys.argv[1]).build(**json.loads(sys.argv[2])); "
+    "print(json.dumps([str(p) for p in out] if isinstance(out, list) else str(out)))"
+)
+
+
+def _isolated(module: str, **kwargs: Any) -> Path | list[Path]:
+    """Run one stage's `build` in a fresh interpreter and return the path(s) it wrote.
+
+    The phmmer stages take 1-3 GB each on every core, and that memory is not handed back
+    when a stage ends, so in one process they stacked: the build peaked at 5.75 GB
+    (2026-10-12) where the largest stage alone takes 2.83 GB. A process per stage returns
+    it all on exit. A plain `python -c`, not multiprocessing: `spawn` re-imports the
+    calling script, so a caller without a `__main__` guard ran the whole build again in
+    every child. This imports the stage's own module and nothing else.
+    """
+    result = subprocess.run(
+        [sys.executable, "-c", _STAGE, module, json.dumps(kwargs)],
+        stdout=subprocess.PIPE,  # the stage's progress goes to stderr, which passes through
+        text=True,
+        check=True,
+    )
+    out = json.loads(result.stdout.strip().splitlines()[-1])
+    return [Path(p) for p in out] if isinstance(out, list) else Path(out)
 
 
 def build_identity(*, force: bool = False) -> list[Path]:
@@ -120,7 +151,8 @@ def build_evidence(*, force: bool = False) -> list[Path]:
     _say("[evidence] conditional fitness (Griffin 2011, cholesterol)")
     paths.append(conditional.build(force=force))
     _say("[evidence] conditional TnSeq, 136 screens (MtbTnDB)")
-    paths += mtbtndb.build(force=force)
+    # 1 GB of parsed TRANSIT output that a shared process would keep.
+    paths += _isolated(mtbtndb.__name__, force=force)
     _say("[evidence] vulnerability (Bosch 2021 CRISPRi, H37Rv)")
     paths.append(vulnerability.build(force=force))
     _say("[evidence] vulnerability in a clinical strain (Bosch 2021, HN878)")
@@ -128,11 +160,11 @@ def build_evidence(*, force: bool = False) -> list[Path]:
     _say("[evidence] interactions (STRING)")
     paths.append(string_db.build(force=force))
     _say("[evidence] human homology (phmmer vs human proteome)")
-    paths.append(homology.build(retrieved_at=retrieved_at, force=force))
+    paths.append(_isolated(homology.__name__, retrieved_at=retrieved_at, force=force))
     _say("[evidence] paralogs (phmmer vs the Mtb proteome itself)")
-    paths.append(paralogs.build(retrieved_at=retrieved_at, force=force))
+    paths.append(_isolated(paralogs.__name__, retrieved_at=retrieved_at, force=force))
     _say("[evidence] orthologue structures (mycobacterial neighbours with a PDB entry)")
-    paths.append(orthologue_structures.build(retrieved_at=retrieved_at, force=force))
+    paths.append(_isolated(orthologue_structures.__name__, retrieved_at=retrieved_at, force=force))
     _say("[evidence] screening campaigns (ChEMBL literature, PubChem depositions)")
     rv_by_acc = defaultdict(list)
     for accession, rv_id in walk.project("uniprot_acc, rv_id").fetchall():

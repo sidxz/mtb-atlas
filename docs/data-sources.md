@@ -2015,9 +2015,13 @@ Each is a decision someone can pick up, with what it would cost. 5, 7 and 8 are 
    512 MB instance per process (the small reads behind `/meta` still open their own), and the
    23,730-row profile is built once per store build, each request reading a copy: eight
    concurrent `/hits` take 0.81 GB and 32 take 0.82 GB. `/hits` does not fit in 256 MB, so a
-   larger screening layer (follow-up 2) must re-measure the ceiling. Still open: `make build`
-   itself peaks at 6.5 GB (2026-10-11, `/usr/bin/time -l`). The structure step accounts for
-   at most 0.92 GB of that, its own peak when run alone; where the rest goes is not measured.
+   larger screening layer (follow-up 2) must re-measure the ceiling. `make build` itself
+   peaked at 6.5 GB (2026-10-11, `/usr/bin/time -l`), and the screening layer was not the
+   cause: the phmmer stages (homology, paralogs, orthologue structures) take 1-3 GB each on
+   all 18 cores, the memory is not handed back when a stage ends, and in one process they
+   stacked to 5.75 GB. MtbTnDB added 1 GB below them. Those four stages now run each in its
+   own interpreter (`pipeline._isolated`): measured 2026-10-12, the largest peaks at 2.63 GB
+   and the build process stays at 0.05 GB while they run.
 6. **Row level against campaign level on `outcome`** (218 `IC50` rows `Active` inside
    campaigns with `outcome_stated` false), and **one of `max_assay_compounds` and
    `max_screen_compounds`** retiring. Both belong to the plan that changes the API.

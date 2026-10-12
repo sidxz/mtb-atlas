@@ -1384,7 +1384,8 @@ SEARCHES: dict[str, tuple[str, str, str, str, tuple[str, ...], str]] = {
     "screens": (
         "screens",
         "screen_id",
-        "coalesce(title, screen_id)",
+        # ChEMBL paper titles carry markup (`<i>Mycobacterium tuberculosis</i>`).
+        "regexp_replace(coalesce(title, screen_id), '<[^>]*>', '', 'g')",
         "depositor",
         ("screen_id", "aid", "title", "depositor", "document_chembl_id"),
         "n_tested DESC NULLS LAST",

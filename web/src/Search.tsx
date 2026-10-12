@@ -180,11 +180,15 @@ export function Search({
                         )}
                       </button>
                     );
-                    // Genes also open in the map. A sibling, not a child: a button
+                    // Genes also open in Targets and the map. A sibling, not a child: a button
                     // cannot sit inside the option button.
                     return kind === "genes" ? (
                       <div className="search-row" key={hit.id}>
                         {option}
+                        <Link className="search-map" to={`/targets/${encodeURIComponent(hit.id)}`} tabIndex={-1} onClick={close}
+                          title="Open in Targets" aria-label={`Open ${hit.label || hit.id} in Targets`}>
+                          <InterfaceIcon name="targets" />
+                        </Link>
                         <Link className="search-map" to={mapPath(hit.id)} tabIndex={-1} onClick={close}
                           title="Open in map (Shift+Enter)" aria-label={`Open ${hit.label || hit.id} in the map`}>
                           <InterfaceIcon name="map" />

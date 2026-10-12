@@ -817,3 +817,55 @@ def test_no_domain_annotated_is_null_not_zero(rows: dict) -> None:
     rrs = rows["MTB000019"]
     assert rrs["n_precedent_approved"] is None
     assert rrs["n_precedent_complex"] is None
+
+
+# --- validation_status: derived, ordered, and not a ladder ------------------
+
+STATUS_ORDER = (
+    "clinically_validated",
+    "clinical_stage",
+    "biochemically_interrogated",
+    "annotated_target",
+    "screened",
+    "genetically_nominated",
+    "not_interrogated",
+)
+
+
+def test_every_gene_carries_a_known_status(rows: dict) -> None:
+    for rv_id, row in rows.items():
+        assert row["validation_status"] in STATUS_ORDER, rv_id
+
+
+def test_the_status_levels_are_not_cumulative(rows: dict) -> None:
+    """mmpL3 is the case the term exists to survive.
+
+    Its ligands reach it only through the M. smegmatis orthologue, so it holds
+    clinical-stage chemical matter with no assay against its purified protein
+    and no screening campaign of its own. A term that implied the earlier
+    stages had been reached would be false for this gene.
+    """
+    mmpl3 = rows["Rv0206c"]
+    assert mmpl3["validation_status"] == "clinical_stage"
+    assert mmpl3["n_protein_assays"] == 0
+    assert (mmpl3["n_target_screens"] or 0) == 0
+
+
+def test_the_status_restates_the_columns_it_came_from(rows: dict) -> None:
+    """It measures nothing of its own, so each level must hold against its inputs."""
+    for rv_id, row in rows.items():
+        status = row["validation_status"]
+        if status == "clinically_validated":
+            assert (row["best_drug_phase"] or 0) >= 4, rv_id
+        elif status == "biochemically_interrogated":
+            assert row["n_protein_assays"] > 0, rv_id
+        elif status == "annotated_target":
+            assert row["n_chembl_targets"] > 0, rv_id
+            assert row["n_protein_assays"] == 0, rv_id
+        elif status == "genetically_nominated":
+            assert row["essentiality_essential"] or row["vulnerability_certain"], rv_id
+            assert row["n_chembl_targets"] == 0, rv_id
+        elif status == "not_interrogated":
+            assert row["n_chembl_targets"] == 0, rv_id
+            assert row["n_protein_assays"] == 0, rv_id
+            assert not row["essentiality_essential"], rv_id

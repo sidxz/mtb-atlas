@@ -230,9 +230,18 @@ class Meta(BaseModel):
 
 class TargetSummary(BaseModel):
     rv_id: str
+    # How far chemical interrogation of this protein has got in the public
+    # record, as one ordered term. Derived in the roll-up from the columns
+    # below and measuring nothing of its own. The levels are not cumulative:
+    # mmpL3 reads `clinical_stage` with no assay against its purified protein.
+    # NULL where the clinical or screening layer is not built in this store.
+    validation_status: str | None = None
     gene_name: str | None = None
     product: str | None = None
     category: str | None = None
+    # Two loci can share one UniProt accession, so evidence keyed on the
+    # accession is not provably this locus's.
+    shared_accession: bool = False
     start: int
     stop: int
     strand: str
@@ -253,6 +262,7 @@ class TargetSummary(BaseModel):
     cholesterol_required: bool | None = None
     required_in_vivo: bool | None = None
     n_pdb: int = 0
+    n_pdb_with_ligand: int = 0
     best_resolution: float | None = None
     # A structure to work from that is not of this protein, counted apart from
     # `n_pdb` so a zero there keeps meaning "none of its own".
@@ -324,6 +334,10 @@ class TargetSummary(BaseModel):
     n_screen_actives: int | None = None
     latest_screen_year: int | None = None
     chembl_evidence: str | None = None
+    # ChEMBL targets whose only component is this protein. A gene with one of
+    # these and no assay of its own is a target of record, nothing more.
+    n_chembl_targets: int = 0
+    n_complex_assays: int = 0
     in_who_catalogue: bool = False
     n_variants_associated: int = 0
     n_variants_mappable: int = 0
@@ -519,6 +533,10 @@ def meta() -> Meta:
 @app.get("/targets", response_model=TargetPage)
 def targets(
     q: Annotated[str | None, Query(description="Rv tag, gene name, product or accession")] = None,
+    validation_status: Annotated[
+        list[str] | None,
+        Query(description="Furthest chemical interrogation on record; not a cumulative ladder"),
+    ] = None,
     essentiality: Annotated[list[str] | None, Query()] = None,
     category: Annotated[list[str] | None, Query()] = None,
     has_structure: bool | None = None,
@@ -569,6 +587,9 @@ def targets(
             " OR lower(coalesce(uniprot_acc, '')) LIKE ? ESCAPE '\\')"
         )
         params += [_like(q.lower())] * 4
+    if validation_status:
+        where.append(f"validation_status IN ({','.join('?' * len(validation_status))})")
+        params += validation_status
     if essentiality:
         where.append(f"essentiality IN ({','.join('?' * len(essentiality))})")
         params += essentiality

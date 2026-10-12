@@ -7,8 +7,39 @@ const BASE = import.meta.env.VITE_API_BASE ?? "/api";
 
 export type Essentiality = "ES" | "ESD" | "GD" | "NE" | "GA" | "Uncertain";
 
+/**
+ * How far chemical interrogation of a protein has got in the public record.
+ * Derived in the roll-up from columns already on the row; it measures nothing
+ * of its own. The levels are not cumulative — a gene can hold clinical-stage
+ * chemical matter and no assay against its purified protein — and NULL means
+ * the clinical or screening layer is not built in this store.
+ */
+export type ValidationStatus =
+  | "clinically_validated"
+  | "clinical_stage"
+  | "biochemically_interrogated"
+  | "annotated_target"
+  | "screened"
+  | "genetically_nominated"
+  | "not_interrogated";
+
 export interface TargetSummary {
   rv_id: string;
+  validation_status: ValidationStatus | null;
+  shared_accession: boolean;
+  n_chembl_targets: number;
+  n_complex_assays: number;
+  n_pdb_with_ligand: number;
+  /**
+   * Screening campaigns reaching this protein. Null, not zero, where the
+   * screening layer is not built in this store. `n_screen_actives` counts only
+   * campaigns that stated an outcome, so it shares no denominator with
+   * `n_target_screens` and must not be divided by it.
+   */
+  n_target_screens: number | null;
+  n_complex_screens: number | null;
+  max_screen_compounds: number | null;
+  n_screen_actives: number | null;
   gene_name: string | null;
   product: string | null;
   category: string | null;
@@ -697,6 +728,7 @@ export interface Meta {
 
 export interface TargetQuery {
   q?: string;
+  validation_status?: string[];
   essentiality?: string[];
   category?: string[];
   has_structure?: boolean;

@@ -117,3 +117,14 @@ def test_a_compound_page_still_answers(client: TestClient) -> None:
     page = client.get("/compounds/CHEMBL3330226")
     assert page.status_code == 200
     assert page.json()["drug"] is None
+
+
+def test_the_status_is_unknowable_without_the_clinical_layer(evidence_only_store: Path) -> None:
+    """The top rungs come from the clinical and screening layers.
+
+    Without them a gene a drug acts on would read `genetically_nominated`,
+    which is a false statement rather than a missing one. The whole column is
+    NULL instead, so nothing downstream can mistake it for a measured level.
+    """
+    for row in store.records("target_summary", store=evidence_only_store):
+        assert row["validation_status"] is None

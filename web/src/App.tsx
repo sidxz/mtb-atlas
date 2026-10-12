@@ -12,6 +12,7 @@ import { TargetDetailPanel } from "./TargetDetail";
 import { Ask } from "./Ask";
 import { DrugsAndTrials, phaseLabel, type Focus } from "./Clinical";
 import { HitProfiling, Screens } from "./Screens";
+import { Targets } from "./Targets";
 import { Search } from "./Search";
 import { TableControls, useTablePreferences } from "./TableControls";
 import { cellFormatting, scaleRanges, type Rule, type Range } from "./table-formatting";
@@ -375,7 +376,7 @@ export function App() {
     order: "asc",
   });
 
-  const [view, setView] = useState<"genome" | "screens" | "hits" | "clinical">("genome");
+  const [view, setView] = useState<"genome" | "targets" | "screens" | "hits" | "clinical">("genome");
   const [visitedViews, setVisitedViews] = useState<string[]>([]);
   useEffect(() => { setVisitedViews(previous => previous.includes(view) ? previous : [...previous, view]); }, [view]);
   const [hitFocus, setHitFocus] = useState<string | null>(null);
@@ -541,6 +542,9 @@ export function App() {
           </button>
           {/* The nav is the early discovery pipeline, in order: target selection,
               screening, hit assessment, then the clinic. */}
+          <button type="button" aria-pressed={view === "targets"} onClick={() => setView("targets")}>
+            <InterfaceIcon name="targets" /> Targets
+          </button>
           <button type="button" aria-pressed={view === "screens"} onClick={() => setView("screens")}>
             <InterfaceIcon name="screens" /> Screens
           </button>
@@ -583,6 +587,8 @@ export function App() {
       </div>}
       {view === "clinical" ? (
         <DrugsAndTrials meta={meta} focus={focus} onFocus={setFocus} onSelectGene={openGene} />
+      ) : view === "targets" ? (
+        <Targets all={all} onOpenGene={openGene} />
       ) : view === "genome" ? (
         <div className={`body${selected ? " detail-open" : ""}`}>
           <FilterRail>

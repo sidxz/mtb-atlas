@@ -1,6 +1,8 @@
 /** Small, consistent outline icons for workspace controls. */
-export function InterfaceIcon({ name }: { name: "search" | "genome" | "screens" | "profiling" | "clinical" | "theme" | "expand" | "collapse" | "filter" | "ask" | "columns" | "format" }) {
+export function InterfaceIcon({ name }: { name: "search" | "genome" | "targets" | "screens" | "profiling" | "clinical" | "theme" | "expand" | "collapse" | "filter" | "ask" | "columns" | "format" }) {
   const paths = {
+    // Narrowing rings: a cohort reduced by successive criteria.
+    targets: <><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4.5" /><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" /></>,
     screens: <><rect x="3" y="4" width="18" height="16" rx="2" />{[7, 12, 17].flatMap(x => [8, 12, 16].map(y => <circle key={`${x}-${y}`} cx={x} cy={y} r="0.8" fill="currentColor" stroke="none" />))}</>,
     profiling: <><path d="m5 3 6 3v6l-6 3-3-2M5 3 2 5M11 6l4-2" /><circle cx="15" cy="15" r="5" /><path d="m19 19 3 3M12 15h6M15 12v6" /></>,
     columns: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16M15 4v16" /></>,

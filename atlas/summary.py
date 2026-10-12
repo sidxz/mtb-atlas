@@ -557,6 +557,34 @@ LEFT JOIN gene_trials  gt ON gt.rv_id = w.rv_id
 ORDER BY w.start
 """
 
+# The furthest point of chemical interrogation on record for this gene, as a
+# single ordered term. It restates columns already in this row and measures
+# nothing of its own.
+#
+# Two properties it must keep. The levels are NOT cumulative: a gene can carry
+# clinical-stage chemical matter and no assay against its purified protein,
+# which is how mmpL3 reads, so the term names the furthest record present and
+# never asserts an earlier stage was reached. And a level is a statement about
+# the public record, not about the protein: `not_interrogated` means no deposit
+# in these sources reaches this locus.
+VALIDATION_STATUS_SQL = """
+    CASE
+        WHEN best_drug_phase >= 4                     THEN 'clinically_validated'
+        WHEN has_clinical_drug OR best_drug_phase > 0 THEN 'clinical_stage'
+        WHEN n_protein_assays > 0                     THEN 'biochemically_interrogated'
+        WHEN n_chembl_targets > 0                     THEN 'annotated_target'
+        WHEN coalesce(n_target_screens, 0) > 0        THEN 'screened'
+        WHEN essentiality_essential
+          OR vulnerability_certain                    THEN 'genetically_nominated'
+        ELSE 'not_interrogated'
+    END
+"""
+
+# The clinical and screening layers supply the top rungs. Without them a gene a
+# drug acts on would read `genetically_nominated` -- a false statement rather
+# than a missing one -- so the whole column is NULL until both are built.
+UNBUILT_VALIDATION_STATUS_SQL = "NULL::VARCHAR"
+
 SCREEN_COLUMNS = """
     coalesce(ss.n_target_screens, 0)  AS n_target_screens,
     coalesce(ss.n_complex_screens, 0) AS n_complex_screens,
@@ -682,7 +710,7 @@ def build(*, store: Path | None = None) -> Path:
         )
         connection.sql(f"CREATE VIEW {alias} AS {source}")
     unbuilt_screens = any(name in absent for name in ("screens", "screen_stages"))
-    rows = connection.sql(
+    evidence = (
         SUMMARY_SQL.replace(
             "    -- SCREEN COLUMNS\n",
             UNBUILT_SCREEN_COLUMNS if unbuilt_screens else SCREEN_COLUMNS,
@@ -694,6 +722,12 @@ def build(*, store: Path | None = None) -> Path:
         .replace("{target_links}", TARGET_LINK_SQL)
         .replace("{human}", str(HUMAN))
     )
+    # Derived last, over the finished row, so it reads the same columns the API
+    # serves rather than repeating their expressions.
+    status = (
+        UNBUILT_VALIDATION_STATUS_SQL if (missing or unbuilt_screens) else VALIDATION_STATUS_SQL
+    )
+    rows = connection.sql(f"SELECT *, {status} AS validation_status FROM ({evidence})")
     columns = rows.columns
     records = [dict(zip(columns, row, strict=True)) for row in rows.fetchall()]
 

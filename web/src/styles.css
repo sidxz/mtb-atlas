@@ -891,3 +891,65 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   .compound-overview > div:last-child { width: 100%; }
   .screen-workspace .workspace-detail { margin-inline: 0; }
 }
+
+/* --- Targets: the genome as a target landscape --------------------------- */
+
+.assess-panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 14px; }
+.assess-panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.assess-panel-head .lab { margin: 0; }
+.assess-note { font-size: 11.5px; color: var(--fg-dim); }
+.assess-panel > .detail-table-scroll, .assess-stages, .assess-funnel { padding: 10px 12px; }
+
+/* Methods text: what a value is and how it was obtained. Capped so a wide
+   panel does not stretch the measure. */
+.assess-basis { font-size: 11.5px; color: var(--fg-dim); max-width: 78ch; margin: 0 0 8px; }
+.assess-caveat { font-size: 11.5px; color: var(--fg-dim); max-width: 78ch; margin: 0; padding: 9px 12px 11px; border-top: 1px solid var(--line); border-left: 2px solid var(--warn); }
+
+.assess-rail-head { display: flex; justify-content: space-between; align-items: baseline; }
+.assess-crit { border-top: 1px solid var(--line); padding: 8px 0 9px; }
+.assess-crit-label { display: block; font-size: 12.5px; font-weight: 550; }
+.assess-crit code { display: block; font-size: 10.5px; color: var(--fg-faint); margin-bottom: 5px; overflow-wrap: anywhere; }
+.assess-seg { display: flex; gap: 3px; }
+.assess-seg button { flex: 1 1 0; min-width: 0; font: inherit; font-size: 11px; cursor: pointer; background: var(--bg); color: var(--fg-dim); border: 1px solid var(--line); border-radius: 6px; padding: 3px 2px; display: flex; flex-direction: column; align-items: center; }
+.assess-seg button:hover { color: var(--fg); border-color: var(--line-strong); }
+.assess-seg button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); color: var(--accent); border-color: var(--accent); font-weight: 600; }
+.assess-seg .c { font-variant-numeric: tabular-nums; font-size: 11px; font-weight: 600; }
+
+.assess-stages { display: flex; flex-direction: column; gap: 1px; }
+.assess-stage { display: grid; grid-template-columns: minmax(0, 15em) minmax(0, 1fr) 4.5em; align-items: center; gap: 10px; background: none; border: 0; font: inherit; color: var(--fg); cursor: pointer; padding: 3px 0; text-align: left; }
+.assess-stage:hover .assess-stage-name { color: var(--accent); }
+.assess-stage[aria-pressed="true"] .assess-stage-name { color: var(--accent); font-weight: 650; }
+.assess-stage-name { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.assess-bar { height: 7px; border-radius: 2px; background: var(--accent); min-width: 2px; }
+.assess-stage-n { text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--fg-dim); }
+
+.assess-funnel { display: flex; flex-direction: column; gap: 1px; }
+.assess-step { display: grid; grid-template-columns: 4.5em minmax(0, 1fr) 4em; gap: 10px; align-items: baseline; }
+.assess-step-n { text-align: right; font-weight: 650; font-size: 13px; font-variant-numeric: tabular-nums; }
+.assess-step-l { font-size: 12.5px; color: var(--fg-dim); min-width: 0; }
+.assess-step-d { text-align: right; font-size: 11.5px; color: var(--tag-warning); font-variant-numeric: tabular-nums; }
+.assess-step.base .assess-step-n, .assess-step.base .assess-step-l { color: var(--fg); }
+
+.targets-main { padding: 14px 14px 20px; }
+.assess-side { min-width: 0; padding: 14px 12px 20px; }
+.assess-profile { padding: 10px 12px; }
+.assess-profile-head { display: flex; justify-content: space-between; align-items: start; gap: 10px; }
+.assess-profile-head h3 { margin: 0; font-size: 15px; }
+.assess-product { font-size: 11.5px; color: var(--fg-dim); margin: 1px 0 0; max-width: 78ch; }
+.assess-status-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 8px; font-size: 11.5px; color: var(--fg-dim); margin: 8px 0; max-width: 78ch; }
+
+.assess-dim { border-top: 1px solid var(--line); padding-top: 9px; margin-top: 9px; }
+.assess-dim h4 { margin: 0 0 3px; font-size: 13px; font-weight: 650; }
+.assess-kv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 10px; }
+.assess-kv .k { color: var(--fg-dim); font-size: 12px; min-width: 0; }
+.assess-kv .k code { display: block; font-size: 10.5px; color: var(--fg-faint); overflow-wrap: anywhere; }
+.assess-kv .v { text-align: right; font-size: 12.5px; font-weight: 550; overflow-wrap: anywhere; }
+.assess-kv .v.none { color: var(--fg-faint); font-weight: 400; font-style: italic; }
+
+.rowbtn { background: none; border: 1px solid var(--line); border-radius: 6px; color: var(--fg-dim); font: inherit; font-size: 11px; padding: 3px 9px; cursor: pointer; white-space: nowrap; }
+.rowbtn:hover { border-color: var(--line-strong); color: var(--fg); }
+
+/* The cohort keeps the middle; the profile takes the right, as the clinical
+   view does. Below 1180px the shared .body rule drops to two columns. */
+.body.targets-body.detail-open { grid-template-columns: 232px minmax(0, 1fr) minmax(0, 440px); }
+@media (max-width: 1400px) { .body.targets-body.detail-open { grid-template-columns: 220px minmax(0, 1fr) minmax(0, 380px); } }

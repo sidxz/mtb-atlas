@@ -206,6 +206,19 @@ This is the rule that outranks completeness.
   from one host-genetics panel. Aggregate by `study`. 76 take their control
   library from a different study than their experimental data (`cross_study`),
   which is the authors' own batch-effect caveat.
+- **`validation_status` is derived, and the levels are not a ladder.** It is
+  the furthest point of chemical interrogation *on record* for a protein —
+  `clinically_validated` (10 CDS genes), `clinical_stage` (3),
+  `biochemically_interrogated` (112), `annotated_target` (77), `screened` (2),
+  `genetically_nominated` (497), `not_interrogated` (3,330) — restating columns
+  already on the row and measuring nothing of its own. **It must never be read
+  as stages passed**: mmpL3 is `clinical_stage` with `n_protein_assays = 0` and
+  `n_target_screens = 0`, because its ligands reach it only through the
+  *M. smegmatis* orthologue. A level describes the public record, not the
+  protein, so `not_interrogated` means no deposit in these sources reaches the
+  locus. The clinical and screening layers supply the top rungs, so when either
+  is unbuilt the column is **NULL for every gene** rather than silently
+  demoting a drugged target to `genetically_nominated`.
 - **Essentiality and vulnerability answer different questions and must not be
   conflated.** TnSeq says whether a gene can be deleted. CRISPRi vulnerability
   says how far expression must fall before fitness suffers -- the question an
@@ -480,10 +493,19 @@ aggregate over `screen_results` into a route's per-request SQL.
 
 ## Querying it
 
-Four ways in, and they all read the same store: the genome canvas, the drugs
-and trials view, `/search` over every object at once, and the agent. A new kind
-of evidence is not finished until the agent's schema carries its trap, because
-that is the only surface where a wrong join is silent.
+Five ways in, and they all read the same store: the genome canvas, the Targets
+view, the drugs and trials view, `/search` over every object at once, and the
+agent. A new kind of evidence is not finished until the agent's schema carries
+its trap, because that is the only surface where a wrong join is silent.
+
+**The Targets view is the genome read as a landscape rather than a list.** It
+adds nothing to the store but `validation_status` (below) and asks a different
+question: not what is true of this locus, but how far the field has got with
+it, and which loci share a stated profile. A cohort is built by intersecting
+criteria, each resolving to **yes / no / no record** with all three counts
+shown, and each step prints the loci it excludes. Nothing is ranked, weighted
+or summed into a score; the criteria are the reader's and the output is a set
+size. `/targets?validation_status=` filters the same column server-side.
 
 The screening tables are reachable through the agent and through the Screens
 and Hit profiling views (`/screens`, `/hits`, `/compounds/{id}`).

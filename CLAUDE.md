@@ -410,8 +410,9 @@ This is the rule that outranks completeness.
   profiled compounds. **A structure has three states**: `has_structure` true;
   false, meaning looked up and absent from that release's file (40 ids), which
   is not "has no structure"; and no row, meaning never looked up, which is
-  every PubChem-only CID (361,870 of them). A LEFT JOIN reads the third as
-  NULL, so it must not be counted as the second.
+  every result row with no ChEMBL id (361,870 distinct CIDs, and 88 rows with
+  no CID either). A LEFT JOIN reads the third as NULL, so it must not be
+  counted as the second.
 
 ## Validation targets
 
@@ -465,12 +466,14 @@ limit and the spill directory set before the lock so SQL cannot lift them: 0.64
 GB after loading, 0.97 GB under a 5.4M-row self-join. A view cannot replace the
 copy, because the lock lands before it would be resolved.
 
-**The API has one memory ceiling per process, not per request.** Every request
-is a cursor on one 512 MB DuckDB instance with TEMP views, and the hit profile
-(all 5.4M results aggregated) is built once per store build, keyed on its
-inputs' modification times. Before this, each request was its own instance
-allowed 80% of RAM, and eight concurrent `/hits` held 8.67 GB; now they take
-0.81 GB. Do not go back to `duckdb.connect()` per request, and do not move an
+**The API's queries share one memory ceiling per process, not one per
+request.** Every `_db()` is a cursor on one 512 MB DuckDB instance with TEMP
+views (the small provenance and count reads behind `/meta` still open their own
+connections). The hit profile (all 5.4M results aggregated) is built once per
+store build, keyed on its inputs' modification times, and each request reads a
+TEMP copy so a rebuild cannot drop it mid-request. Before this, each request
+was its own instance allowed 80% of RAM, and eight concurrent `/hits` held
+8.67 GB; now they take 0.81 GB. Do not go back to `duckdb.connect()` per request, and do not move an
 aggregate over `screen_results` into a route's per-request SQL.
 
 ## Querying it

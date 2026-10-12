@@ -588,12 +588,13 @@ already use. `standard_inchi` is not stored.
 |---|---|---|
 | `has_structure` true | the file has a SMILES | 479,853 |
 | `has_structure` false | looked up, and this release's structure file has no line for it | 40 |
-| no row | never looked up: every PubChem-only CID (361,870 distinct CIDs on 572,581 result rows) | -- |
+| no row | never looked up: every result row with no ChEMBL id (572,581 rows: 361,870 distinct CIDs, and 88 rows in 13 PubChem screens with no CID either) | -- |
 
 `false` is what the file says, not a claim that the molecule has no structure: the file omits
 molecules without one and any id outside the release. Five of the 40 are in `compounds`, and
 they are exactly the five whose `smiles` is NULL there. A LEFT JOIN onto this table gives
-`has_structure IS NULL` for the third state, so it cannot be mistaken for `false`.
+`has_structure IS NULL` for the third state, which must not be counted as `false`:
+`coalesce(has_structure, false)` or `has_structure IS NOT TRUE` would do exactly that.
 
 **Agreement with `compounds`.** Both come from ChEMBL 37: one through the API, the other
 through this file. They agree on all 5,173 SMILES `compounds` holds, with 0 differences, and on
@@ -2011,7 +2012,8 @@ Each is a decision someone can pick up, with what it would cost. 5, 7 and 8 are 
    it peaks at 0.64 GB after loading and 0.97 GB under a 5.4M-row self-join. The API was a DuckDB
    instance per request, each allowed 80% of RAM, and `/hits` re-aggregated every screen result
    on each call, so eight concurrent `/hits` held 8.67 GB. Now every request is a cursor on one
-   512 MB instance per process, and the 23,730-row profile is built once per store build: eight
+   512 MB instance per process (the small reads behind `/meta` still open their own), and the
+   23,730-row profile is built once per store build, each request reading a copy: eight
    concurrent `/hits` take 0.81 GB and 32 take 0.82 GB. `/hits` does not fit in 256 MB, so a
    larger screening layer (follow-up 2) must re-measure the ceiling. Still open: `make build`
    itself peaks at 6.5 GB (2026-10-11, `/usr/bin/time -l`). The structure step accounts for

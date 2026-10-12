@@ -1,15 +1,17 @@
 # Target assessment — design
 
 _2026-10-12. What to bring over from `parsnip` / `parsnip-ai`, and what not to.
-Decided with Sid in conversation: **ship the evidence, not the score.**_
+Decided with Sid in conversation: **ship the evidence, not the score**, and
+**parsnip-ai is an upstream source — the atlas does not mine.**_
 
 ## The shape in one sentence
 
 Parsnip asks 76 weighted questions about a target and returns four 0–100 scores.
 This milestone takes **the questions** and throws away **the scores**: a per-gene
 assessment view that says, for each question a target team actually asks, what the
-atlas can answer from a source and what it cannot — plus one new source,
-`literature_facts`, for the assay contexts no database covers.
+atlas can answer from a source and what it cannot — and ingests parsnip-ai's mined
+literature facts as one more public source, for the assay contexts no database
+covers.
 
 ## Why not the scores
 
@@ -36,88 +38,126 @@ list of what the decision actually turns on.
 | Asset | Public? | Verdict |
 |---|---|---|
 | TPQ: 76 questions, per-question answer vocabularies (`parsnip-data/data/questions.json`) | `github.com/sidxz/parsnip-data`, public | **Yes** — as a checklist. Licence needs stating (Sid's own repo). |
-| Literature KB: 445 papers, 850 quote-backed facts (`parsnip-ai/kb/literature.db`) | Mostly OA; see the gate below | **Yes, re-derived** — the one new source. |
-| Assay-context vocabulary (`caseum`, `nr_hypoxia`, `gluconeogenic`, `macrophage`, `mouse_acute/chronic`, `nhp`) | — | **Yes** — a taxonomy, and it extends `assay_condition`. |
-| Scoring JS (`score.js`, `section2–6.js`), weights, `constants.json` | Public | **No** — see above. |
+| Mined literature facts (`parsnip-ai/kb/facts/*.jsonl`, 850 rows) + run manifests (`kb/runs/`) | Mostly OA; see the licence split | **Yes — ingested as an upstream source.** |
+| Assay-context vocabulary (`caseum`, `nr_hypoxia`, `gluconeogenic`, `macrophage`, `mouse_acute/chronic`, `nhp`, and the `_gen` genetic variants) | — | **Yes** — a taxonomy, and it extends `assay_condition`. |
+| Saturation markers (`kb/runs/*.saturated`, 36 of them) | — | **Yes** — they are the only thing that separates "searched and found nothing" from "never looked". |
+| Scoring JS (`score.js`, `section2–6.js`), weights, `constants.json` | Public | **No** — see above. The weights are not ingested at all, so the file cannot be mistaken for a scorer. |
 | CRISPRi vulnerability, PDB, ChEMBL, essentiality, redundancy | Public | **No** — the atlas already has all five, with provenance and honesty rules parsnip does not have. |
 | Anything derived from consortium data | **Consortium** | **Never.** Nothing from it enters this repo. |
-| `analysis/perplex/` | Public method, but it is the attempt that underperformed and is marked outdated | **No.** |
+| `analysis/perplex/` | Public method, but the attempt that underperformed and is marked outdated | **No.** |
 
-## The new source: `literature_facts`
+## The new source: `literature_facts`, ingested not mined
 
-### What it is
+### Why ingesting is the right call
 
-Per-gene, per-assay-context evidence mined from open-access full text, each row
-carrying a **verbatim quote** and the PMID it came from. This is the layer the
-atlas has no database for: `assay_condition` today has **no `caseum` rows at
-all** and the CLAUDE.md keeps that zero visible rather than filling it. The KB
-has 11 `caseum` active and 4 inactive, 21 `nr_hypoxia` across both directions,
-12 `macrophage`, 19 mouse, 4 NHP — all quote-backed.
+Parsnip already did the work, and it did it with a discipline the atlas can
+stand behind:
 
-### The licence gate, which decides the scope
+- **"Every fact carries a verbatim quote or it is not a fact."** All 850 rows have
+  a non-empty quote.
+- **`kb/verify.py` is a gate**, not a report: every quote is re-confirmed verbatim
+  against the frozen corpus text and the run is not done until it exits 0. The
+  atlas can re-run that same gate on ingest.
+- **"The LLM never answers from its own knowledge"** — extraction is over
+  retrieved primary text only, and empty retrieval returns `UNKNOWN`. This is the
+  rule whose absence made the earlier `analysis/` attempt fail.
+- **The durable artifact is committed JSONL**, not the SQLite: 18 files under
+  `kb/facts/`, with the DB rebuilt from them by `kb.py load`. Clean to ingest.
+- **The run manifests are real provenance**: run id, questions, assay contexts,
+  search date, model, method, every query run, and per-PMID inclusions with the
+  mode and a note. `kb/runs/2026Q3-genetic-invivo-section4.json` is the example.
+
+So the atlas does not mine, imports no `anthropic` dependency into the pipeline,
+and needs no API key. **`make build`, `check`, `refresh` and `diff` stay exactly
+as CLAUDE.md describes them** — nothing in the update path touches an LLM. This is
+the same relationship the atlas already has with MtbTnDB: someone else computed
+it, we record what they computed and what it does not cover.
+
+### Version and refresh
+
+`source_version` is the run-manifest id, which is already quarter-stamped
+(`2026Q2-rpoB-2C3`, `2026Q3-genetic-invivo-section4`), or a release tag once
+parsnip-ai publishes. `atlas check` probes the published location the way the
+other sources are probed; a new mining run is a new version and `atlas diff` is
+the gate, as it is for everything else.
+
+This source **does not re-key the crosswalk** — facts attach to Rv loci that
+already exist — so by CLAUDE.md's rule it is in the safe-unattended class with
+`clinicaltrials-gov`. A new run can still change which genes carry evidence, so
+the diff still has to be read.
+
+### The licence split, which is the one real gate
 
 Of 850 facts, **154 (18%) come from papers whose source is `citations-paywalled`**.
-Their quotes are not redistributable, so they do not come. Of the 445 papers,
-318 carry a PMCID and `source` is `europepmc` for 344 and `pubmed` for 82 — but
-**`oa_status` is empty on all 445**, so which papers are in the PMC OA subset
-has not been established and must be, per paper, before any quote is stored.
-Only the PMC OA subset (CC BY / CC BY-NC / CC0, stated per article) permits
-storing and serving a quote with attribution. A PMID is a fact and a
-bibliography is not copyrightable, so the *paper list* can be reused freely;
-the text cannot.
+They are the three user-supplied genome-wide supplementaries — Rock 2026 mBio
+in-vivo CRISPRi (76 acute + 76 chronic hits), Rengarajan 2005 macrophage Tn-seq,
+Sassetti 2003 in-vivo Tn-seq. Also, `oa_status` is empty on all 445 papers, so OA
+status is not currently recorded anywhere and must be established per paper
+before a quote is served.
 
-### Why re-derive rather than import the SQLite
+Three options, Sid's call:
 
-Three reasons, each one of the atlas's own existing rules:
+1. **Exclude the paywalled rows.** Safest; loses the genome-wide in-vivo CRISPRi,
+   which is the richest single contribution and the one that covers essential
+   genes (Tn-seq structurally misses them).
+2. **Carry the value without the verbatim quote** for those rows — gene, context,
+   direction, confidence, PMID, and a `quote_withheld` flag. Defensible for
+   table-derived data: a hit call in a supplementary table is a fact, not
+   copyrightable expression. But it breaks the "quote travels with the value"
+   rule for 18% of rows, so the flag has to be visible.
+3. **Ingest only rows from papers confirmed in the PMC OA subset**, establishing
+   `oa_status` per paper first. The most work, the cleanest result, and it
+   subsumes option 1.
 
-1. **`source_version` must be stated or `"unknown"`.** `facts.extractor_model` is
-   the bare string `subagent` for **526 of 850 rows (62%)** — no model named. The
-   rest are `claude-fable-5` (231), `claude-opus-4-8` (27), `claude-opus-4-8+sonnet-finder`
-   (63) and `recovery-abstract` (3). Five extractors, mostly unnamed, is not a
-   version this atlas can stamp.
-2. **All fetching goes through `atlas/fetch.py`**, which owns the cache and writes
-   the `.meta.json` sidecar that provenance comes from. Parsnip's corpus is 454
-   loose `.txt` files with no sidecars.
-3. **The gene key is a free string, and it collides.** 95 distinct `target_gene`
-   values, case-inconsistent — `AspS`/`aspS`, `Pks13`/`pks13`, `PckA`/`pckA`,
-   `MenA`/`menA`, `LepB`/`lepB`, `LeuS`/`leuS`, `TopA`/`topA`, `PknB`/`pknB` are
-   eight pairs that are one gene each. Parsnip's own notes record `EtfD` as
-   unresolved (the name matches the ETF subunit, not the oxidoreductase). The
-   atlas is keyed on the Rv locus and **an unresolved name must be recorded
-   unmatched, never guessed** — the same rule `screens.targets` already follows
-   for `P9WFX0`.
-
-So: **reuse the paper list, re-fetch the OA subset through `fetch.py`, re-extract
-with one named model.** That is the cheap route that does not break a rule.
+I recommend **3 for the quote, with 2 as the fallback for the three
+screen-derived deposits** — their value is a table row, and withholding the
+prose while keeping the call is both legal and honest if the flag is shown.
 
 ### Honesty rules this layer needs
 
-It is the first layer where an LLM extraction becomes a stored row, so it carries
+It is the first layer whose rows are an LLM's reading of a paper, so it carries
 rules the others do not.
 
-- **A mined fact is this atlas's reading of a paper, not a measurement.** It never
-  merges into a ChEMBL row and never counts into a column that reads as measured.
-  `source` is the mining run, not the journal; the PMID is the citation.
-- **The quote travels with the value, always.** All 850 KB rows have a non-empty
-  quote; that property is a requirement here, not a happy accident. A row whose
-  quote does not support its value is a defect, not a low-confidence row.
-- **Absence means not mined, and for this layer that is the common case.** 95
-  strings reach perhaps 87 genes of 4,031 — **2% coverage**. This inverts the
-  atlas's usual rule that a zero can mean zero: here a zero means "nobody looked",
-  and the column must say so. `mined` is a separate boolean from any direction.
-- **`direction = inactive` is a result; absence is not.** BTZ-043 reading inactive
-  in rabbit caseum is a finding, and one the atlas wants: it is exactly the shape
-  of "tested and inactive" that `screen_results` exists to preserve.
-- **`confidence` is the extractor's, not the paper's** (KB: 493 high, 336 medium,
-  21 low). It is shown, never used to filter silently.
-- **The extracting model is part of the provenance**, recorded per row, because a
-  re-mine with a different model is a different source version.
+- **A mined fact is a reading of a paper, not a measurement.** It never merges
+  into a ChEMBL row and never counts into a column that reads as measured.
+  `source` is `parsnip-ai` with its run id; the PMID is the citation.
+- **The quote travels with the value** (except where the licence split withholds
+  it, flagged). A row whose quote does not support its value is a defect, not a
+  low-confidence row — and `verify.py` is what catches that.
+- **Three states, not two: mined-and-found, mined-and-found-nothing, never
+  mined.** The 36 `.saturated` markers are what make the middle state sayable
+  ("caseum corpus saturated 2026-06-30 after 3 rounds"). Without them, absence
+  over the 3,944 genes nobody looked at would read the same as a searched zero.
+  This inverts the atlas's usual rule that a zero can mean zero, and the column
+  must say which zero it is.
+- **`direction = inactive` is a result; absence is not.** BTZ-043 reading
+  inactive in rabbit caseum is a finding the atlas wants — the same shape of
+  "tested and inactive" that `screen_results` exists to preserve. Parsnip's own
+  rule matches: "never assert INACTIVE from absence of data".
+- **`confidence` is the extractor's, not the paper's** (493 high, 336 medium, 21
+  low). Shown, never used to filter silently.
+- **`extractor_model` is recorded as given, including where it is unhelpful.**
+  It is the bare string `subagent` on 526 of 850 rows; the run manifest names
+  the real model where the row does not. Recorded as given, the way
+  `screens.depositor` holds PubChem's bare `11908` — not laundered, not guessed.
 
 ### Keying
 
-`rv_id`, resolved from the gene symbol through the existing crosswalk, with the
-case collapse applied once and the result checked. Unresolved names get a row in
-an `unmatched` table with the string as given — not a guess, not a drop.
+`rv_id`, resolved from the gene symbol through the existing crosswalk. Three
+things the ingester must handle, all visible in the current data:
+
+- **95 distinct `target_gene` strings, case-inconsistent.** `AspS`/`aspS`,
+  `Pks13`/`pks13`, `PckA`/`pckA`, `MenA`/`menA`, `LepB`/`lepB`, `LeuS`/`leuS`,
+  `TopA`/`topA`, `PknB`/`pknB` are eight pairs that are one gene each.
+- **Compound keys.** One row is keyed `dprE1/ubiA` and names two genes; it has to
+  split, not be dropped or assigned to one.
+- **Unresolved names get a row in an `unmatched` table with the string as
+  given** — never a guess. Parsnip hit this itself (`EtfD` was unresolvable until
+  Beites 2021 named it `Rv0338c`), which is exactly why the atlas records rather
+  than bridges, the same rule `screens.targets` follows for `P9WFX0`.
+
+Coverage after resolution is roughly **87 genes of 4,031** — about 2%. That is
+the point of the three-state rule above.
 
 ## The view: assessment, not "targets"
 
@@ -127,7 +167,7 @@ as parsnip groups them, each one showing
 
 - what the atlas answers from a source, with the value and its provenance;
 - what no public source answers, said plainly;
-- which questions the `literature_facts` layer reaches, with the quote and PMID.
+- which questions `literature_facts` reaches, with the quote and PMID.
 
 The atlas already answers a large share of the structural, genetic and
 chemical-matter questions better than parsnip did, because parsnip read them from
@@ -135,39 +175,42 @@ the same public sources without the honesty rules: essentiality and vulnerabilit
 (and HN878, which parsnip has no equivalent of), structures with resolution and
 ligands, redundancy via paralogs at a stated threshold, human homology with its
 identity number, drug precedent with its three guards, whole-cell pMIC with
-conditions, screening scale with denominators. The gaps the view will expose
-honestly are the in-vivo and host-context ones — exactly where
-`literature_facts` lands, and exactly where parsnip needed tier-3 mining too.
+conditions, screening scale with denominators. The gaps the view exposes honestly
+are the in-vivo and host-context ones — exactly where `literature_facts` lands,
+and exactly where parsnip needed tier-3 mining too.
 
-**No score, no axis, no ranking, no weight is displayed or stored.** The
-questions' weights are not ingested at all; without them the file cannot be
-mistaken for a scorer.
+**No score, no axis, no ranking, no weight is displayed or stored.**
+
+## Prerequisite on the parsnip side
+
+`parsnip-ai` is not a git repository and has no remote — the CLAUDE.md table
+lists it with none. The atlas fetches everything through `atlas/fetch.py` from a
+URL, so the facts need a published location. The cheap route is the one parsnip
+already uses: publish `kb/facts/`, `kb/runs/` and `kb/corpus/` into
+`parsnip-data` (or a new public repo) and fetch from `raw.githubusercontent.com`,
+exactly as the parsnip app fetches its data today. `kb/corpus/` is 11 MB over 454
+files, so it is publishable as-is — and it has to be, for `verify.py` to be
+re-runnable here.
+
+Until that exists, the ingester can be built and tested against committed
+fixtures (which is the rule anyway), but the build cannot run.
 
 ## Open questions for Sid
 
-1. **Licence for the TPQ question set.** `parsnip-data` is public and yours, but
-   states no licence. `docs/data-sources.md` needs one, and "none stated" is
-   already how Mycobrowser is recorded, so that is an acceptable answer — but it
-   should be a decision, not a default.
-2. **Which model, and is one pass enough?** Re-extraction needs one named model
-   for a stampable `source_version`. The pipeline currently imports `anthropic`
-   only in `atlas/agent.py`, and `check`/`refresh`/`diff` run with no API key —
-   this would be the first stage that needs one. That breaks "nothing in the
-   update path touches an LLM" unless the mining stage is explicitly **outside**
-   the update path: mined once, committed as a versioned input, re-run only on
-   request. I recommend that.
-3. **Scope of the first cut.** The ~87 resolvable genes the KB already covers
-   (includes dprE1, inhA, mmpL3 — not GroEL2), or widen the paper search? I
-   recommend the former: it is bounded, and three of the four validation genes
-   are in it.
+1. **The licence split** above — exclude, withhold-quote, or OA-confirm per paper.
+   Recommendation: OA-confirm, with withhold-quote for the three screen deposits.
+2. **Where parsnip-ai publishes**, and under what licence. `parsnip-data` states
+   none today; "none stated" is how Mycobrowser is already recorded, so it is an
+   acceptable answer, but it should be a decision.
+3. **Scope of the first cut**: the ~87 genes the facts already cover (includes
+   dprE1, inhA, mmpL3 — not GroEL2), which I recommend, since it is bounded and
+   three of the four validation genes are in it.
 4. **Does the assessment view show the question identifiers** (`2C3`, `6B5A`)?
-   They are meaningful to anyone who has used parsnip and noise to anyone who has
-   not.
+   Meaningful to anyone who has used parsnip, noise to anyone who has not.
 
 ## Cost
 
-The paper list and OA-status check are cheap. Re-extraction is one LLM pass over
-the OA subset of ~450 papers — the only real cost, and it is a one-off per mining
-run, not per build. The view is one route plus one component. No new pipeline
-dependency: `fetch.py` already does the fetching, and the extraction stage runs
-outside `make build` by question 2's recommendation.
+One ingester of the usual shape (`fetch_raw` → `normalize` → `build`), one
+`atlas check` probe, one API route, one view. No new pipeline dependency and no
+API key: the mining already happened upstream. The only real work outside the
+usual is the OA-status determination the licence split needs.

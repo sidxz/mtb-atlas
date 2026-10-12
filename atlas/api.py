@@ -18,6 +18,15 @@ from .clinical import TARGET_LINK_SQL, TARGET_LINKS
 from .store import STORE, built, provenance
 from .summary import EMPTY_CLINICAL, counts
 
+# No row in an empty stand-in, so every structure reads as never looked up: true of a
+# store built before the table existed.
+EMPTY = {
+    **EMPTY_CLINICAL,
+    "compound_structures": "SELECT NULL::VARCHAR AS molecule_chembl_id,"
+    " NULL::BOOLEAN AS has_structure, NULL::VARCHAR AS canonical_smiles,"
+    " NULL::VARCHAR AS standard_inchi_key WHERE false",
+}
+
 # Licences differ per source and the UI shows them, so they live beside the
 # versions rather than in a footnote.
 LICENCES = {
@@ -138,11 +147,11 @@ def _db() -> duckdb.DuckDBPyConnection:
         path = STORE / f"{name}.parquet"
         if path.exists():
             connection.sql(f"CREATE VIEW {name} AS SELECT * FROM '{path}'")
-        elif name in EMPTY_CLINICAL:
-            # An empty stand-in, so a store without the clinical layer answers
-            # rather than failing. Without it DuckDB falls back to a
-            # replacement scan and binds the route function of the same name.
-            connection.sql(f"CREATE VIEW {name} AS {EMPTY_CLINICAL[name]}")
+        elif name in EMPTY:
+            # An empty stand-in, so a store without the clinical layer (or built before
+            # `compound_structures`) answers rather than failing. Without it DuckDB falls
+            # back to a replacement scan and binds the route function of the same name.
+            connection.sql(f"CREATE VIEW {name} AS {EMPTY[name]}")
     return connection
 
 
@@ -995,6 +1004,14 @@ def compound(molecule_chembl_id: str) -> dict[str, Any]:
     # A molecule known only from a screen has no `compounds` row: the page still
     # answers, with the identifier and what it was tested in, and nothing invented.
     record = rows[0] if rows else {"molecule_chembl_id": molecule_chembl_id}
+    if not rows:
+        # Its structure, where ChEMBL's structure file has one: the potency set's own
+        # `compounds.smiles` agrees with that file for every compound it holds.
+        drawn = connection.execute(
+            "SELECT canonical_smiles FROM compound_structures WHERE molecule_chembl_id = ?",
+            [molecule_chembl_id],
+        ).fetchone()
+        record["smiles"] = drawn[0] if drawn else None
     activities = _query(
         connection,
         "SELECT * FROM activities WHERE molecule_chembl_id = ? AND evidence <> 'whole_cell'"
@@ -1575,21 +1592,23 @@ def screen_results(
     ).fetchone()[0]
     items = _query(
         connection,
-        "SELECT r.*, st.stage, st.modality, c.pref_name, c.smiles"
+        "SELECT r.*, st.stage, st.modality, c.pref_name, s.canonical_smiles AS smiles"
         " FROM screen_results r JOIN screen_stages st USING (stage_id)"
         " LEFT JOIN compounds c USING (molecule_chembl_id)"
+        " LEFT JOIN compound_structures s USING (molecule_chembl_id)"
         f" WHERE {clause}"
         " ORDER BY CASE r.outcome WHEN 'active' THEN 0 WHEN 'inconclusive' THEN 1"
         " WHEN 'inactive' THEN 3 ELSE 2 END, r.activity_score DESC NULLS LAST,"
         " r.stage_id, r.result_tag, r.activity_id LIMIT ? OFFSET ?",
         [*params, limit, offset],
     )
-    # `compounds` holds the ChEMBL potency set, which is not the screened set: a
-    # depiction is drawn from a SMILES, so this is how many of these rows a page can
-    # draw at all. Stated, so the gap reads as coverage and not as a broken renderer.
+    # A depiction is drawn from a SMILES, so this is how many of these rows a page can
+    # draw at all. A PubChem-only CID was never looked up and cannot be drawn. Stated, so
+    # the gap reads as coverage and not as a broken renderer.
     drawable = connection.execute(
-        "SELECT count(*) FROM screen_results r JOIN compounds c USING (molecule_chembl_id)"
-        f" WHERE {clause} AND c.smiles IS NOT NULL",
+        "SELECT count(*) FROM screen_results r"
+        " JOIN compound_structures s USING (molecule_chembl_id)"
+        f" WHERE {clause} AND s.has_structure",
         params,
     ).fetchone()[0]
     return {
@@ -1796,8 +1815,8 @@ def hits(
     clause = f"WHERE {' AND '.join(where)}" if where else ""
     connection = _db()
     connection.sql(
-        f"CREATE TEMP TABLE profile AS SELECT p.*, c.smiles FROM ({PROFILE_SQL}) p"
-        " LEFT JOIN compounds c USING (molecule_chembl_id)"
+        "CREATE TEMP TABLE profile AS SELECT p.*, s.canonical_smiles AS smiles"
+        f" FROM ({PROFILE_SQL}) p LEFT JOIN compound_structures s USING (molecule_chembl_id)"
     )
     base = " FROM profile p LEFT JOIN compounds c USING (molecule_chembl_id)"
     total = connection.execute(f"SELECT count(*){base} {clause}", params).fetchone()[0]

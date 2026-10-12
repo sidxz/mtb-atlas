@@ -27,6 +27,7 @@ def client(evidence_store: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
 # copy, through the ingesters' own functions, so nothing here changes what every other
 # test reads.
 MACOZINONE = "CHEMBL3330226"
+CHEMREPS_SMILES = "O=c1nc(N2CCN(CC3CCCCC3)CC2)sc2c([N+](=O)[O-])cc(C(F)(F)F)cc12 chemreps"
 
 
 def _pubchem_row(stage: str, tag: int, outcome: str | None, cid: str) -> dict[str, object]:
@@ -167,6 +168,36 @@ def screen_store(evidence_store: Path, tmp_path_factory: pytest.TempPathFactory)
         ),
     ]
     store.write_stamped("screen_results", results, store=copy)
+    # Structures, in all three states: macozinone's differs from its `compounds` SMILES so a
+    # test can tell which table a page drew from, the ADME-only compound was looked up and
+    # not found, and every other compound was never looked up.
+    store.write_parquet(
+        "compound_structures",
+        [
+            {
+                "molecule_chembl_id": MACOZINONE,
+                "has_structure": True,
+                "canonical_smiles": CHEMREPS_SMILES,
+                "standard_inchi_key": "BJDZBXGJNBMCAV-UHFFFAOYSA-N",
+            },
+            {
+                "molecule_chembl_id": "CHEMBL_POTENCY_ONLY",
+                "has_structure": True,
+                "canonical_smiles": "CCO",
+                "standard_inchi_key": "LFQSCWFLJHTTHZ-UHFFFAOYSA-N",
+            },
+            {
+                "molecule_chembl_id": "CHEMBL_ADME_ONLY",
+                "has_structure": False,
+                "canonical_smiles": None,
+                "standard_inchi_key": None,
+            },
+        ],
+        source="chembl",
+        source_version="chembl_37",
+        retrieved_at="2026-10-11",
+        store=copy,
+    )
     return copy
 
 
@@ -573,6 +604,51 @@ def test_search_and_meta_know_the_campaigns(screens: TestClient) -> None:
     counts = screens.get("/meta").json()["counts"]
     assert counts["screens"] == screens.get("/screens").json()["total"]
     assert counts["profiled_compounds"] == 2
+
+
+def test_screen_rows_are_drawn_from_compound_structures(screens: TestClient) -> None:
+    """`compounds` is the potency set; the screened set's structures are in their own table."""
+    page = screens.get("/screens/pubchem:9000008/results").json()
+    drawn = {row["molecule_chembl_id"]: row["smiles"] for row in page["items"]}
+    assert drawn[MACOZINONE] == CHEMREPS_SMILES
+    # Three rows; two are PubChem-only CIDs, never looked up, so one can be drawn.
+    assert (page["total"], page["n_with_structure"]) == (3, 1)
+    # Looked up and not found is a row in compound_structures, and is not drawable either.
+    paper = screens.get("/screens/chembl:CHEMBL_DOC3/results", params={"limit": 500}).json()
+    molecules = [row["molecule_chembl_id"] for row in paper["items"]]
+    assert "CHEMBL_ADME_ONLY" in molecules and paper["total"] == len(molecules)
+    drawable = {MACOZINONE, "CHEMBL_POTENCY_ONLY"}
+    assert paper["n_with_structure"] == sum(m in drawable for m in molecules)
+
+
+def test_hit_profiling_counts_structures_from_compound_structures(screens: TestClient) -> None:
+    """Looked up and absent (ADME-only) is not drawable, and neither is never looked up."""
+    page = screens.get("/hits").json()
+    assert page["population"]["with_structure"] == 2
+    smiles = {row["molecule_chembl_id"]: row["smiles"] for row in page["items"]}
+    assert smiles["CHEMBL_POTENCY_ONLY"] == "CCO"
+    assert smiles["CHEMBL_ADME_ONLY"] is None
+
+
+def test_a_compound_known_only_from_a_screen_carries_its_structure(screens: TestClient) -> None:
+    assert screens.get("/compounds/CHEMBL_POTENCY_ONLY").json()["smiles"] == "CCO"
+    assert screens.get("/compounds/CHEMBL_ELSEWHERE").json()["smiles"] is None
+
+
+def test_a_store_built_before_compound_structures_still_answers(
+    screen_store: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    copy = tmp_path / "store"
+    shutil.copytree(screen_store, copy)
+    (copy / "compound_structures.parquet").unlink()
+    for module in (api, store, summary):
+        monkeypatch.setattr(module, "STORE", copy)
+    client = TestClient(api.app)
+    assert client.get("/hits").json()["population"]["with_structure"] == 0
+    results = client.get("/screens/pubchem:9000008/results").json()
+    assert results["n_with_structure"] == 0
+    assert {row["smiles"] for row in results["items"]} == {None}
+    assert client.get("/compounds/CHEMBL_POTENCY_ONLY").json()["smiles"] is None
 
 
 def test_a_store_without_screen_results_says_so(client: TestClient) -> None:

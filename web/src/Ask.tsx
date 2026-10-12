@@ -1,15 +1,16 @@
 /**
  * Natural-language questions over the store.
  *
- * The SQL the agent ran is shown next to the answer, always, not behind a
- * disclosure. An answer about drug targets that cannot be checked is not worth
- * having, and the query is the shortest way to check one.
+ * The answer takes the full width. The SQL behind it still comes back from
+ * /ask (`queries`) and is not drawn here.
  */
 
 import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Link } from "react-router";
 import { InterfaceIcon } from "./InterfaceIcon";
+import type { Hit, SearchResults } from "./api";
 
 const EXAMPLES = [
   "Which essential genes have a structure, no ligands, and no close human homolog?",
@@ -23,9 +24,52 @@ const EXAMPLES = [
 interface Result {
   answer: string;
   queries: { tool: string; sql: string | null; rows: number | null; error: string | null }[];
+  /** The store's own objects the answer names; only exact ids and gene names. */
+  references?: SearchResults;
 }
 
-export function Ask({ base }: { base: string }) {
+const at = (...parts: string[]) => "/" + parts.map(encodeURIComponent).join("/");
+
+/** Where each kind of reference opens; a gene opens in every view that has one. */
+const OPENS: Record<keyof SearchResults, [string, (id: string) => string][]> = {
+  genes: [["Genome", (id) => at("genome", id)], ["Targets", (id) => at("targets", id)], ["Map", (id) => at("map", id)]],
+  drugs: [["Drug", (id) => at("clinical", "drug", id)]],
+  trials: [["Trial", (id) => at("clinical", "trial", id)]],
+  compounds: [["Compound", (id) => at("clinical", "compound", id)]],
+  screens: [["Screen", (id) => at("screens", id)]],
+};
+const KIND_LABEL: Record<keyof SearchResults, string> = {
+  genes: "Genes", drugs: "Drugs", trials: "Trials", compounds: "Compounds", screens: "Screens",
+};
+
+function References({ refs, onGeneScreens, onFollow }: {
+  refs: SearchResults;
+  onGeneScreens: (rv: string) => void;
+  /** A followed link folds the answer away, so the page it opened is in view. */
+  onFollow: () => void;
+}) {
+  const kinds = (Object.keys(OPENS) as (keyof SearchResults)[]).filter((k) => refs[k]?.length);
+  if (!kinds.length) return null;
+  return (
+    <section className="askrefs" aria-label="Referenced in this answer" onClick={(e) => { if ((e.target as HTMLElement).closest("a")) onFollow(); }}>
+      <h4>Referenced</h4>
+      {kinds.map((kind) => (
+        <div className="askrefs-kind" key={kind}>
+          <span className="askrefs-label">{KIND_LABEL[kind]}</span>
+          {refs[kind].map((hit: Hit) => (
+            <span className="askref" key={hit.id} title={hit.detail ?? undefined}>
+              <strong>{hit.label !== hit.id ? `${hit.label} · ${hit.id}` : hit.id}</strong>
+              {OPENS[kind].map(([label, to]) => <Link key={label} to={to(hit.id)}>{label}</Link>)}
+              {kind === "genes" && <Link to="/screens" onClick={() => onGeneScreens(hit.id)}>Screens</Link>}
+            </span>
+          ))}
+        </div>
+      ))}
+    </section>
+  );
+}
+
+export function Ask({ base, onGeneScreens }: { base: string; onGeneScreens: (rv: string) => void }) {
   const [question, setQuestion] = useState("");
   // The question the panel answers; the input may have moved on since.
   const [asked, setAsked] = useState<string | null>(null);
@@ -179,20 +223,7 @@ export function Ask({ base }: { base: string }) {
                   <div className="answer">
                     <Markdown remarkPlugins={[remarkGfm]}>{result.answer}</Markdown>
                   </div>
-                  <details open>
-                    <summary>
-                      {result.queries.length} quer{result.queries.length === 1 ? "y" : "ies"} behind this
-                      answer
-                    </summary>
-                    {result.queries.map((query, index) => (
-                      <div className="askquery" key={index}>
-                        {query.sql ? <pre>{query.sql}</pre> : <span className="dim">{query.tool}</span>}
-                        <span className="faint">
-                          {query.error ? `error: ${query.error}` : `${query.rows ?? 0} rows`}
-                        </span>
-                      </div>
-                    ))}
-                  </details>
+                  {result.references && <References refs={result.references} onGeneScreens={onGeneScreens} onFollow={() => setOpen(false)} />}
                 </div>
               )}
             </div>

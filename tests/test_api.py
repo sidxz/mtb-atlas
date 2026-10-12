@@ -885,3 +885,16 @@ def test_genome_fasta_is_the_whole_chromosome(client: TestClient) -> None:
     header, *lines = text.splitlines()
     assert header.startswith(">NC_000962.3 ")
     assert sum(map(len, lines)) == 4_411_532
+
+
+def test_an_answer_links_only_what_the_store_holds(client: TestClient) -> None:
+    from atlas.api import references
+
+    found = references(
+        "inhA (Rv1484) before dprE1 (Rv3790); Rv9999 is not a locus, Inha is not a gene name, "
+        "and CHEMBL5465373 is a target id, not a compound."
+    )
+    # Exact ids and names, in order of first mention; nothing fuzzy.
+    assert [h.id for h in found["genes"]] == ["Rv1484", "Rv3790"]
+    assert not found["compounds"] and not found["drugs"]
+    assert references("")["genes"] == []

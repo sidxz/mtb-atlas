@@ -8,6 +8,7 @@ answer can name the release it came from.
 from __future__ import annotations
 
 import atexit
+import re
 import shutil
 import tempfile
 import threading
@@ -2236,6 +2237,103 @@ class AgentAnswer(BaseModel):
     answer: str
     queries: list[dict[str, Any]]
     sources: dict[str, str]
+    # The store's own objects the answer names, by kind, in order of first mention.
+    references: dict[str, list[Hit]] = Field(default_factory=dict)
+
+
+_WORD = re.compile(r"\w[\w.-]*\w|\w")
+_SCREEN_ID = re.compile(r"\b(?:pubchem|chembl):[\w:]+")
+_AID = re.compile(r"\bAIDs?\s+(\d+)")
+# id column(s) to match, label, context line; every key is an exact id or name.
+REFERENCES: dict[str, tuple[str, str, str, str]] = {
+    "genes": (
+        "target_summary",
+        "list_contains($w, rv_id) OR list_contains($w, gene_name)",
+        "coalesce(nullif(gene_name, rv_id), rv_id)",
+        "product",
+    ),
+    "drugs": (
+        "drugs",
+        "list_contains($w, molecule_chembl_id)",
+        "coalesce(pref_name, molecule_chembl_id)",
+        "list_aggr(tb_indications, 'string_agg', ', ')",
+    ),
+    "trials": ("trials", "list_contains($w, nct_id)", "coalesce(acronym, nct_id)", "brief_title"),
+    # A drug is also a compound; it is listed once, as the drug.
+    "compounds": (
+        "compounds",
+        "list_contains($w, molecule_chembl_id)"
+        " AND molecule_chembl_id NOT IN (SELECT molecule_chembl_id FROM drugs)",
+        "coalesce(pref_name, molecule_chembl_id)",
+        "molecule_type",
+    ),
+    "screens": (
+        "screens",
+        "list_contains($w, screen_id) OR list_contains($a, aid)"
+        " OR list_contains($w, document_chembl_id)",
+        # ChEMBL paper titles carry markup (`<i>Mycobacterium tuberculosis</i>`).
+        "regexp_replace(coalesce(title, screen_id), '<[^>]*>', '', 'g')",
+        "depositor",
+    ),
+}
+# The columns whose value appears in the answer, to order by first mention.
+_REFERENCE_KEYS = {
+    "genes": ("rv_id", "gene_name"),
+    "drugs": ("molecule_chembl_id",),
+    "trials": ("nct_id",),
+    "compounds": ("molecule_chembl_id",),
+    "screens": ("screen_id", "aid", "document_chembl_id"),
+}
+
+
+def references(text: str, limit: int = 20) -> dict[str, list[Hit]]:
+    """What the answer names that the store holds: exact ids and gene names only.
+
+    Exact and case-sensitive, so `mas` the gene is found and `Mas` the protein in a
+    sentence is not; nothing is fuzzy-matched into a link the answer did not make.
+    """
+    words = sorted(set(_WORD.findall(text)) | set(_SCREEN_ID.findall(text)))
+    aids = sorted(set(_AID.findall(text)))
+    found: dict[str, list[Hit]] = {kind: [] for kind in REFERENCES}
+    connection = _db()
+    for kind, (table, where, label, detail) in REFERENCES.items():
+        if not words or not built(table):
+            continue
+        keys = _REFERENCE_KEYS[kind]
+        rows = connection.execute(
+            f"SELECT {keys[0]}, {label}, {detail}, [{', '.join(keys)}] FROM {table} WHERE {where}",
+            {name: value for name, value in (("w", words), ("a", aids)) if f"${name}" in where},
+        ).fetchall()
+
+        def first(row: tuple[Any, ...]) -> int:
+            return min((text.find(k) for k in row[3] if k and k in text), default=len(text))
+
+        found[kind] = [
+            Hit(id=r[0], label=r[1], detail=r[2]) for r in sorted(rows, key=first)[:limit]
+        ]
+    return found
+    connection = _db()
+    w = ", ".join("?" * len(words))
+    a = ", ".join("?" * len(aids)) or "NULL"
+    for kind, (table, where, label, detail) in REFERENCES.items():
+        if not built(table):
+            continue
+        keys = _REFERENCE_KEYS[kind]
+        rows = _query(
+            connection,
+            f"SELECT {keys[0]} AS id, {label} AS label, {detail} AS detail,"
+            f" [{', '.join(keys)}] AS keys FROM {table} WHERE {where.format(w=w, a=a)}",
+            [*words, *(aids if "{a}" in where else [])]
+            + ([*words] if where.count("{w}") > 1 else []),
+        )
+
+        def first(row: dict[str, Any]) -> int:
+            spots = [text.find(k) for k in row["keys"] if k and k in text]
+            return min(spots, default=len(text))
+
+        rows.sort(key=first)
+        found[kind] = [Hit(id=r["id"], label=r["label"], detail=r["detail"]) for r in rows[:limit]]
+    return found
 
 
 @app.post("/ask", response_model=AgentAnswer)
@@ -2255,4 +2353,5 @@ def ask(body: Question) -> AgentAnswer:
             for c in result.calls
         ],
         sources=result.sources,
+        references=references(result.text),
     )

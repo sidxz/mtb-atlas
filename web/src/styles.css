@@ -434,24 +434,22 @@ tbody tr[aria-selected="true"] td:first-child { box-shadow: inset 3px 0 var(--ac
   border: 2px solid var(--line-strong); border-top-color: var(--accent); animation: spin .8s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-.askresult { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 420px); gap: 16px; }
-@media (max-width: 900px) { .askresult { grid-template-columns: 1fr; } }
 .askresult .answer { font-size: 13.5px; line-height: 1.6; min-width: 0; }
+.askrefs { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 12px; }
+.askrefs h4 { margin: 0 0 6px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--fg-dim); }
+.askrefs-kind { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; margin-bottom: 6px; }
+.askrefs-label { width: 72px; flex-shrink: 0; color: var(--fg-faint); }
+.askref { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 6px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); }
+.askref strong { font-weight: 600; }
+.askref a { color: var(--accent); text-decoration: none; }
+.askref a:hover { text-decoration: underline; }
 /* The measure caps the prose, not the answer: a table may use the width. */
-.askresult .answer :is(p, ul, ol, blockquote) { max-width: 80ch; text-wrap: pretty; margin: 0 0 10px; }
+.askresult .answer :is(p, ul, ol, blockquote) { text-wrap: pretty; margin: 0 0 10px; }
 .askresult .answer :is(ul, ol) { padding-left: 20px; }
 .askresult .answer table { display: block; width: max-content; max-width: 100%; overflow-x: auto; margin: 0 0 10px; }
 .askresult .answer thead { position: static; }
 .askresult .answer td { white-space: normal; }
 .askresult .answer code { font-family: var(--mono); font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-radius: 4px; }
-.askresult details { font-size: 12px; min-width: 0; }
-.askresult summary { cursor: pointer; color: var(--fg-dim); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
-.askquery { margin-top: 7px; border-left: 2px solid var(--counter); padding-left: 9px; }
-.askquery pre {
-  margin: 0; font-family: var(--mono); font-size: 11px; white-space: pre-wrap;
-  color: var(--fg-dim); overflow-x: auto;
-}
-.askquery .faint { font-family: var(--mono); font-size: 10.5px; }
 
 /* ---- chemical structures -------------------------------------------------- */
 

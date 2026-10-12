@@ -644,7 +644,10 @@ export function App() {
         </button>
       </header>
 
-      <Ask base={import.meta.env.VITE_API_BASE ?? "/api"} />
+      <Ask
+        base={import.meta.env.VITE_API_BASE ?? "/api"}
+        onGeneScreens={(rv) => { setScreenGene({ rv }); setScreenFocus(null); }}
+      />
 
       {(view === "screens" || visitedViews.includes("screens")) && <div className="workspace-view" hidden={view !== "screens"}>
         <Screens

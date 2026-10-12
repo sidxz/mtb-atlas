@@ -426,14 +426,24 @@ endpoint family rather than trust it. Counts are rows with a value. `Selectivity
 `Selectivity index` (145; a distinct string, so an exact match on one case silently loses the
 other), `Ratio CC50/IC50` (183) and `Selectivity ratio` (116) are selectivity indices. **The column
 mixes organisms as well as quantities, and the organism is invisible in the endpoint string.** The
-API session counted 389 rows of this family on stages that are not TB at all, all filed as
-`Selectivity Index` or `Ratio CC50/IC50` by endpoint: HIV-1 3B (33) and HIV-2 ROD (32),
-*Yersinia pestis* (32), *P. falciparum* 3D7 (28) and K1 (47), influenza A (17), *Acinetobacter*
-(16), *M. abscessus* (12), *Trichophyton* (12) and atypical mycobacteria (20), among others
-(a regex over the stage descriptions here finds 299 rows and reproduces those named counts). Only
-the stage's own description tells a TB selectivity index from an HIV one, so a reader who filters
+API session counted 389 rows of this family whose stage description does not say
+tuberculosis, all filed as `Selectivity Index` or `Ratio CC50/IC50` by endpoint. About 250
+of them name another pathogen outright: HIV-1 3B (33) and HIV-2 ROD (32), *Yersinia pestis*
+(32), *P. falciparum* 3D7 (28) and K1 (47), influenza A (17), *Acinetobacter* (16),
+*M. abscessus* (12), *Trichophyton* (12) and atypical mycobacteria (20). The totals are
+pattern-dependent and move with the regex — a second count here found 296 by naming
+`mycobacteri` as well — so the clause to rely on is the shape, not the number. Only the
+stage's own description tells a TB selectivity index from an HIV one, so a reader who filters
 for the right quantity and forgets the organism gets a clean-looking selectivity table about the
-wrong pathogen; an Mtb query filters on the stage description. A bare `Ratio` (1,350) and `Ratio IC50` (630) say
+wrong pathogen; an Mtb query filters on the stage description.
+
+**And the description is leaky too, which makes the remedy its own trap.** 32 of those 389
+rows *are* tuberculosis, written as `TBMIC`: "Selectivity is the ratio of cytotoxicity
+compared to TBMIC". No match on the word finds them, so a description filter drops real TB
+rows alongside the foreign ones — the same false absence this layer keeps producing, this
+time arriving through the fix rather than the defect. `atlas/api.py`'s selectivity guard
+has that exclusion and names it; recovering the 32 means a list of spellings, which is
+prose classification and belongs in an ingester. A bare `Ratio` (1,350) and `Ratio IC50` (630) say
 nothing about what was divided by what. `TI` (63) is a therapeutic index in name only: all ten of
 its stage descriptions are an in-vitro ratio of red-cell MHC50 or cell-line IC50, CC50 or
 cytotoxicity to an MIC or GI50 (nine on *M. tuberculosis*, one on *S. aureus*), the most

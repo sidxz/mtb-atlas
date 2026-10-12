@@ -233,9 +233,11 @@ def test_the_schema_warns_about_every_screens_trap() -> None:
             "mostly a protection index",  # PI is described, not 'unexpanded'
             "its unit or its endpoint is mislabelled",  # SI ug ml-1: one assay, not systematic
             "at least four quantities",  # 23 endpoint strings; 3% fit none of the four
-            "filter on the stage description for Mtb",  # Ratio CC50/IC50 also holds HIV, malaria
+            "about the wrong pathogen",  # Ratio CC50/IC50 also holds HIV, malaria, influenza
             "the organism is invisible in the endpoint string",  # a clean table, wrong pathogen
-            "389 rows",  # ... and it is not a handful
+            # The clause, not the count: the counts are pattern-dependent and move, while
+            # "the discriminator is itself leaky" is the thing a reader has to carry.
+            "`TBMIC`",  # 32 TB rows a description filter drops with the foreign ones
             "Yersinia pestis",  # HIV, Yersinia and Plasmodium named so the scale is clear
             "THIS ATLAS",  # a derived row: a ratio the atlas did not make
             "choose an endpoint family",  # Selectivity Index, a bare Ratio, TI and PI differ

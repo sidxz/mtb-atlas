@@ -330,8 +330,9 @@ screens layer only the campaigns of publications that also tested whole-cell.
 Four of the six genes with a 1,000-compound assay read a screen of that size or more: `dfp`
 (66,942), `pks13` (66,592), `trpS` (65,366) and `recA` (293,466), all reachable **only through
 PubChem**. `aspS` (Rv2572c) and `dnaB` read **zero** screens while the census says 8,841
-and 2,123, and that is correct. AspRS is AID 1671160, 8,841 substances against a
-10,000-substance floor; `dnaB`'s deposit is smaller still. The floor is this atlas's choice
+and 2,123, and that is correct. AspRS is AID 1671160: 8,841 compounds in its ChEMBL assay
+`CHEMBL4649947` and 8,841 SIDs in PubChem's summary of the AID (read once on 2026-10-11, and
+not in the raw cache because the AID is below the floor), against a 10,000-substance floor; `dnaB`'s deposit is smaller still. The floor is this atlas's choice
 and 8,841 is close enough to it to look like an oversight, so it is stated here: a deposit
 below it is not in the layer, and `n_target_screens = 0` beside a non-zero
 `max_assay_compounds` means exactly that. 50 genes have a protein assay and no screen, 22 of
@@ -415,8 +416,19 @@ potency layer sees whichever of their compounds also hit an Mtb protein.
 **Two caveats travel with every row.** `screens.stages_source` is `from_prose` on all 999
 campaigns: ChEMBL files the funnel position in the assay description, so `stage` and
 `modality` are this atlas's reading of prose, not a ChEMBL field. And `derived` marks 986
-stages that are a computed ratio (a selectivity index) of two other assays: a number, not a
-measurement, with `stage` NULL and `modality` `other` by assignment. `atlas summary` prints
+stages that are a ratio of two other assays, with `stage` NULL and `modality` `other` by
+assignment. A derived row occupies no funnel position and is never a measurement *this atlas*
+made, but its value may be a ratio the depositor published, and a large minority of its result
+rows are censored (`>` or `<`), so the `pmic` rule applies. **Its `endpoint` is four quantities in
+one column**, and a reader must choose an endpoint family rather than trust it: `Selectivity
+Index` (about 1,950 rows with a value), `Selectivity index` (145; a distinct string, so an exact
+match on one case silently loses the other), `Ratio CC50/IC50` (183) and `Selectivity ratio` (116)
+are selectivity indices; a bare `Ratio` (1,350) and `Ratio IC50` (630) say nothing about what was
+divided by what; `TI` (63) is a *therapeutic* index, a dose ratio in an animal and not
+cytotoxicity over potency; `PI` (100) is unexpanded. `SI` is a trap the other way: 26 rows with a
+value, 21 of them in units `ug ml-1`, which are concentrations filed under a ratio's name, so a
+units check is what stops one being served as a selectivity index. No overall count of derived
+compounds is given here, because any count depends on the family chosen. `atlas summary` prints
 how much the classifiers fall back: 1,266 of 16,516 non-derived stages with a modality are
 `other` (7.7%) and 12,719 of 16,544 sit at the default stage `primary` (76.9%). The second
 starts high because genuine primaries are most of the base; it is a signal only as a change
@@ -573,8 +585,9 @@ The veto reads the equality, which holds by construction, and so under-claims.
 215,397 SIDs (`SIDCountAll`) over 215,098 CIDs, and its own description says 216,163
 compounds were screened. `n_tested` is the SID count, the deposited set;
 `library_size_stated` keeps the prose figure; neither is substituted for the other.
-A CID can sit under several SIDs that disagree (11 CIDs in AID 1626 are `Active` as
-one SID and `Inconclusive` as another), so a result row is a SID, not a compound.
+A CID can sit under several SIDs that disagree (11 CIDs in AID 1626 do: 8 `Inactive`
+beside `Inconclusive` and 3 `Active` beside `Inconclusive`, never active against inactive), so a
+result row is a SID, not a compound.
 
 **A row is told from its neighbours by its number in PubChem's table.**
 `PUBCHEM_RESULT_TAG`, stored as `screen_results.result_tag`, is 1 to N and unique in
@@ -611,7 +624,8 @@ from the title and `stages_source` is `from_prose`.
 document that is a publication is ingested from ChEMBL; a deposited dataset (ChEMBL
 files Dundee's 1,413,047-row library as a `DATASET`) is ingested from PubChem, where 8
 of its AIDs 1671154 to 1671185 are tagged Mtb and reach the floor. AspRS, AID 1671160, is
-an Mtb target left out, at 8,841 substances. Each row carries its own `source`, `source_version` and
+an Mtb target left out: 8,841 compounds in its ChEMBL assay and 8,841 SIDs in PubChem's
+summary. Each row carries its own `source`, `source_version` and
 `retrieved_at`, because `screens` is fed by both. ChEMBL's `activity_comment` is kept
 on its `screen_results` rows (NULL on PubChem's) and is not read as an outcome: in a
 30-document sample of whole-cell publications, 122 of 4,286 activities had one
@@ -660,7 +674,9 @@ Three consequences. **The `Active` set is a follow-up potency flag, not a hit ra
 the other five are 1 of 439, 68 of 2,466, 90 of 2,468, 24 of 200 and 2 of 674. **No row of these
 deposits is ever `Inactive`**: anything over 10 uM stays unspecified, so there is no
 denominator of non-hits. And `count(*) WHERE outcome = 'active'` returns 28,172, of which
-27,954 are in campaigns that state their calls. The other 592,280 rows of those eight are
+27,954 are in campaigns that state their calls: the 218 are confined to those six
+campaigns and appear nowhere else, so the row-against-campaign disagreement is bounded and not
+systemic. The other 592,280 rows of those eight are
 `Percent Effect` (584,494) and `IC50` (7,786) rows with no call recorded.
 
 **Every check held on the real data.** The completeness check (distinct SIDs equal
@@ -739,6 +755,27 @@ project of several PubChem assays the two are different quantities. In the first
 one such project (`fba`) has both equal to 359,484, so no number moves, but a later one
 could. `latest_screen_year` is NULL for a gene whose only screens are PubChem's: the summary
 carries no deposit year.
+
+**Columns that are easy to misread.** `screen_stages.assay_condition` is set only on
+`phenotypic_mtb` stages, so it has three states: NULL on 12,212 of the 17,530 stages means *not a
+whole-cell stage*, while `unspecified` on 4,763 means *whole-cell, medium not stated* (of the
+5,318 whole-cell stages), the same rule as `activities`: **`unspecified` is not
+`standard_media`**, and a condition query over all stages has the wrong denominator. No stage
+matches `caseum`. `screen_stages.strain` is ChEMBL's `assay_strain` (9,259 stages) and mixes
+organisms: `H37Rv` 2,262, `H37Rv ATCC 27294` 437, `H37Ra` 251, `variant bovis BCG` 168, then host
+animals (`BALB/c` 159, `Sprague-Dawley` 155, `C57BL/6` 102) and `ATCC 29213` 101, which is
+*S. aureus*; `WHERE strain = 'H37Rv'` undercounts and `GROUP BY strain` returns a column that
+means different things per row. `screen_results.activity_score` is PubChem's depositor-defined
+`PUBCHEM_ACTIVITY_SCORE`, populated on 4,584,652 rows (PubChem's only) and ranging from -8,525 to
+228 overall but 0 to 80 in AID 1626 and -8,525 to 100 in AID 2221: comparable within one deposit,
+meaningless across them, so `ORDER BY activity_score` over the table ranks across incompatible
+scales. `screens.library_name` is NULL on all 999 rows and is **dead by construction**, hardcoded
+`None` in both ingesters because no source states it (a prose size is in `library_size_stated`).
+`screens.deposit_kind` restates `source` (`dataset` on all 27 PubChem rows, `publication` on all
+972 ChEMBL ones), and its `dataset` is a PubChem deposit, **not** ChEMBL's DATASET document type,
+which the campaign builder excludes: a reader joining the two would conclude that datasets are
+excluded and 27 are here. Both columns are named for removal in the follow-ups, and neither is
+dropped yet because the API is being built against this schema.
 
 **Cost.** 1,430 s cold (ChEMBL's campaign fetch 1,272 s, PubChem 158 s); 60 s warm. The raw cache
 grew by 669 MB (PubChem 591, ChEMBL campaigns 56, UniChem 22) to 1.1 GB, and the store from 19
@@ -1849,13 +1886,22 @@ Each is a decision someone can pick up, with what it would cost. None is started
    from the authoritative protein record (NCBI `efetch db=protein&rettype=gp` answered for this
    id; ENA's browser API answered 404 for it, though it answered for `CCE37082`), a new
    accession-kind branch in `link_targets` beside `uniprot`, `refseq` and `other`, fixtures and
-   tests. **The branch must accept a record only when its organism is H37Rv (taxon 83332) and its
-   `locus_tag` is a locus the crosswalk holds**, because that guard is what keeps `CCE37082`
-   (UT205, `UDA_1568`) refused. Cost: one request per EMBL-kind accession (two among the 28
-   AIDs, one of which would then resolve), perhaps 100 lines with its tests (an estimate), and a behaviour
-   change that needs its own review. Effect: `fadD28` would read 4 own screens and a largest of
-   355,326. It fixes the bridge and nothing else: the UT205, CDC 1551 and PDB-chain refusals
-   stand.
+   tests.
+
+   **The cheaper route, and its hazard.** The NCBI record carries `P96290`, which UniProt now
+   lists as **Inactive, DEMERGED** into `P9WQ58` (taxon 83331, CDC 1551) and `P9WQ59` (taxon
+   83332, H37Rv); a `sec_acc:P96290` search returns both. So the route is a secondary-accession
+   resolution, a shape `link_targets` already has in its RefSeq bridge. The naive version
+   returns two candidates across two strains and would attribute a 355,326-substance H37Rv screen
+   to the wrong one. **The honest rule is: resolve the secondary accession, keep only
+   `organism_id` 83332, then require the accession be one the crosswalk holds.** That refuses
+   CDC 1551 and UT205 (`CCE37082`, `UDA_1568`) by the same mechanism, because neither is an
+   accession the H37Rv crosswalk holds, and not by a special case. Reading the `locus_tag` is the
+   alternative; if used it needs the same guard (organism H37Rv, a locus the crosswalk holds).
+   Cost: one request per EMBL-kind accession (two among the 28 AIDs, one of which would then
+   resolve), perhaps 100 lines with its tests (an estimate), and a behaviour change that needs its
+   own review. Effect: `fadD28` would read 4 own screens and a largest of 355,326. It fixes the
+   bridge and nothing else: the UT205, CDC 1551 and PDB-chain refusals stand.
 
 2. **Widen the ChEMBL enumeration to every whole-cell Mtb document.** Today 977 of 1,932
    documents are candidates, because the list is read from `activities` (compound-first); 954
@@ -1881,6 +1927,11 @@ Each is a decision someone can pick up, with what it would cost. None is started
 6. **Row level against campaign level on `outcome`** (218 `IC50` rows `Active` inside
    campaigns with `outcome_stated` false), and **one of `max_assay_compounds` and
    `max_screen_compounds`** retiring. Both belong to the plan that changes the API.
+7. **Remove `screens.library_name` and `screens.deposit_kind`.** The first is NULL on all 999
+   rows by construction; the second only restates `source`, in a vocabulary that collides with
+   ChEMBL's document types. Cost: a few lines in each ingester and the tests that name them, and
+   a schema change that the API plan has to know about, which is why it is not done in this
+   branch.
 
 ## Extension point: per-compound annotations
 

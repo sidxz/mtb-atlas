@@ -188,7 +188,7 @@ seven assays, with the four target records they name (`targets`):
 | `CHEMBL103` | Microsomal stability with no target at all: `adme` |
 | `CHEMBL104` | A BALB/c mouse CFU assay with no target: `in_vivo_efficacy`, a `profiling` stage |
 | `CHEMBL105` | *S. aureus* growth inhibition: `other_pathogen`, kept apart from an Mtb MIC |
-| `CHEMBL106` | "Selectivity index, ratio of CC50 ... to MIC": `derived`, `stage` NULL, `modality` `other` by assignment. It is a number and not a measurement |
+| `CHEMBL106` | "Selectivity index, ratio of CC50 ... to MIC": `derived`, `stage` NULL, `modality` `other` by assignment. It is a ratio, not a measurement this atlas made, though its value may be one the depositor published |
 
 The first proves assay size counts compounds. The second proves each modality is kept apart
 and that the computed index is flagged rather than read as a seventh measurement.

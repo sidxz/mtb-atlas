@@ -333,7 +333,9 @@ large.
 10. **Public TB chemistry is almost unreplicated**, and the layer should make
     that visible rather than imply a consensus: 105,833 of the 107,463
     distinct whole-cell compounds appear in exactly one document.
-11. **A ratio ChEMBL computed is not a measurement.** ChEMBL files selectivity
+11. **A ratio ChEMBL computed is not a measurement.** *(Corrected by the first build:
+    never a measurement this atlas made, but its value may be a ratio the depositor
+    published, and its `endpoint` mixes quantities; see `docs/data-sources.md`.)* ChEMBL files selectivity
     indices, therapeutic indices and resistance ratios as activity rows —
     6,577 compounds in these documents carry one. They are arithmetic over two
     other rows, so they are labelled `derived` and never counted as a

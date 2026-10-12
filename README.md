@@ -95,7 +95,8 @@ The screening record, from the first build (2026-10-11):
 ```
 
 A screen can read zero for a good reason, and the atlas says which. `aspS` has an 8,841-compound
-assay and reads no screen, because that deposit is below the 10,000-substance floor; `pks13`
+assay (8,841 compounds, and 8,841 SIDs in PubChem's summary) and reads no screen, because that
+deposit is below the 10,000-substance floor; `pks13`
 reads nine screens and a NULL count of actives, because none of the nine has an outcome that
 counts. A zero is a count and a NULL is "nobody said". A gene can also read small beside a large
 screen the atlas could not place on an H37Rv locus: `mbtI` reads none beside a 104,781-compound

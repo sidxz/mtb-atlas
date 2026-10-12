@@ -37,7 +37,7 @@ group-by runs in 0.05 s), but:
 - The per-SID rows are the point of the table — the inactives are what make "tested and did
   nothing" answerable — so do not aggregate them away in the store. Aggregate in the query.
 - Measured for reference: the `/ask` agent's sandbox copies every table into memory and now sits at
-  **1.9 GB resident**, of which `screen_results` is 1.4 GB. Three columns carrying four distinct
+  **1.9 GB resident**, of which `screen_results` is 1.4 GB. Three columns carrying five distinct
   values between them (`source`, `source_version`, `retrieved_at`) cost 516 MB of that, and
   `screen_id` is derivable from `stage_id`. If you touch `atlas/agent.py`, narrowing its copy is
   free money. The lazy-loading idea is in the follow-ups; it is a decision, not a defect.
@@ -71,7 +71,7 @@ getting it wrong was caught.
   Malaria Box, GSK's TB set and one patent are not in the layer at all** — if a user searches for
   them they must learn the set is absent, not that it was screened and found nothing.
 - **`screens` holds the campaigns that were ingested, not every ChEMBL campaign.** ChEMBL has 1,932
-  documents with a whole-cell Mtb assay; 977 were ingested and 972 campaigns written, because
+  documents with a whole-cell Mtb assay; 977 were candidates and 972 ingested, because
   candidates are enumerated from `activities`, which is compound-first. Any count the UI shows from
   this table is a count of ingested campaigns. Widening it is a named follow-up.
 - **Provenance per value, as everywhere in this atlas.** Every row carries `source`,

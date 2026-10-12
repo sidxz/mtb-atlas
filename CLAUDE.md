@@ -300,7 +300,7 @@ This is the rule that outranks completeness.
   that no call was made.** Six of those eight state the depositor's own
   one-sided rule in their PubChem Comment ("activity <= 10uM ... flagged as
   active"), and 218 IC50 rows (relation `=`, under 10,000 nM; none of the 7,786
-  is) are `Active`. The campaign reads false anyway, because
+  is) are `Active`, in those six campaigns and nowhere else. The campaign reads false anyway, because
   `SIDCountUnspecified == SIDCountAll` holds by construction whenever every SID
   also has an unspecified Percent Effect row. That veto is a deliberate
   under-claim. **The Active set is a follow-up potency flag, not a hit rate**:
@@ -325,7 +325,7 @@ This is the rule that outranks completeness.
   counts overlap (`fba`), so the column cannot say which NULL it is.
 - **The layer has a floor and a scope, and a zero screen can be either.** PubChem
   deposits enter at 10,000 substances, this atlas's choice. `aspS` has an
-  8,841-compound assay (AID 1671160) and reads `n_target_screens = 0` beside a
+  8,841-compound assay (AID 1671160; 8,841 SIDs in PubChem's summary) and reads `n_target_screens = 0` beside a
   non-zero `max_assay_compounds`: the deposit is below the floor, so it is not
   here, and 8,841 is close enough to look like an oversight. The ChEMBL half is
   a subset by construction: its candidate documents come from `activities`,
@@ -373,8 +373,22 @@ This is the rule that outranks completeness.
   neither -- their only modality is another pathogen or `other` -- so the three
   partition the 23,730. 10,695 of the 12,449 have a MIC and no protein assay,
   and 6,443 of those nothing else at all, which is the answer and not a low grade. No column is ranked, weighted or combined with
-  another. A derived selectivity index is labelled `derived`: ChEMBL computes
-  it from two other rows, so it is a number but not a measurement.
+  another. A derived row (a ratio of two other assays) is labelled `derived`,
+  carries no funnel position, and is never a measurement *this atlas* made, but
+  its value may be a ratio the depositor published. Its `endpoint` is several
+  quantities in one column -- `Selectivity Index` and `Selectivity index` (two
+  strings), a bare `Ratio`, `TI` (a therapeutic index in an animal), `PI`, and
+  `SI`, whose 21 `ug ml-1` rows are concentrations -- so choose an endpoint
+  family and check the units; a large minority are censored, so the `pmic` rule
+  applies.
+- **Three screen columns carry their own honesty rule.**
+  `screen_stages.assay_condition` is set only on whole-cell stages, so NULL
+  (12,212) is not a whole-cell stage and `unspecified` (4,763) is not
+  `standard_media`. `strain` mixes Mtb strains, host animals and an *S. aureus*
+  strain. `screen_results.activity_score` is depositor-defined: comparable within
+  a deposit and never across them. `library_name` is dead by construction and
+  `deposit_kind` restates `source` (and its `dataset` is not ChEMBL's DATASET
+  type); both are named for removal.
 - **The bridge is incomplete, and a gap is recorded rather than patched.**
   UniChem gives 89.2% of PubChem rows a ChEMBL id (96.6% for AID 1626, 9.6% for
   AID 2060911). A compound with no mapping was still tested.

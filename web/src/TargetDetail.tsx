@@ -23,6 +23,7 @@ import { StructureViewer, alphafoldSource, pdbSource, type ViewerSource } from "
 import { ChemblLink, Structure } from "./Structure";
 import { ProteinAssays } from "./ProteinAssays";
 import { Genome } from "./Genome";
+import { MaximizeButton } from "./Screens";
 
 const SOURCES = {
   essentiality: "DeJesus 2017, mBio · Table S3 · CC BY 4.0",
@@ -175,12 +176,16 @@ export function TargetDetailPanel({
   onOpen,
   onOpenScreen,
   onClose,
+  maximized,
+  onMaximize,
 }: {
   detail: Detail;
   meta: Meta | null;
   onOpen: (focus: Focus) => void;
   onOpenScreen?: (id: string) => void;
   onClose: () => void;
+  maximized: boolean;
+  onMaximize: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("evidence");
   const [structureIndex, setStructureIndex] = useState(0);
@@ -218,6 +223,7 @@ export function TargetDetailPanel({
             {detail.is_pseudogene && <span className="chip warn">pseudogene</span>}
           </div>
           <div className="detail-head-actions">
+            <MaximizeButton expanded={maximized} onToggle={onMaximize} label="gene detail" />
             <Link className="rowbtn detail-map-link" to={`/map/${encodeURIComponent(detail.rv_id)}`}>Open in map</Link>
             <button className="closedetail" type="button" title="Close and widen the gene table (Esc)" aria-label="Close gene detail" onClick={onClose}>×</button>
           </div>

@@ -878,17 +878,17 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .detail-head-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .maximize-button { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; flex-shrink: 0; }
 .maximize-button .ui-icon { width: 14px; height: 14px; }
-.body.screen-workspace:has(> .is-maximized) { grid-template-columns: minmax(0, 1fr); }
-.body.screen-workspace:has(> .is-maximized) > .col:not(.is-maximized) { display: none; }
-.body.screen-workspace > .is-maximized { display: flex; grid-column: 1; margin: 0 16px 16px; border-radius: 8px; }
-.app:has(> .workspace-view:not([hidden]) .is-maximized) { --rail-width: 16px; }
+.body:has(> .is-maximized) { grid-template-columns: minmax(0, 1fr); }
+.body:has(> .is-maximized) > .col:not(.is-maximized) { display: none; }
+.body > .is-maximized { display: flex; grid-column: 1; margin: 0 16px 16px; border-radius: 8px; }
+.app:has(> .workspace-view:not([hidden]) .is-maximized), .app:has(> .body > .is-maximized) { --rail-width: 16px; }
 .body.detail-open .is-maximized .campaign-table td[data-column="screen_id"] { min-width: 240px; max-width: 650px; }
 .body.detail-open .is-maximized .campaign-table .record-secondary { max-width: 600px; }
 @media (max-width: 820px) {
   .topbar .viewswitch { min-width: 0; max-width: 100%; overflow-x: auto; scrollbar-width: none; gap: 16px; }
   .viewswitch a { flex-shrink: 0; }
-  .body.screen-workspace > .is-maximized { margin: 0 0 12px; }
-  .body.screen-workspace:has(> .is-maximized) { min-height: 75dvh; }
+  .body > .is-maximized { margin: 0 0 12px; }
+  .body:has(> .is-maximized) { min-height: 75dvh; }
   .body.screen-workspace > .workspace-list.is-maximized, .body.screen-workspace > .workspace-detail.is-maximized { max-height: none; height: 85dvh; }
 }
 @media (max-width: 600px) {

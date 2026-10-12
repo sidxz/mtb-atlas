@@ -410,6 +410,10 @@ export function App() {
   const [zoomed, setZoomed] = useState(false);
   const zoomedRef = useRef(zoomed);
   zoomedRef.current = zoomed;
+  // Kept across genes, so walking neighbours in the Locus tab stays wide.
+  const [geneMaximized, setGeneMaximized] = useState(false);
+  const geneMaximizedRef = useRef(geneMaximized);
+  geneMaximizedRef.current = geneMaximized;
   const [sort, setSort] = useState<{ key: string; order: "asc" | "desc" }>({
     key: "start",
     order: "asc",
@@ -451,6 +455,10 @@ export function App() {
   );
   const selected = routeIn("genome")?.id ?? null;
   const setSelected = useCallback((rv: string | null) => navigate(path("genome", rv)), [navigate]);
+  // Closing by any route (the ×, Esc, Back) ends maximized, or the table stays hidden.
+  useEffect(() => {
+    if (!selected) setGeneMaximized(false);
+  }, [selected]);
   const [detail, setDetail] = useState<TargetDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
 
@@ -474,6 +482,10 @@ export function App() {
       // genome if it is open, otherwise the detail panel.
       if (zoomedRef.current) {
         setZoomed(false);
+        return;
+      }
+      if (geneMaximizedRef.current && routeRef.current.view === "genome") {
+        setGeneMaximized(false);
         return;
       }
       const current = routeRef.current;
@@ -897,7 +909,7 @@ export function App() {
             </div>
           </main>
 
-          <aside className="col detailcol">
+          <aside className={`col detailcol${geneMaximized ? " is-maximized" : ""}`}>
             {/* Closing returns the table to its full width, which is the other
                 half of the trade: browse wide, or read wide. */}
             {(!detail || detailError) && <button
@@ -918,6 +930,8 @@ export function App() {
                 onOpen={openClinical}
                 onOpenScreen={setScreenFocus}
                 onClose={() => setSelected(null)}
+                maximized={geneMaximized}
+                onMaximize={() => setGeneMaximized((m) => !m)}
               />
             ) : (
               <div className="empty">Loading {selected}…</div>

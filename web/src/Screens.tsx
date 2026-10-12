@@ -103,7 +103,7 @@ function ActiveFilters({ filters, onClear }: { filters: { label: string; clear: 
 function Source({ row }: { row: { source?: string; source_version?: string; retrieved_at?: string } }) {
   return <span className="source-meta">{[row.source, row.source_version, row.retrieved_at ? `Retrieved ${row.retrieved_at.slice(0, 10)}` : null].filter(Boolean).join(" · ")}</span>;
 }
-function MaximizeButton({ expanded, onToggle, label }: { expanded: boolean; onToggle: () => void; label: string }) {
+export function MaximizeButton({ expanded, onToggle, label }: { expanded: boolean; onToggle: () => void; label: string }) {
   return <button type="button" className="minibtn maximize-button" aria-label={`${expanded ? "Restore" : "Maximize"} ${label}`} title={`${expanded ? "Restore" : "Maximize"} ${label}`} aria-pressed={expanded} onClick={onToggle}><InterfaceIcon name={expanded ? "collapse" : "expand"} /></button>;
 }
 function DetailShell({ title, subtitle, onClose, children, expanded, onMaximize }: { title: string; subtitle?: ReactNode; onClose: () => void; children: ReactNode; expanded: boolean; onMaximize: () => void }) {

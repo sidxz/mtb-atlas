@@ -376,6 +376,9 @@ export function App() {
   });
 
   const [view, setView] = useState<"genome" | "screens" | "hits" | "clinical">("genome");
+  const [visitedViews, setVisitedViews] = useState<string[]>([]);
+  useEffect(() => { setVisitedViews(previous => previous.includes(view) ? previous : [...previous, view]); }, [view]);
+  const [hitFocus, setHitFocus] = useState<string | null>(null);
   // A campaign opened from a gene page or the search box, so those routes reach
   // the same page rather than a second copy of it.
   const [screenFocus, setScreenFocus] = useState<string | null>(null);
@@ -539,10 +542,10 @@ export function App() {
           {/* The nav is the early discovery pipeline, in order: target selection,
               screening, hit assessment, then the clinic. */}
           <button type="button" aria-pressed={view === "screens"} onClick={() => setView("screens")}>
-            <InterfaceIcon name="clinical" /> Screens
+            <InterfaceIcon name="screens" /> Screens
           </button>
           <button type="button" aria-pressed={view === "hits"} onClick={() => setView("hits")}>
-            <InterfaceIcon name="clinical" /> Hit profiling
+            <InterfaceIcon name="profiling" /> Hit profiling
           </button>
           <button type="button" aria-pressed={view === "clinical"} onClick={() => setView("clinical")}>
             <InterfaceIcon name="clinical" /> Drugs &amp; trials
@@ -564,18 +567,23 @@ export function App() {
 
       <Ask base={import.meta.env.VITE_API_BASE ?? "/api"} />
 
-      {view === "screens" ? (
+      {(view === "screens" || visitedViews.includes("screens")) && <div className="workspace-view" hidden={view !== "screens"}>
         <Screens
           onSelectGene={openGene}
           focus={screenFocus}
           onFocus={setScreenFocus}
-          onProfile={(id, title) => { setProfileScreen({ id, title }); setView("hits"); }}
+          onProfile={(id, title) => { setProfileScreen({ id, title }); setHitFocus(null); setView("hits"); }}
+          onCompound={id => { setProfileScreen(null); setHitFocus(id); setView("hits"); }}
         />
-      ) : view === "hits" ? (
-        <HitProfiling screen={profileScreen} onClearScreen={() => setProfileScreen(null)} />
-      ) : view === "clinical" ? (
+      </div>}
+      {(view === "hits" || visitedViews.includes("hits")) && <div className="workspace-view" hidden={view !== "hits"}>
+        <HitProfiling screen={profileScreen} onClearScreen={() => setProfileScreen(null)}
+          focus={hitFocus} onFocus={setHitFocus} onSelectGene={openGene}
+          onCampaign={id => { setScreenFocus(id); setView("screens"); }} />
+      </div>}
+      {view === "clinical" ? (
         <DrugsAndTrials meta={meta} focus={focus} onFocus={setFocus} onSelectGene={openGene} />
-      ) : (
+      ) : view === "genome" ? (
         <div className={`body${selected ? " detail-open" : ""}`}>
           <FilterRail>
             <div className="rail-heading">
@@ -827,7 +835,7 @@ export function App() {
             )}
           </aside>
         </div>
-      )}
+      ) : null}
 
       {zoomed && (
         <GenomeOverlay

@@ -747,6 +747,8 @@ export interface ScreenTarget {
 }
 
 export interface ScreenSummary {
+  source_version?: string;
+  retrieved_at?: string;
   screen_id: string;
   aid: string | null;
   title: string | null;
@@ -790,6 +792,9 @@ export interface ScreenStage {
 
 /** One result row as the source deposited it: a sample or an activity, not a compound. */
 export interface ScreenResult {
+  source?: string;
+  source_version?: string;
+  retrieved_at?: string;
   stage_id: string;
   screen_id: string;
   stage: string | null;
@@ -820,6 +825,8 @@ export interface ScreenDetail extends ScreenSummary {
 }
 
 export interface ScreenPage {
+  n_own_genes: number;
+  n_genes: number;
   total: number;
   items: ScreenSummary[];
   /** How many stages carry the classifier's default label, so a funnel can say so. */
@@ -878,6 +885,16 @@ export interface HitPage {
   };
 }
 
+export interface CompoundEvidence extends ScreenResult {
+  screen_title: string | null;
+  description: string | null;
+  strain: string | null;
+  assay_condition: string | null;
+  year: number | null;
+  document_chembl_id: string | null;
+  pubmed_id: string | null;
+}
+
 export const api = {
   meta: () => get<Meta>("/meta"),
   screens: (query: Record<string, unknown> = {}) => get<ScreenPage>("/screens", { limit: 1000, ...query }),
@@ -888,6 +905,8 @@ export const api = {
       { limit: 60, ...query },
     ),
   hits: (query: Record<string, unknown> = {}) => get<HitPage>("/hits", { limit: 300, ...query }),
+  compoundEvidence: (id: string, query: Record<string, unknown> = {}) =>
+    get<Page<CompoundEvidence>>(`/compounds/${encodeURIComponent(id)}/screen-evidence`, { limit: 100, ...query }),
   targets: (query: TargetQuery) =>
     get<{ total: number; limit: number; offset: number; items: TargetSummary[] }>(
       "/targets",

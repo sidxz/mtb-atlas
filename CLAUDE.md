@@ -464,7 +464,7 @@ The sandbox copies every table into memory, and `screen_results` (5.4M rows,
 122 MB of Parquet) is the one that matters: uncapped, the copy held the process
 at 1.98 GB. **It is capped at 512 MB and spills to disk past that**, with the
 limit and the spill directory set before the lock so SQL cannot lift them: 0.64
-GB after loading, 0.97 GB under a 5.4M-row self-join. A view cannot replace the
+GB after loading, 0.69 GB under a 5.4M-row self-join. A view cannot replace the
 copy, because the lock lands before it would be resolved.
 
 **The API's queries share one memory ceiling per process, not one per
@@ -474,7 +474,8 @@ connections). The hit profile (all 5.4M results aggregated) is built once per
 store build, keyed on its inputs' modification times, and each request reads a
 TEMP copy so a rebuild cannot drop it mid-request. Before this, each request
 was its own instance allowed 80% of RAM, and eight concurrent `/hits` held
-8.67 GB; now they take 0.81 GB. Do not go back to `duckdb.connect()` per request, and do not move an
+8.67 GB; now they take 0.63 GB. Both instances run on 4 DuckDB threads, because
+working memory is per thread: on 18 the profile needed 448-512 MB of the 512. Do not go back to `duckdb.connect()` per request, and do not move an
 aggregate over `screen_results` into a route's per-request SQL.
 
 ## Querying it

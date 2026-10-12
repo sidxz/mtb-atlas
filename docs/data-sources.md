@@ -2009,13 +2009,15 @@ Each is a decision someone can pick up, with what it would cost. 5, 7 and 8 are 
    `unknown`.
 5. **Done: the `/ask` sandbox's memory**, and the API's. The sandbox now caps itself at
    512 MB and spills to disk past that, so it no longer holds 1.98 GB resident: on the real store
-   it peaks at 0.64 GB after loading and 0.97 GB under a 5.4M-row self-join. The API was a DuckDB
+   it peaks at 0.64 GB after loading and 0.69 GB under a 5.4M-row self-join. The API was a DuckDB
    instance per request, each allowed 80% of RAM, and `/hits` re-aggregated every screen result
    on each call, so eight concurrent `/hits` held 8.67 GB. Now every request is a cursor on one
    512 MB instance per process (the small reads behind `/meta` still open their own), and the
    23,730-row profile is built once per store build, each request reading a copy: eight
-   concurrent `/hits` take 0.81 GB and 32 take 0.82 GB. `/hits` does not fit in 256 MB, so a
-   larger screening layer (follow-up 2) must re-measure the ceiling. `make build` itself
+   concurrent `/hits` take 0.63 GB and 32 take 0.65 GB. Both instances run DuckDB on 4 threads,
+   because working memory is per thread: on all 18 the profile needed 448-512 MB, under 15%
+   headroom, and on 4 it needs 128-256 MB. A larger screening layer (follow-up 2) must
+   re-measure the ceiling. `make build` itself
    peaked at 6.5 GB (2026-10-11, `/usr/bin/time -l`), and the screening layer was not the
    cause: the phmmer stages (homology, paralogs, orthologue structures) take 1-3 GB each on
    all 18 cores, the memory is not handed back when a stage ends, and in one process they

@@ -659,6 +659,8 @@ def test_every_request_shares_one_memory_ceiling(screens: TestClient) -> None:
     assert first.execute("SELECT current_setting('memory_limit')").fetchone()[0] == "488.2 MiB"
     disk = first.execute("SELECT current_setting('max_temp_directory_size')").fetchone()[0]
     assert disk == "7.4 GiB"  # 8GB, not 90% of the free disk
+    # Working memory is per thread: on 18, /hits needed 448-512 MB; on 4, under 256.
+    assert first.execute("SELECT current_setting('threads')").fetchone()[0] == 4
     first.execute("CREATE TABLE shared_probe AS SELECT 1 AS x")
     assert second.execute("SELECT x FROM shared_probe").fetchone() == (1,)
     first.execute("DROP TABLE shared_probe")

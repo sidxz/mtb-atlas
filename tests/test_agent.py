@@ -132,6 +132,7 @@ def test_the_sandbox_has_a_memory_ceiling_the_model_cannot_lift() -> None:
     assert Path(spill).name.startswith("atlas-agent-")
     disk = connection.execute("SELECT current_setting('max_temp_directory_size')").fetchone()[0]
     assert disk == "7.4 GiB"  # 8GB, not 90% of the free disk
+    assert connection.execute("SELECT current_setting('threads')").fetchone()[0] == 4
     for setting in (
         "memory_limit='100GB'",
         "temp_directory='/tmp'",

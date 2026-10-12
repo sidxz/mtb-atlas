@@ -42,6 +42,9 @@ QUERY_SECONDS = 30
 MEMORY_LIMIT = "512MB"
 # DuckDB's default disk ceiling for spill is 90% of the free disk.
 SPILL_LIMIT = "8GB"
+# Working memory is per thread: on all 18 cores the API's /hits profile could not build in
+# 448 MB, and on 4 it builds in 256. The same holds for a model's aggregate here.
+THREADS = 4
 
 # What to say when the loop ends on anything but a finished answer.
 STOPPED = {
@@ -82,7 +85,7 @@ TABLES = (
     # (2026-10-11, 5,422,604 rows, with `compound_structures` in). It is bounded by
     # MEMORY_LIMIT instead, past which DuckDB moves blocks to spill files. Measured on the
     # rebuilt store: 0.64 GB after `connection()`, which takes 1.4 s rather than 0.4 s, and
-    # 0.97 GB at peak under a 5.4M-row self-join that answers in 0.4 s. The copy is
+    # 0.69 GB at peak under a 5.4M-row self-join that answers in 0.7 s. The copy is
     # deliberate and a view cannot replace it: `CREATE VIEW ... AS SELECT * FROM
     # '<parquet>'` reads its file at query time, after `enable_external_access` is off and
     # the configuration locked, and DuckDB 1.5.6 refuses it ("file system operations are
@@ -628,6 +631,7 @@ def _sandbox() -> duckdb.DuckDBPyConnection:
             "memory_limit": MEMORY_LIMIT,
             "temp_directory": spill,
             "max_temp_directory_size": SPILL_LIMIT,
+            "threads": THREADS,
         },
     )
     for name in TABLES:

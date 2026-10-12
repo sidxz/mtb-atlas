@@ -148,12 +148,16 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET"], a
 # One DuckDB instance per process, so this ceiling is the process's and not a request's:
 # a connection per request was an instance per request, each defaulting to 80% of RAM, and
 # concurrent requests stacked. `/hits` aggregates all 5.4M screen results on every call and
-# alone took the process to 1.31 GB (2026-10-12). Capped, it spills: 0.4 s rather than
-# 0.1 s, with the process at 0.80 GB. It does not fit in 256 MB, nor in 512 MB without
-# spilling, so the margin is under 2x and a larger screening layer must re-measure.
+# alone took the process to 1.31 GB (2026-10-12). Capped, on THREADS threads, the profile
+# builds in 0.4 s and needs 128-256 MB, so 512 MB is at least 2x; 32 concurrent /hits held
+# the process at 0.65 GB. A larger screening layer must re-measure.
 MEMORY_LIMIT = "512MB"
 # DuckDB's default disk ceiling for spill is 90% of the free disk.
 SPILL_LIMIT = "8GB"
+# Working memory is per thread, so the ceiling's headroom depends on this. On all 18 cores
+# the /hits profile needed 448-512 MB, under 15% headroom; on 4 it needs 128-256 MB, and
+# builds in 0.4 s rather than 0.3 s (2026-10-12).
+THREADS = 4
 _instances: dict[Path, duckdb.DuckDBPyConnection] = {}
 _instances_lock = threading.Lock()
 
@@ -174,6 +178,7 @@ def _db() -> duckdb.DuckDBPyConnection:
                     "memory_limit": MEMORY_LIMIT,
                     "temp_directory": spill,
                     "max_temp_directory_size": SPILL_LIMIT,
+                    "threads": THREADS,
                 }
             )
         connection = instance.cursor()

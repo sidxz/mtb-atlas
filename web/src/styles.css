@@ -240,19 +240,24 @@ button.chip:active { background: color-mix(in srgb, var(--chip-ink) 23%, var(--s
 .globalsearch .search { width: 100%; padding-left: 32px; border-color: var(--line); background: var(--bg); }
 .globalsearch > .ui-icon { position: absolute; top: 50%; left: 10px; transform: translateY(-50%); color: var(--fg-dim); pointer-events: none; }
 .searchdrop {
-  position: absolute; z-index: 40; top: calc(100% + 4px); left: 0; right: 0; max-height: 60vh;
-  overflow: auto; background: var(--surface); border: 1px solid var(--line-strong);
-  box-shadow: 0 12px 32px rgb(0 0 0 / 0.14); padding: 8px; border-radius: 10px;
+  position: absolute; z-index: 40; top: calc(100% + 6px); right: 0; width: min(520px, calc(100vw - 24px)); max-height: min(600px, 65dvh);
+  overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: thin;
+  background: var(--surface); border: 1px solid var(--line-strong);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.14); padding: 6px; border-radius: 10px;
 }
-.searchdrop .lab { margin: 6px 0 3px 6px; }
+.searchdrop .lab { margin: 0; padding: 10px 10px 5px; font-size: 10px; }
+.searchdrop > [role="group"] + [role="group"] { border-top: 1px solid var(--line); margin-top: 6px; }
 .searchdrop .absent { display: block; padding: 8px; font-size: 12.5px; }
 .searchdrop button {
-  display: flex; gap: 8px; align-items: baseline; width: 100%; text-align: left;
-  background: none; border: 0; cursor: pointer; padding: 4px 6px; font-size: 12.5px; color: var(--fg);
+  display: flex; flex-direction: column; gap: 3px; width: 100%; min-width: 0; text-align: left;
+  background: none; border: 0; border-radius: 5px; cursor: pointer; padding: 9px 10px; font-size: 12.5px; color: var(--fg);
 }
 .searchdrop button[aria-selected="true"] { background: var(--accent-soft); }
-.searchdrop button .id { font-family: var(--mono); font-size: 11.5px; flex: none; }
-.searchdrop button .dim { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-result-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; width: 100%; font-weight: 600; line-height: 1.45; }
+.search-result-meta { display: flex; gap: 8px; width: 100%; min-width: 0; font-size: 11px; color: var(--fg-dim); }
+.search-result-meta .id { flex: 0 1 auto; min-width: 0; max-width: 50%; }
+.search-result-meta .id, .search-result-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-result-detail { flex: 1; min-width: 0; }
 
 .viewswitch { display: flex; align-self: stretch; gap: 20px; }
 .viewswitch button {
@@ -892,64 +897,145 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   .screen-workspace .workspace-detail { margin-inline: 0; }
 }
 
-/* --- Targets: the genome as a target landscape --------------------------- */
-
-.assess-panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 14px; }
-.assess-panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+/* --- Targets ------------------------------------------------------------- */
+.targets-main { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.targets-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--line); }
+.targets-heading h2 { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 19px; letter-spacing: -.025em; font-weight: 650; }
+.targets-heading h2 > span { border-radius: 5px; background: var(--surface-2); color: var(--fg-dim); padding: 2px 7px; font-size: 12px; font-weight: 550; letter-spacing: 0; }
+.targets-heading p { margin: 3px 0 0; color: var(--fg-dim); font-size: 12px; }
+.targets-search { width: 280px; height: 34px; }
+.targets-search input { height: 34px; font-size: 12px; border-radius: 6px; }
+.targets-search > button { height: 32px; }
+.assess-rail-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.assess-rail-head h2 { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 13px; font-weight: 650; }
+.assess-rail-head .ui-icon { width: 15px; height: 15px; }
+.targets-status-filter { margin-bottom: 16px; }
+.targets-status-filter .lab { margin-bottom: 8px; }
+.assess-stage { display: flex; justify-content: space-between; align-items: center; gap: 6px; width: 100%; padding: 7px 8px; border: 1px solid transparent; border-radius: 5px; background: transparent; font: inherit; font-size: 11.5px; text-align: left; color: var(--fg-dim); cursor: pointer; }
+.assess-stage:hover { background: var(--surface-2); color: var(--fg); }
+.assess-stage[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 20%, var(--line)); font-weight: 600; }
+.assess-stage-n { font-size: 11px; font-variant-numeric: tabular-nums; }
+.targets-filter-group > summary { padding: 12px 0; }
+.assess-crit { padding: 2px 0 12px; }
+.assess-crit-label { display: block; font-size: 11.5px; color: var(--fg-dim); margin-bottom: 6px; }
+.assess-seg { display: flex; gap: 3px; }
+.assess-seg button { flex: 1 1 0; min-width: 0; font: inherit; font-size: 10px; cursor: pointer; background: var(--surface); color: var(--fg-dim); border: 1px solid var(--line); border-radius: 5px; padding: 4px 2px; display: flex; flex-direction: column; align-items: center; }
+.assess-seg button:hover { color: var(--fg); border-color: var(--line-strong); }
+.assess-seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); font-weight: 600; }
+.assess-seg .c { font-size: 11px; font-weight: 550; }
+.targets-active-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+.targets-active-filters button { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--accent-soft); color: var(--accent); padding: 4px 8px; font-size: 11px; cursor: pointer; text-align: left; }
+.targets-active-filters button:hover { border-color: var(--accent); }
+.targets-active-filters .targets-reset { background: none; border-color: transparent; color: var(--fg-dim); }
+.targets-filter-steps { border-bottom: 1px solid var(--line); font-size: 11px; color: var(--fg-dim); }
+.targets-filter-steps summary { padding: 8px 18px; cursor: pointer; }
+.targets-filter-steps summary > span { float: right; }
+.assess-funnel { padding: 0 18px 12px; }
+.assess-step { display: grid; grid-template-columns: minmax(0, 1fr) 4em 4em; gap: 10px; padding: 3px 0; }
+.assess-step b, .assess-step-d { text-align: right; }
+.assess-step-d { color: var(--fg-faint); }
+.targets-table-scroll { flex: 1; min-height: 0; overflow: auto; }
+.targets-table { min-width: 760px; }
+.targets-body.detail-open .targets-table { min-width: 550px; }
+.targets-body.detail-open .targets-table .targets-identity { min-width: 190px; }
+.targets-body.detail-open .targets-product { max-width: 240px; }
+.targets-table th { padding: 0; }
+.targets-table th > button { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; padding: 11px 12px; border: 0; color: var(--fg-dim); background: none; font-size: 11px; font-weight: 600; text-align: left; cursor: pointer; }
+.targets-table th > button:hover, .targets-table th[aria-sort="ascending"] > button, .targets-table th[aria-sort="descending"] > button { color: var(--accent); }
+.targets-table th > button span { opacity: .55; }
+.targets-table th.num > button { justify-content: flex-end; }
+.targets-table td { padding: 10px 12px; }
+.targets-table .targets-identity { width: 32%; min-width: 240px; max-width: 350px; }
+.targets-identity .row-open { display: flex; align-items: baseline; gap: 8px; width: 100%; font-size: 12px; }
+.targets-identity .row-open strong { font-weight: 650; }
+.targets-identity .row-open span { color: var(--fg-faint); font-size: 11px; }
+.targets-product { display: block; max-width: 310px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-dim); font-size: 11px; margin-top: 3px; }
+.target-status { display: inline-block; font-size: 11px; white-space: nowrap; color: var(--fg-dim); }
+.target-status::before { content: ""; display: inline-block; width: 5px; height: 5px; border-radius: 50%; margin-right: 6px; background: var(--line-strong); vertical-align: 2px; }
+.status-clinically_validated::before { background: var(--ok); }
+.status-clinical_stage::before { background: var(--accent); }
+.status-biochemically_interrogated::before { background: var(--ess-NE); }
+.status-genetically_nominated::before { background: var(--ess-ESD); }
+.target-essentiality { display: inline-block; min-width: 30px; padding: 1px 5px; font-size: 11px; text-align: center; border-radius: 4px; color: var(--fg-dim); background: var(--surface-2); }
+.target-essentiality.ess-ES, .target-essentiality.ess-ESD { color: var(--ess-ES); background: color-mix(in srgb, var(--ess-ES) 8%, var(--surface)); }
+.targets-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--line); color: var(--fg-dim); font-size: 11px; }
+.targets-pagination > div { display: flex; align-items: center; gap: 12px; }
+.targets-pagination button { min-height: 28px; }
+.targets-pagination button:disabled { opacity: .4; cursor: default; }
+.targets-empty { padding: 50px 16px; text-align: center; }
+.targets-empty .ui-icon { width: 24px; height: 24px; color: var(--fg-faint); }
+.targets-empty h3 { font-size: 14px; margin: 8px 0 4px; }
+.targets-empty p { font-size: 12px; margin: 0 0 14px; color: var(--fg-dim); }
+.assess-panel-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
 .assess-panel-head .lab { margin: 0; }
 .assess-note { font-size: 11.5px; color: var(--fg-dim); }
-.assess-panel > .detail-table-scroll, .assess-stages, .assess-funnel { padding: 10px 12px; }
-
-/* Methods text: what a value is and how it was obtained. Capped so a wide
-   panel does not stretch the measure. */
 .assess-basis { font-size: 11.5px; color: var(--fg-dim); max-width: 78ch; margin: 0 0 8px; }
-.assess-caveat { font-size: 11.5px; color: var(--fg-dim); max-width: 78ch; margin: 0; padding: 9px 12px 11px; border-top: 1px solid var(--line); border-left: 2px solid var(--warn); }
-
-.assess-rail-head { display: flex; justify-content: space-between; align-items: baseline; }
-.assess-crit { border-top: 1px solid var(--line); padding: 8px 0 9px; }
-.assess-crit-label { display: block; font-size: 12.5px; font-weight: 550; }
-.assess-crit code { display: block; font-size: 10.5px; color: var(--fg-faint); margin-bottom: 5px; overflow-wrap: anywhere; }
-.assess-seg { display: flex; gap: 3px; }
-.assess-seg button { flex: 1 1 0; min-width: 0; font: inherit; font-size: 11px; cursor: pointer; background: var(--bg); color: var(--fg-dim); border: 1px solid var(--line); border-radius: 6px; padding: 3px 2px; display: flex; flex-direction: column; align-items: center; }
-.assess-seg button:hover { color: var(--fg); border-color: var(--line-strong); }
-.assess-seg button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); color: var(--accent); border-color: var(--accent); font-weight: 600; }
-.assess-seg .c { font-variant-numeric: tabular-nums; font-size: 11px; font-weight: 600; }
-
-.assess-stages { display: flex; flex-direction: column; gap: 1px; }
-.assess-stage { display: grid; grid-template-columns: minmax(0, 15em) minmax(0, 1fr) 4.5em; align-items: center; gap: 10px; background: none; border: 0; font: inherit; color: var(--fg); cursor: pointer; padding: 3px 0; text-align: left; }
-.assess-stage:hover .assess-stage-name { color: var(--accent); }
-.assess-stage[aria-pressed="true"] .assess-stage-name { color: var(--accent); font-weight: 650; }
-.assess-stage-name { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.assess-bar { height: 7px; border-radius: 2px; background: var(--accent); min-width: 2px; }
-.assess-stage-n { text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--fg-dim); }
-
-.assess-funnel { display: flex; flex-direction: column; gap: 1px; }
-.assess-step { display: grid; grid-template-columns: 4.5em minmax(0, 1fr) 4em; gap: 10px; align-items: baseline; }
-.assess-step-n { text-align: right; font-weight: 650; font-size: 13px; font-variant-numeric: tabular-nums; }
-.assess-step-l { font-size: 12.5px; color: var(--fg-dim); min-width: 0; }
-.assess-step-d { text-align: right; font-size: 11.5px; color: var(--tag-warning); font-variant-numeric: tabular-nums; }
-.assess-step.base .assess-step-n, .assess-step.base .assess-step-l { color: var(--fg); }
-
-.targets-main { padding: 14px 14px 20px; }
-.assess-side { min-width: 0; padding: 14px 12px 20px; }
-.assess-profile { padding: 10px 12px; }
+.assess-caveat { font-size: 11.5px; color: var(--fg-dim); margin: 12px 0; padding: 8px 10px; background: var(--bg); border-left: 2px solid var(--warn); }
+.assess-side { min-width: 0; margin: 0 16px 16px 0; border: 1px solid var(--line); border-radius: 0 8px 8px 0; }
+.assess-side > .assess-panel-head { position: sticky; top: 0; z-index: 2; background: var(--surface); }
+.assess-profile { padding: 16px; }
 .assess-profile-head { display: flex; justify-content: space-between; align-items: start; gap: 10px; }
-.assess-profile-head h3 { margin: 0; font-size: 15px; }
-.assess-product { font-size: 11.5px; color: var(--fg-dim); margin: 1px 0 0; max-width: 78ch; }
-.assess-status-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 8px; font-size: 11.5px; color: var(--fg-dim); margin: 8px 0; max-width: 78ch; }
-
-.assess-dim { border-top: 1px solid var(--line); padding-top: 9px; margin-top: 9px; }
-.assess-dim h4 { margin: 0 0 3px; font-size: 13px; font-weight: 650; }
-.assess-kv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 10px; }
-.assess-kv .k { color: var(--fg-dim); font-size: 12px; min-width: 0; }
-.assess-kv .k code { display: block; font-size: 10.5px; color: var(--fg-faint); overflow-wrap: anywhere; }
-.assess-kv .v { text-align: right; font-size: 12.5px; font-weight: 550; overflow-wrap: anywhere; }
-.assess-kv .v.none { color: var(--fg-faint); font-weight: 400; font-style: italic; }
-
+.assess-profile-head h3 { margin: 0; font-size: 19px; }
+.assess-product { font-size: 12px; color: var(--fg-dim); margin: 6px 0 0; max-width: 78ch; }
+.assess-status-line { margin: 12px 0; }
+.assess-dim { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 14px; }
+.assess-dim h4 { margin: 0 0 10px; font-size: 12px; font-weight: 650; }
+.assess-kv { display: flex; flex-direction: column; gap: 3px; }
+.assess-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 45%); gap: 12px; align-items: baseline; padding: 3px 0; }
+.assess-row.filter-match { padding: 7px 8px; margin-inline: -8px; border-left: 2px solid var(--accent); border-radius: 4px; background: var(--accent-soft); }
+.assess-dim h4 { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 5px; }
+.assess-filter-label { color: var(--accent); font-size: 10px; font-weight: 500; }
+.assess-status-line.filter-match { display: flex; align-items: center; gap: 8px; }
+.assess-value-link { padding: 2px 0; border: 0; background: transparent; color: var(--accent); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.assess-value-link:hover { text-decoration-thickness: 2px; }
+.assess-profile-tabs { margin: 16px -16px 0; padding-inline: 16px; }
+.assess-profile-tabs button { font-size: 12px; }
+.protein-assays { min-width: 0; padding-top: 14px; }
+.protein-assays-heading, .protein-assay-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px; }
+.protein-assays-heading { margin-bottom: 12px; }
+.protein-assays-heading h4 { margin: 0; font-size: 13px; }
+.protein-assays-heading h4 span { margin-left: 5px; color: var(--fg-dim); font-weight: 500; }
+.protein-assays-heading > span, .protein-assay-heading > span { font-size: 11px; color: var(--fg-dim); }
+.protein-assays > .search { width: 100%; margin-bottom: 12px; }
+.protein-assay { border: 1px solid var(--line); border-radius: 6px; padding: 12px; margin-bottom: 10px; }
+.protein-assay-heading > a { font-size: 12px; font-weight: 600; }
+.protein-assay > p { font-size: 12px; margin: 10px 0; overflow-wrap: anywhere; }
+.protein-assay dl { display: flex; flex-wrap: wrap; gap: 18px; margin: 10px 0; }
+.protein-assay dl > div { display: flex; align-items: baseline; gap: 7px; }
+.protein-assay dt { font-size: 11px; color: var(--fg-dim); }
+.protein-assay dd { margin: 0; font-size: 12px; font-weight: 600; }
+.protein-assay .chips { display: flex; }
+.protein-assay-papers { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 10px; font-size: 11px; }
+.protein-assays-state { padding: 16px 0; color: var(--fg-dim); font-size: 12px; }
+.protein-assays-source { font-size: 10px; color: var(--fg-faint); overflow-wrap: anywhere; }
+.assess-kv .k { color: var(--fg-dim); font-size: 11.5px; min-width: 0; }
+.assess-kv .v { text-align: right; font-size: 12px; font-weight: 550; overflow-wrap: anywhere; }
+.assess-kv .v.none { color: var(--fg-faint); font-weight: 400; }
+.assess-methods { margin-top: 10px; color: var(--fg-faint); font-size: 11px; }
+.assess-methods summary { cursor: pointer; }
+.assess-methods p { max-width: 78ch; margin: 7px 0 0; }
 .rowbtn { background: none; border: 1px solid var(--line); border-radius: 6px; color: var(--fg-dim); font: inherit; font-size: 11px; padding: 3px 9px; cursor: pointer; white-space: nowrap; }
 .rowbtn:hover { border-color: var(--line-strong); color: var(--fg); }
-
-/* The cohort keeps the middle; the profile takes the right, as the clinical
-   view does. Below 1180px the shared .body rule drops to two columns. */
 .body.targets-body.detail-open { grid-template-columns: 232px minmax(0, 1fr) minmax(0, 440px); }
-@media (max-width: 1400px) { .body.targets-body.detail-open { grid-template-columns: 220px minmax(0, 1fr) minmax(0, 380px); } }
+@media (min-width: 1181px) and (max-width: 1400px) {
+  .body.targets-body.detail-open { grid-template-columns: 220px minmax(0, 1fr) minmax(0, 400px); }
+}
+@media (max-width: 1180px) {
+  .body.targets-body.detail-open { grid-template-columns: 210px minmax(0, 1fr); }
+  .targets-body .assess-side { margin-left: 16px; border-radius: 8px; }
+}
+@media (max-width: 820px) {
+  .targets-body .targets-main { height: 72dvh; min-height: 420px; }
+  .targets-heading { padding: 14px; }
+  .targets-search { width: 100%; }
+  .targets-search input { font-size: 16px; }
+  .targets-body .assess-side { margin: 0; max-height: none; }
+  .targets-body .assess-rail-head { margin-bottom: 12px; }
+  .targets-body .assess-stage, .targets-body .assess-seg button { min-height: 40px; }
+  .targets-table .targets-identity { width: 180px; min-width: 180px; max-width: 180px; }
+  .targets-product { max-width: 156px; }
+  .targets-identity .row-open { flex-wrap: wrap; gap: 2px 6px; }
+  .targets-pagination { padding-inline: 12px; }
+  .targets-pagination > div { gap: 8px; }
+  .targets-pagination button { min-height: 36px; }
+}

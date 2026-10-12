@@ -7,7 +7,7 @@
  * are looking for.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { InterfaceIcon } from "./InterfaceIcon";
 import { api, type Hit, type SearchResults } from "./api";
 
@@ -33,6 +33,9 @@ export function Search({
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const box = useRef<HTMLDivElement>(null);
+  const dropdown = useRef<HTMLDivElement>(null);
+  const listId = useId();
+  const visible = open && query.trim().length >= 2;
 
   useEffect(() => {
     const text = query.trim();
@@ -65,6 +68,17 @@ export function Search({
   const flat: [Kind, Hit][] = KINDS.flatMap(([kind]) =>
     results[kind].map((hit) => [kind, hit] as [Kind, Hit]),
   );
+  const activeIndex = Math.min(active, flat.length - 1);
+
+  useEffect(() => {
+    const list = dropdown.current;
+    const option = list?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (!list || !option) return;
+    const bounds = list.getBoundingClientRect();
+    const item = option.getBoundingClientRect();
+    if (item.top < bounds.top) list.scrollTop -= bounds.top - item.top;
+    else if (item.bottom > bounds.bottom) list.scrollTop += item.bottom - bounds.bottom;
+  }, [activeIndex, visible, results]);
 
   const pick = useCallback(
     (kind: Kind, id: string) => {
@@ -82,9 +96,14 @@ export function Search({
       <input
         className="search"
         type="search"
+        role="combobox"
         value={query}
         placeholder="Search the atlas…"
         aria-label="Search genes, drugs, trials, compounds and screening campaigns"
+        aria-autocomplete="list"
+        aria-expanded={visible}
+        aria-controls={visible ? listId : undefined}
+        aria-activedescendant={visible && activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined}
         onChange={(event) => {
           setQuery(event.target.value);
           setOpen(true);
@@ -92,7 +111,19 @@ export function Search({
         }}
         onFocus={() => setOpen(true)}
         onKeyDown={(event) => {
-          if (event.key === "Escape") setOpen(false);
+          if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            setOpen(false);
+            return;
+          }
+          if (!visible) {
+            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+              event.preventDefault();
+              setOpen(true);
+            }
+            return;
+          }
           if (!flat.length) return;
           if (event.key === "ArrowDown") {
             event.preventDefault();
@@ -108,29 +139,35 @@ export function Search({
           }
         }}
       />
-      {open && query.trim().length >= 2 && (
-        <div className="searchdrop" role="listbox">
+      {visible && (
+        <div className="searchdrop" ref={dropdown} id={listId} role="listbox" aria-label="Search results">
           {flat.length === 0 ? (
-            <p className="absent">Nothing in the atlas matches that.</p>
+            <p className="absent">No results found.</p>
           ) : (
             KINDS.map(([kind, label]) =>
               results[kind].length ? (
-                <div key={kind}>
+                <div key={kind} role="group" aria-label={label}>
                   <p className="lab">{label}</p>
                   {results[kind].map((hit) => {
                     const index = flat.findIndex(([k, h]) => k === kind && h.id === hit.id);
                     return (
                       <button
                         key={hit.id}
+                        id={`${listId}-${index}`}
                         type="button"
                         role="option"
-                        aria-selected={index === active}
+                        aria-selected={index === activeIndex}
+                        title={[hit.label, hit.id, hit.detail].filter(Boolean).join(" · ")}
                         onMouseEnter={() => setActive(index)}
                         onClick={() => pick(kind, hit.id)}
                       >
-                        <span className="id">{hit.id}</span>
-                        <b>{hit.label === hit.id ? "" : hit.label}</b>
-                        <span className="dim">{hit.detail}</span>
+                        <span className="search-result-title">{hit.label || hit.id}</span>
+                        {(hit.label !== hit.id || hit.detail) && (
+                          <span className="search-result-meta">
+                            {hit.label !== hit.id && <span className="id">{hit.id}</span>}
+                            {hit.detail && <span className="search-result-detail">{hit.detail}</span>}
+                          </span>
+                        )}
                       </button>
                     );
                   })}

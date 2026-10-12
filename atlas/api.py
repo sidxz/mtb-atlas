@@ -65,6 +65,7 @@ LICENCES = {
 # Store tables with no licence of their own: joins, and a second table from a
 # source already listed above.
 DERIVED = (
+    "assay_sizes",
     "crosswalk",
     "target_summary",
     "drug_mechanisms",
@@ -407,6 +408,18 @@ class TargetPage(BaseModel):
     items: list[TargetSummary]
 
 
+class ProteinAssay(BaseModel):
+    assay_chembl_id: str
+    target_chembl_id: str
+    description: str | None = None
+    n_compounds: int
+    n_measurements: int
+    endpoint_types: list[str]
+    latest_year: int | None = None
+    document_ids: list[str] = Field(default_factory=list)
+    source_version: str | None = None
+
+
 class TargetDetail(TargetSummary):
     """The full evidence record: everything the atlas knows about one gene."""
 
@@ -641,6 +654,47 @@ def targets(
     items = [dict(zip([c[0] for c in rows.description], r, strict=True)) for r in rows.fetchall()]
     return TargetPage(
         total=total, limit=limit, offset=offset, items=[TargetSummary(**i) for i in items]
+    )
+
+
+@app.get("/targets/{rv_id}/protein-assays", response_model=list[ProteinAssay])
+def protein_assays(rv_id: str) -> list[dict[str, Any]]:
+    """The full assay census behind n_protein_assays, not the potency subset."""
+    connection = _db()
+    if not _query(connection, "SELECT rv_id FROM target_summary WHERE rv_id = ?", [rv_id]):
+        raise HTTPException(404, f"no gene {rv_id} in the atlas")
+    if not built("assay_sizes"):
+        raise HTTPException(503, "Protein assay records are unavailable in this store.")
+    stages = (
+        "SELECT assay_chembl_id, description, document_chembl_id FROM screen_stages"
+        if built("screen_stages")
+        else "SELECT NULL::VARCHAR AS assay_chembl_id, NULL::VARCHAR AS description,"
+        " NULL::VARCHAR AS document_chembl_id WHERE false"
+    )
+    return _query(
+        connection,
+        "WITH census AS ("
+        " SELECT s.* FROM assay_sizes s WHERE s.target_chembl_id IN ("
+        " SELECT t.target_id FROM crosswalk w, UNNEST(w.chembl_targets) AS u(t)"
+        " WHERE w.rv_id = ? AND t.evidence = 'direct' AND t.target_type = 'SINGLE PROTEIN')"
+        " QUALIFY row_number() OVER (PARTITION BY s.assay_chembl_id"
+        " ORDER BY s.target_chembl_id) = 1"
+        "), descriptions AS ("
+        " SELECT assay_chembl_id, assay_description AS description, document_chembl_id"
+        " FROM activities WHERE assay_chembl_id IN (SELECT assay_chembl_id FROM census)"
+        f" UNION ALL SELECT * FROM ({stages})"
+        " WHERE assay_chembl_id IN (SELECT assay_chembl_id FROM census)"
+        "), metadata AS ("
+        " SELECT assay_chembl_id, max(description) AS description,"
+        " list(DISTINCT document_chembl_id ORDER BY document_chembl_id)"
+        " FILTER (WHERE document_chembl_id IS NOT NULL) AS document_ids"
+        " FROM descriptions GROUP BY assay_chembl_id"
+        ") SELECT c.assay_chembl_id, c.target_chembl_id, m.description,"
+        " c.n_compounds, c.n_measurements, c.endpoint_types, c.latest_year,"
+        " coalesce(m.document_ids, []::VARCHAR[]) AS document_ids, c.source_version"
+        " FROM census c LEFT JOIN metadata m USING (assay_chembl_id)"
+        " ORDER BY c.n_compounds DESC, c.latest_year DESC NULLS LAST, c.assay_chembl_id",
+        [rv_id],
     )
 
 

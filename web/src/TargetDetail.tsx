@@ -20,6 +20,7 @@ import {
 import { ClinicalTab, phaseLabel, type Focus } from "./Clinical";
 import { StructureViewer, alphafoldSource, pdbSource, type ViewerSource } from "./StructureViewer";
 import { ChemblLink, Structure } from "./Structure";
+import { ProteinAssays } from "./ProteinAssays";
 
 const SOURCES = {
   essentiality: "DeJesus 2017, mBio · Table S3 · CC BY 4.0",
@@ -41,7 +42,7 @@ const SOURCES = {
   tnseq: "MtbTnDB · Jinich et al. 2025, Mol Microbiol · Zenodo 10.5281/zenodo.15284946 · CC BY 4.0",
 };
 
-type Tab = "evidence" | "structure" | "chemistry" | "resistance" | "clinical" | "network";
+type Tab = "evidence" | "structure" | "assays" | "chemistry" | "resistance" | "clinical" | "network";
 
 const number = (value: number | null | undefined, digits = 2) =>
   value === null || value === undefined ? "—" : value.toFixed(digits);
@@ -220,6 +221,7 @@ export function TargetDetailPanel({
             ["evidence", "Evidence", null],
             ["structure", "Structure", detail.n_pdb + (detail.has_predicted ? 1 : 0)],
             ["chemistry", "Chemistry", detail.n_compounds],
+            ["assays", "Protein assays", detail.n_protein_assays],
             ["resistance", "Resistance", detail.n_variants_associated],
             ["clinical", "Clinical", detail.n_drugs],
             ["network", "Network", detail.n_partners],
@@ -236,6 +238,7 @@ export function TargetDetailPanel({
           The others hold one table or one viewer, which want the full width. */}
       <div className={tab === "evidence" ? "panel evidence" : "panel"}>
         {tab === "evidence" && <Evidence detail={detail} />}
+        {tab === "assays" && <ProteinAssays key={detail.rv_id} rvId={detail.rv_id} />}
 
         {tab === "structure" && (
           <>

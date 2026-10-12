@@ -1,18 +1,8 @@
-/**
- * Targets: the genome read as a target landscape rather than a list of loci.
- *
- * Two things live here that the genome view does not provide. The first is
- * `validation_status`, the furthest point of chemical interrogation on record
- * for each protein. The second is a cohort built by intersecting stated
- * criteria, each of which resolves to yes, no or no record, with the count of
- * every state shown so that an absent record is never silently read as a
- * negative one.
- *
- * Nothing here is ranked, weighted or combined into a score. The criteria are
- * the reader's to choose and the counts are set sizes.
- */
-import { useMemo, useState } from "react";
+/** Filter and compare H37Rv protein targets. */
+import { Children, createContext, isValidElement, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { FilterRail } from "./FilterRail";
+import { InterfaceIcon } from "./InterfaceIcon";
+import { ProteinAssays } from "./ProteinAssays";
 
 import type { TargetSummary, ValidationStatus } from "./api";
 
@@ -28,10 +18,10 @@ const STATUS_ORDER: ValidationStatus[] = [
 
 const STATUS_LABEL: Record<ValidationStatus, string> = {
   clinically_validated: "Clinically validated",
-  clinical_stage: "Clinical-stage chemical matter",
-  biochemically_interrogated: "Biochemically interrogated",
-  annotated_target: "Annotated target, no assay",
-  screened: "Screened, no protein assay",
+  clinical_stage: "Clinical stage",
+  biochemically_interrogated: "Protein assays",
+  annotated_target: "Annotated target",
+  screened: "Screened",
   genetically_nominated: "Genetically nominated",
   not_interrogated: "Not interrogated",
 };
@@ -51,296 +41,331 @@ type Verdict = "y" | "n" | "r";
 interface Criterion {
   id: string;
   label: string;
-  column: string;
+  hint?: string;
   verdict: (row: TargetSummary) => Verdict;
 }
 
 /**
- * Each criterion names the column it reads and the condition under which that
- * column carries no record. The no-record state is never folded into "no":
- * for several of these columns it is the majority of the genome.
+ * Missing evidence stays separate from a negative result.
  */
 const CRITERIA: Criterion[] = [
   {
     id: "essential",
     label: "Essential (ES or ESD)",
-    column: "essentiality",
     verdict: r => (r.essentiality == null ? "r" : r.essentiality_essential ? "y" : "n"),
   },
   {
     id: "vulnerable",
-    label: "Vulnerability confidently measured",
-    column: "vulnerability_index, vulnerability_certain",
+    label: "Confident vulnerability",
     verdict: r => (r.vulnerability_index == null ? "r" : r.vulnerability_certain ? "y" : "n"),
   },
   {
     id: "strain",
-    label: "Strain difference reported (HN878)",
-    column: "hn878_delta_vi",
+    label: "HN878 strain comparison",
+    hint: "A vulnerability difference between HN878 and H37Rv is reported.",
     verdict: r => (r.hn878_delta_vi == null ? "r" : "y"),
   },
   {
     id: "cholesterol",
     label: "Assessable on cholesterol",
-    column: "cholesterol_measured",
     verdict: r => (r.cholesterol_measured == null ? "r" : r.cholesterol_measured ? "y" : "n"),
   },
   {
     id: "structure",
-    label: "Structure of this protein",
-    column: "has_structure",
+    label: "Experimental structure",
     verdict: r => (r.has_structure ? "y" : "n"),
   },
   {
     id: "orthologue",
-    label: "Structure of a mycobacterial orthologue",
-    column: "n_orthologue_pdb",
+    label: "Mycobacterial orthologue structure",
     verdict: r => (r.n_orthologue_pdb > 0 ? "y" : "n"),
   },
   {
     id: "human",
-    label: "No human homologue at 30% identity",
-    column: "close_human_homolog",
+    label: "No close human homologue",
+    hint: "No human homologue at 30% sequence identity.",
     verdict: r => (r.close_human_homolog ? "n" : "y"),
   },
   {
     id: "paralog",
-    label: "No paralogue at 30% over 70%",
-    column: "close_paralog",
+    label: "No close paralogue",
+    hint: "No paralogue at 30% identity over 70% of the query sequence.",
     verdict: r => (r.close_paralog ? "n" : "y"),
   },
   {
     id: "assay",
-    label: "Assay against the purified protein",
-    column: "n_protein_assays",
+    label: "Purified-protein assay",
     verdict: r => (r.n_protein_assays > 0 ? "y" : "n"),
   },
   {
     id: "chembl",
-    label: "ChEMBL target of its own",
-    column: "n_chembl_targets",
+    label: "ChEMBL target",
     verdict: r => (r.n_chembl_targets > 0 ? "y" : "n"),
   },
   {
     id: "precedent",
-    label: "Approved drug against its Pfam domain",
-    column: "n_precedent_approved",
+    label: "Approved drug for Pfam domain",
     verdict: r => (r.n_precedent_approved == null ? "r" : r.n_precedent_approved > 0 ? "y" : "n"),
   },
   {
     id: "who",
-    label: "In the WHO mutation catalogue",
-    column: "in_who_catalogue",
+    label: "WHO resistance catalogue",
     verdict: r => (r.in_who_catalogue ? "y" : "n"),
   },
 ];
 
-const VERDICTS: [Verdict, string][] = [["y", "yes"], ["n", "no"], ["r", "no record"]];
+const FILTER_GROUPS = [
+  { label: "Genetic evidence", ids: ["essential", "vulnerable", "strain", "cholesterol"] },
+  { label: "Structure & selectivity", ids: ["structure", "orthologue", "human", "paralog"] },
+  { label: "Chemical evidence", ids: ["assay", "chembl", "precedent", "who"] },
+];
+const PAGE_SIZE = 50;
+const COLUMNS = [
+  { key: "rv_id", label: "Target", hint: "Sort by locus ID" },
+  { key: "validation_status", label: "Validation" },
+  { key: "essentiality", label: "Essentiality" },
+  { key: "vulnerability_index", label: "VI", hint: "H37Rv vulnerability index", numeric: true },
+  { key: "n_pdb", label: "PDB", hint: "Experimental structures of this protein", numeric: true },
+  { key: "n_protein_assays", label: "Assays", hint: "Assays against the purified protein", numeric: true },
+  { key: "n_compounds", label: "Compounds", hint: "Compounds with protein-level potency", numeric: true },
+] satisfies { key: keyof TargetSummary; label: string; hint?: string; numeric?: boolean }[];
+type SortKey = (typeof COLUMNS)[number]["key"];
+
+const VERDICTS: [Verdict, string][] = [["y", "Yes"], ["n", "No"], ["r", "No record"]];
 
 const n0 = (v: number | null | undefined) => (v == null ? null : v.toLocaleString());
 const f1 = (v: number | null | undefined) => (v == null ? null : v.toFixed(1));
 const f2 = (v: number | null | undefined) => (v == null ? null : v.toFixed(2));
 const pct = (v: number | null | undefined) => (v == null ? null : `${Math.round(v * 100)}%`);
 
-/** A value the store does not carry reads as no record, never as zero. */
-function Row({ label, column, value }: { label: string; column: string; value: string | null }) {
+const HighlightedCriteria = createContext<ReadonlySet<string>>(new Set());
+type ProfileTab = "overview" | "assays";
+
+/** Missing values stay distinct from zero, including highlighted filter matches. */
+function Row({ label, value, criterion, onClick }: { label: string; value: string | null; criterion?: string; onClick?: () => void }) {
+  const highlighted = useContext(HighlightedCriteria);
+  const match = criterion != null && highlighted.has(criterion);
   return (
-    <>
-      <div className="k">
-        {label}
-        <code>{column}</code>
+    <div className={`assess-row${match ? " filter-match" : ""}`}>
+      <div className="k">{label}{match && <span className="sr-only"> (selected filter)</span>}</div>
+      <div className={value == null ? "v none" : "v"}>
+        {onClick ? <button type="button" className="assess-value-link" onClick={onClick} aria-label={`View ${value} protein assays`}>{value} <span aria-hidden="true">→</span></button> : value ?? "no record"}
       </div>
-      <div className={value == null ? "v none" : "v"}>{value ?? "no record"}</div>
-    </>
+    </div>
   );
 }
 
-function Dimension({ title, basis, children }: { title: string; basis: string; children: React.ReactNode }) {
+function Dimension({ title, basis, criteria = [], children }: { title: string; basis: string; criteria?: string[]; children: React.ReactNode }) {
+  const highlighted = useContext(HighlightedCriteria);
+  const match = criteria.some(id => highlighted.has(id));
   return (
-    <section className="assess-dim">
-      <h4>{title}</h4>
-      <p className="assess-basis">{basis}</p>
+    <section className={`assess-dim${match ? " filter-match-section" : ""}`}>
+      <h4>{title}{match && <span className="assess-filter-label">Selected filter</span>}</h4>
       <div className="assess-kv">{children}</div>
+      <details className="assess-methods"><summary>Source &amp; method</summary><p>{basis}</p></details>
     </section>
   );
 }
 
-function Profile({ row, onOpenGene }: { row: TargetSummary; onOpenGene: (rv: string) => void }) {
+function ProfileEvidence({ children }: { children: React.ReactNode }) {
+  const highlighted = useContext(HighlightedCriteria);
+  const matches = (child: React.ReactNode) => isValidElement<{ criteria?: string[] }>(child) && child.props.criteria?.some(id => highlighted.has(id)) ? 1 : 0;
+  return <>{Children.toArray(children).sort((a, b) => matches(b) - matches(a))}</>;
+}
+
+function Profile({ row, onOpenGene, picks, statusFilter, tab, onTab }: {
+  row: TargetSummary;
+  onOpenGene: (rv: string) => void;
+  picks: Record<string, Verdict>;
+  statusFilter: ValidationStatus | null;
+  tab: ProfileTab;
+  onTab: (tab: ProfileTab) => void;
+}) {
+  const highlighted = new Set(Object.keys(picks));
+  if (statusFilter === "biochemically_interrogated") highlighted.add("assay");
+  if (statusFilter === "annotated_target") highlighted.add("chembl");
+  if (statusFilter === "screened") highlighted.add("screen");
+  if (statusFilter === "clinically_validated" || statusFilter === "clinical_stage") highlighted.add("drug");
+  if (statusFilter === "genetically_nominated") {
+    if (row.essentiality_essential) highlighted.add("essential");
+    if (row.vulnerability_certain) highlighted.add("vulnerable");
+  }
   const status = row.validation_status;
   return (
+    <HighlightedCriteria.Provider value={highlighted}>
     <div className="assess-profile">
       <div className="assess-profile-head">
         <div>
           <h3>{row.gene_name ?? row.rv_id}</h3>
+          {row.gene_name && row.gene_name !== row.rv_id && <span className="assess-note">{row.rv_id}</span>}
           <p className="assess-product">{row.product}</p>
         </div>
         <button type="button" className="rowbtn" onClick={() => onOpenGene(row.rv_id)}>
-          Full record
+          Open gene record
         </button>
       </div>
       {status ? (
-        <p className="assess-status-line">
-          <span className="chip accent">{STATUS_LABEL[status]}</span>
-          <span>{STATUS_BASIS[status]}</span>
+        <p className={`assess-status-line${statusFilter ? " filter-match" : ""}`}>
+          <span className="chip accent" title={STATUS_BASIS[status]}>{STATUS_LABEL[status]}</span>
+          {statusFilter && <span className="assess-filter-label">Selected filter</span>}
         </p>
       ) : (
         <p className="assess-basis">
-          Validation status is unavailable: the clinical or screening layer is not built in this store.
+          Validation status unavailable.
         </p>
       )}
       {row.shared_accession && (
         <p className="assess-caveat">
-          This locus shares a UniProt accession with at least one other. Evidence keyed on the
-          accession — structures, ligands and homology — cannot be attributed to one locus alone.
+          Shared UniProt accession: structure, ligand and homology evidence may apply to multiple loci.
         </p>
       )}
 
+      <div className="tabs assess-profile-tabs" role="group" aria-label="Target profile views">
+        <button type="button" aria-pressed={tab === "overview"} onClick={() => onTab("overview")}>Overview</button>
+        <button type="button" aria-pressed={tab === "assays"} onClick={() => onTab("assays")}>Protein assays <span className="badge">{row.n_protein_assays}</span></button>
+      </div>
+      {tab === "assays" ? <ProteinAssays key={row.rv_id} rvId={row.rv_id} /> : <ProfileEvidence>
       <Dimension
         title="Genetic validation"
-        basis="Transposon-insertion essentiality (DeJesus 2017) and CRISPRi vulnerability (Bosch 2021). Essentiality asks whether the locus tolerates disruption; the vulnerability index asks how far expression must fall before fitness is impaired. Essential means ES or ESD; growth-defect loci carry a fitness cost without being essential. The index is negative, and a positive HN878 difference indicates reduced vulnerability in the clinical isolate."
+        criteria={["essential", "vulnerable", "strain"]}
+        basis="Essentiality: DeJesus 2017 (TnSeq); ES and ESD count as essential. Vulnerability: Bosch 2021 (CRISPRi); more negative values indicate greater vulnerability. A positive HN878 difference indicates reduced vulnerability in that strain."
       >
-        <Row label="Essentiality call" column="essentiality" value={row.essentiality_label ?? row.essentiality} />
+        <Row label="Essentiality call" criterion="essential" value={row.essentiality_label ?? row.essentiality} />
         <Row
-          label="Disruption carries a fitness cost"
-          column="essentiality_fitness_cost"
+          label="Fitness cost on disruption"
           value={row.essentiality_fitness_cost ? "yes" : "no"}
         />
-        <Row label="Vulnerability index, H37Rv" column="vulnerability_index" value={f2(row.vulnerability_index)} />
+        <Row label="Vulnerability index, H37Rv" criterion="vulnerable" value={f2(row.vulnerability_index)} />
         <Row
-          label="Reported as confident"
-          column="vulnerability_certain"
+          label="Confident measurement" criterion="vulnerable"
           value={row.vulnerability_index == null ? null : row.vulnerability_certain ? "yes" : "no"}
         />
-        <Row label="Vulnerability index, HN878" column="hn878_vulnerability_index" value={f2(row.hn878_vulnerability_index)} />
+        <Row label="Vulnerability index, HN878" criterion="strain" value={f2(row.hn878_vulnerability_index)} />
         <Row
-          label="HN878 minus H37Rv"
-          column="hn878_delta_vi"
+          label="HN878 minus H37Rv" criterion="strain"
           value={row.hn878_delta_vi == null ? null : `${row.hn878_delta_vi > 0 ? "+" : ""}${row.hn878_delta_vi.toFixed(2)}`}
         />
       </Dimension>
 
       <Dimension
         title="Conditional essentiality"
+        criteria={["cholesterol"]}
         basis="Fitness with cholesterol as the sole carbon source (Griffin 2011). Transposon screens cannot assess loci that take no insertions; those loci are reported as unmeasured rather than unaffected."
       >
         <Row
-          label="Assessable in the screen"
-          column="cholesterol_measured"
+          label="Assessable in the screen" criterion="cholesterol"
           value={row.cholesterol_measured == null ? null : row.cholesterol_measured ? "yes" : "no insertions"}
         />
         <Row
           label="Required on cholesterol"
-          column="cholesterol_required"
           value={row.cholesterol_required == null ? null : row.cholesterol_required ? "yes" : "no"}
         />
-        <Row label="log2 ratio" column="cholesterol_log2_ratio" value={f2(row.cholesterol_log2_ratio)} />
+        <Row label="log2 ratio" value={f2(row.cholesterol_log2_ratio)} />
         <Row
           label="Distinct whole-cell conditions"
-          column="whole_cell_conditions"
           value={row.whole_cell_conditions.length ? String(row.whole_cell_conditions.length) : null}
         />
       </Dimension>
 
       <Dimension
         title="Target engagement"
+        criteria={["assay", "chembl", "who"]}
         basis="ChEMBL assays recorded against this protein as a single-protein target; assays filed against complexes containing it are reported separately. Resistance variants are those graded as associated with resistance in the WHO mutation catalogue, 2nd edition."
       >
-        <Row label="Evidence class" column="chembl_evidence" value={row.chembl_evidence} />
-        <Row label="Assays against the purified protein" column="n_protein_assays" value={n0(row.n_protein_assays)} />
-        <Row label="Largest single assay, compounds" column="max_assay_compounds" value={n0(row.max_assay_compounds)} />
-        <Row label="Assays against complexes" column="n_complex_assays" value={n0(row.n_complex_assays)} />
-        <Row label="In the WHO catalogue" column="in_who_catalogue" value={row.in_who_catalogue ? "yes" : "no"} />
-        <Row label="Variants graded associated" column="n_variants_associated" value={n0(row.n_variants_associated)} />
+        <Row label="ChEMBL targets" criterion="chembl" value={n0(row.n_chembl_targets)} />
+        <Row label="Evidence class" value={row.chembl_evidence} />
+        <Row label="Protein assays" criterion="assay" onClick={() => onTab("assays")} value={n0(row.n_protein_assays)} />
+        <Row label="Largest assay (compounds)" value={n0(row.max_assay_compounds)} />
+        <Row label="Assays against complexes" value={n0(row.n_complex_assays)} />
+        <Row label="In the WHO catalogue" criterion="who" value={row.in_who_catalogue ? "yes" : "no"} />
+        <Row label="Variants graded associated" value={n0(row.n_variants_associated)} />
       </Dimension>
 
       <Dimension
         title="Structural tractability"
+        criteria={["structure", "orthologue"]}
         basis="Experimental structures deposited under this protein's own accession, and structures of mycobacterial orthologues reported with sequence identity and coverage. Orthologue residue numbering follows the orthologue, not this protein."
       >
-        <Row label="Structures of this protein" column="n_pdb" value={n0(row.n_pdb)} />
-        <Row label="Best resolution" column="best_resolution" value={row.best_resolution == null ? null : `${row.best_resolution.toFixed(2)} Å`} />
-        <Row label="With a bound ligand" column="n_pdb_with_ligand" value={n0(row.n_pdb_with_ligand)} />
+        <Row label="Structures of this protein" criterion="structure" value={n0(row.n_pdb)} />
+        <Row label="Best resolution" value={row.best_resolution == null ? null : `${row.best_resolution.toFixed(2)} Å`} />
+        <Row label="With a bound ligand" value={n0(row.n_pdb_with_ligand)} />
         <Row
           label="Identical sequence under another accession"
-          column="same_sequence_structure"
           value={row.same_sequence_structure ? "yes" : "no"}
         />
-        <Row label="Orthologue structures" column="n_orthologue_pdb" value={n0(row.n_orthologue_pdb)} />
+        <Row label="Orthologue structures" criterion="orthologue" value={n0(row.n_orthologue_pdb)} />
         <Row
           label="Nearest solved orthologue"
-          column="closest_orthologue_gene"
           value={row.closest_orthologue_gene ? `${row.closest_orthologue_gene} · ${row.closest_orthologue_organism ?? "organism not stated"}` : null}
         />
         <Row
           label="Its identity and coverage"
-          column="closest_orthologue_identity, closest_orthologue_coverage"
           value={row.closest_orthologue_identity == null ? null : `${pct(row.closest_orthologue_identity)} over ${pct(row.closest_orthologue_coverage) ?? "?"}`}
         />
         <Row
           label="Predicted model"
-          column="has_predicted, plddt_mean"
           value={row.has_predicted ? `AlphaFold, mean pLDDT ${f1(row.plddt_mean) ?? "not stated"}` : "none"}
         />
       </Dimension>
 
       <Dimension
         title="Chemical matter"
-        basis="Protein-level potency as pChEMBL; whole-cell potency as pMIC, the negative log of the MIC in mol/L. MICs censored at the highest concentration tested are counted but not converted. Screening campaign sizes are the deposited compound sets."
+        criteria={["screen"]}
+        basis="Protein potency: pChEMBL. Whole-cell potency: pMIC (−log10 MIC in mol/L). Censored MICs are excluded from pMIC. Campaign sizes count deposited compounds."
       >
-        <Row label="Compounds with protein-level potency" column="n_compounds" value={n0(row.n_compounds)} />
-        <Row label="Best pChEMBL" column="best_pchembl" value={f2(row.best_pchembl)} />
-        <Row label="Whole-cell measurements" column="n_whole_cell" value={n0(row.n_whole_cell)} />
-        <Row label="Best pMIC" column="best_pmic" value={f2(row.best_pmic)} />
+        <Row label="Compounds with protein-level potency" value={n0(row.n_compounds)} />
+        <Row label="Best pChEMBL" value={f2(row.best_pchembl)} />
+        <Row label="Whole-cell measurements" value={n0(row.n_whole_cell)} />
+        <Row label="Best pMIC" value={f2(row.best_pmic)} />
         <Row
           label="MICs, of which censored"
-          column="n_mic, n_mic_censored"
           value={`${n0(row.n_mic)} of which ${n0(row.n_mic_censored)}`}
         />
-        <Row label="Campaigns on this protein" column="n_target_screens" value={n0(row.n_target_screens)} />
-        <Row label="Largest campaign, compounds" column="max_screen_compounds" value={n0(row.max_screen_compounds)} />
-        <Row label="Compounds called active" column="n_screen_actives" value={n0(row.n_screen_actives)} />
+        <Row label="Campaigns on this protein" criterion="screen" value={n0(row.n_target_screens)} />
+        <Row label="Largest campaign, compounds" value={n0(row.max_screen_compounds)} />
+        <Row label="Compounds called active" value={n0(row.n_screen_actives)} />
       </Dimension>
 
       <Dimension
         title="Liabilities"
+        criteria={["human", "paralog", "precedent"]}
         basis="Human homologues from phmmer against the reviewed human proteome; paralogues from phmmer against the Mtb proteome, called at 30% identity over 70% of the query length. Drug precedent counts approved drugs recorded against other single-protein targets that share a Pfam domain with this protein; a shared domain is not a shared binding site."
       >
         <Row
-          label="Closest human homologue"
-          column="human_homolog_gene, human_homolog_identity"
+          label="Closest human homologue" criterion="human"
           value={row.human_homolog_gene ? `${row.human_homolog_gene} · ${pct(row.human_homolog_identity)}` : row.human_homolog ? "unnamed" : "none above threshold"}
         />
         <Row
-          label="Closest paralogue meeting both thresholds"
-          column="closest_paralog_gene, closest_paralog_identity"
+          label="Closest paralogue" criterion="paralog"
           value={row.closest_paralog_gene ? `${row.closest_paralog_gene} · ${pct(row.closest_paralog_identity)}` : "none"}
         />
         <Row
           label="Nearest relative, any coverage"
-          column="nearest_relative_gene"
           value={row.nearest_relative_gene ? `${row.nearest_relative_gene} · ${pct(row.nearest_relative_identity)}` : null}
         />
-        <Row label="Approved drugs against the domain" column="n_precedent_approved" value={n0(row.n_precedent_approved)} />
-        <Row label="Of those, acting on a human protein" column="n_precedent_human_target" value={n0(row.n_precedent_human_target)} />
-        <Row label="Filed against a complex, not counted" column="n_precedent_complex" value={n0(row.n_precedent_complex)} />
-        <Row label="Domain carrying the precedent" column="precedent_pfam_name" value={row.precedent_pfam_name} />
+        <Row label="Approved drugs against the domain" criterion="precedent" value={n0(row.n_precedent_approved)} />
+        <Row label="Acting on a human protein" value={n0(row.n_precedent_human_target)} />
+        <Row label="Complex-only records (excluded)" value={n0(row.n_precedent_complex)} />
+        <Row label="Domain carrying the precedent" value={row.precedent_pfam_name} />
       </Dimension>
 
       {row.drug_names && row.drug_names.length > 0 && (
         <Dimension
-          title="Drugs recorded against this protein"
-          basis="A drug reaches a gene through a ChEMBL single-protein mechanism or an annotation matched to a ChEMBL synonym. Membership of a complex a drug is filed against is not such a record, and resistance to a drug is not engagement with it."
+          title="Drugs"
+          criteria={["drug"]}
+          basis="ChEMBL single-protein mechanisms or annotations matched to ChEMBL synonyms. Complex membership and resistance alone do not establish target engagement."
         >
-          <Row label="Drugs" column="drug_names" value={row.drug_names.join(", ")} />
+          <Row label="Drugs" criterion="drug" value={row.drug_names.join(", ")} />
           <Row
-            label="Highest phase for a TB indication"
-            column="best_drug_phase"
+            label="Highest phase for a TB indication" criterion="drug"
             value={row.best_drug_phase == null ? null : `phase ${row.best_drug_phase}`}
           />
-          <Row label="Interventional trials" column="n_trials" value={n0(row.n_trials)} />
+          <Row label="Interventional trials" value={n0(row.n_trials)} />
         </Dimension>
       )}
+      </ProfileEvidence>}
     </div>
+    </HighlightedCriteria.Provider>
   );
 }
 
@@ -354,11 +379,43 @@ export function Targets({
   const [picks, setPicks] = useState<Record<string, Verdict>>({});
   const [status, setStatus] = useState<ValidationStatus | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [profileTab, setProfileTab] = useState<ProfileTab>("overview");
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(0);
+  const [sort, setSort] = useState<{ key: SortKey; descending: boolean }>({ key: "rv_id", descending: false });
+  const tableRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const profileRef = useRef<HTMLElement>(null);
+  const returnFocus = useRef<HTMLButtonElement | null>(null);
 
-  // The genome's coding loci. RNA genes carry no protein to interrogate, so a
-  // target landscape that counted them would report a denominator it cannot
-  // assess.
+  function closeProfile() {
+    setSelected(null);
+    requestAnimationFrame(() => returnFocus.current?.focus());
+  }
+
+  useEffect(() => {
+    if (!selected) return;
+    closeRef.current?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeProfile();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selected]);
+  useEffect(() => {
+    if (profileRef.current) profileRef.current.scrollTop = 0;
+  }, [selected, profileTab]);
+
+  // Protein targets exclude noncoding loci.
   const genes = useMemo(() => all.filter(r => r.feature === "CDS"), [all]);
+
+  const searched = useMemo(() => {
+    const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    return genes.filter(row => {
+      const text = `${row.rv_id} ${row.gene_name ?? ""} ${row.product ?? ""} ${row.uniprot_acc ?? ""}`.toLowerCase();
+      return terms.every(term => text.includes(term));
+    });
+  }, [genes, query]);
 
   const verdicts = useMemo(() => {
     const table = new Map<string, Verdict[]>();
@@ -380,23 +437,22 @@ export function Targets({
   );
 
   const cohort = useMemo(
-    () => genes.filter(r => (status == null || r.validation_status === status) && passes(r)),
-    [genes, status, passes],
+    () => searched.filter(r => (status == null || r.validation_status === status) && passes(r)),
+    [searched, status, passes],
   );
 
   // Status counts ignore the status filter itself, so the distribution stays
   // readable while one level is open.
   const statusCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const row of genes) {
+    for (const row of searched) {
       if (!passes(row)) continue;
       const key = row.validation_status ?? "unknown";
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
     return counts;
-  }, [genes, passes]);
+  }, [searched, passes]);
 
-  const widest = Math.max(1, ...STATUS_ORDER.map(s => statusCounts.get(s) ?? 0));
 
   // Each criterion's counts are taken over the cohort filtered by the others,
   // so the three numbers always sum to a set the reader can act on.
@@ -404,7 +460,7 @@ export function Targets({
     () =>
       CRITERIA.map((c, i) => {
         const tally: Record<Verdict, number> = { y: 0, n: 0, r: 0 };
-        for (const row of genes) {
+        for (const row of searched) {
           if (status != null && row.validation_status !== status) continue;
           if (!passes(row, c.id)) continue;
           const v = verdicts.get(row.rv_id);
@@ -412,16 +468,16 @@ export function Targets({
         }
         return tally;
       }),
-    [genes, status, passes, verdicts],
+    [searched, status, passes, verdicts],
   );
 
   // The cohort step by step: what each criterion costs, in the order shown.
   const steps = useMemo(() => {
     const active = CRITERIA.map((c, i) => ({ c, i })).filter(x => picks[x.c.id]);
     const out: { label: string; count: number; drop: number }[] = [];
-    let running = genes.filter(r => status == null || r.validation_status === status);
+    let running = searched.filter(r => status == null || r.validation_status === status);
     if (status != null) {
-      out.push({ label: STATUS_LABEL[status], count: running.length, drop: genes.length - running.length });
+      out.push({ label: STATUS_LABEL[status], count: running.length, drop: searched.length - running.length });
     }
     for (const { c } of active) {
       const want = picks[c.id];
@@ -434,190 +490,169 @@ export function Targets({
       out.push({ label: c.label + suffix, count: running.length, drop: before - running.length });
     }
     return out;
-  }, [genes, status, picks, verdicts]);
+  }, [searched, status, picks, verdicts]);
 
-  const chosen = selected ? (genes.find(r => r.rv_id === selected) ?? null) : null;
-  const active = Object.keys(picks).length > 0 || status != null;
+  const sorted = useMemo(() => [...cohort].sort((a, b) => {
+    const av = a[sort.key], bv = b[sort.key];
+    if (av == null) return bv == null ? a.rv_id.localeCompare(b.rv_id) : 1;
+    if (bv == null) return -1;
+    const comparison = sort.key === "validation_status"
+      ? STATUS_ORDER.indexOf(av as ValidationStatus) - STATUS_ORDER.indexOf(bv as ValidationStatus)
+      : typeof av === "number" && typeof bv === "number"
+        ? av - bv : String(av).localeCompare(String(bv), undefined, { numeric: true });
+    return (sort.descending ? -comparison : comparison) || a.rv_id.localeCompare(b.rv_id);
+  }), [cohort, sort]);
+  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount - 1);
+  const rows = sorted.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+  const chosen = selected ? (cohort.find(r => r.rv_id === selected) ?? null) : null;
+  const columns = chosen ? COLUMNS.filter(column => ["rv_id", "validation_status", "essentiality", "vulnerability_index", sort.key].includes(column.key)) : COLUMNS;
+  const activeCount = Object.keys(picks).length + Number(status != null);
+  const active = activeCount > 0 || query.length > 0;
+
+  useEffect(() => {
+    setPage(0);
+  }, [query, picks, status]);
+  useEffect(() => {
+    if (selected && !cohort.some(row => row.rv_id === selected)) setSelected(null);
+  }, [cohort, selected]);
+  useEffect(() => { if (tableRef.current) tableRef.current.scrollTop = 0; }, [currentPage, sort, query, picks, status]);
+
+  function clearFilters() {
+    setPicks({});
+    setStatus(null);
+    setQuery("");
+  }
+  function removePick(id: string) {
+    setPicks(previous => { const next = { ...previous }; delete next[id]; return next; });
+  }
 
   return (
     <div className={`body targets-body${chosen ? " detail-open" : ""}`}>
-      <FilterRail label="Criteria">
-        <div className="group">
-          <div className="assess-rail-head">
-            <p className="lab">Criteria</p>
-            {active && (
-              <button
-                type="button"
-                className="clear-filters"
-                onClick={() => {
-                  setPicks({});
-                  setStatus(null);
-                }}
-              >
-                Clear
-              </button>
-            )}
-          </div>
-          <p className="assess-basis">
-            Each criterion resolves to yes, no, or no record. Absence of a record is reported
-            separately from a negative result.
-          </p>
-          {CRITERIA.map((c, i) => (
-            <div className="assess-crit" key={c.id}>
-              <span className="assess-crit-label">{c.label}</span>
-              <code>{c.column}</code>
-              <div className="assess-seg">
-                {VERDICTS.map(([key, label]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    aria-pressed={picks[c.id] === key}
-                    onClick={() =>
-                      setPicks(prev => {
-                        const next = { ...prev };
-                        if (next[c.id] === key) delete next[c.id];
-                        else next[c.id] = key;
-                        return next;
-                      })
-                    }
-                  >
-                    <span>{label}</span>
-                    <span className="c">{criterionCounts[i][key].toLocaleString()}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
+      <FilterRail label={`Filters${activeCount ? ` (${activeCount})` : ""}`}>
+        <div className="assess-rail-head">
+          <h2><InterfaceIcon name="filter" /> Filters</h2>
+          {active && <button type="button" className="clear-filters" onClick={clearFilters}>Reset</button>}
+        </div>
+        <div className="targets-status-filter">
+          <p className="lab" title="Most advanced record available; stages are not cumulative.">Validation status</p>
+          <button type="button" className="assess-stage" aria-pressed={status === null} onClick={() => setStatus(null)}>
+            <span>All targets</span><span className="assess-stage-n">{[...statusCounts.values()].reduce((a, b) => a + b, 0).toLocaleString()}</span>
+          </button>
+          {STATUS_ORDER.map(key => (
+            <button key={key} type="button" className="assess-stage" aria-pressed={status === key}
+              title={STATUS_BASIS[key]} onClick={() => setStatus(status === key ? null : key)}>
+              <span>{STATUS_LABEL[key]}</span><span className="assess-stage-n">{(statusCounts.get(key) ?? 0).toLocaleString()}</span>
+            </button>
           ))}
         </div>
+        {FILTER_GROUPS.map(group => (
+          <details className="filtergroup targets-filter-group" key={group.label} open>
+            <summary>{group.label}{group.ids.some(id => picks[id]) && <span className="filtercount">{group.ids.filter(id => picks[id]).length}</span>}</summary>
+            {CRITERIA.map((c, i) => group.ids.includes(c.id) && (
+              <div className="assess-crit" key={c.id}>
+                <span className="assess-crit-label" title={c.hint}>{c.label}</span>
+                <div className="assess-seg" role="group" aria-label={c.label}>
+                  {VERDICTS.map(([key, label]) => (
+                    <button key={key} type="button" aria-pressed={picks[c.id] === key}
+                      aria-label={`${c.label}: ${label} (${criterionCounts[i][key].toLocaleString()})`}
+                      onClick={() => setPicks(previous => {
+                        const next = { ...previous };
+                        if (next[c.id] === key) delete next[c.id]; else next[c.id] = key;
+                        return next;
+                      })}>
+                      <span>{label}</span><span className="c">{criterionCounts[i][key].toLocaleString()}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </details>
+        ))}
       </FilterRail>
 
       <main className="col canvascol targets-main">
-        <section className="assess-panel">
-          <div className="assess-panel-head">
-            <p className="lab">Chemical validation status</p>
-            <span className="assess-note">furthest record present</span>
+        <div className="targets-heading">
+          <div><h2>Targets <span>{cohort.length.toLocaleString()}</span></h2><p>H37Rv · Protein-coding genes</p></div>
+          <div className="table-gene-search targets-search">
+            <InterfaceIcon name="search" />
+            <input type="search" aria-label="Search targets" placeholder="Search gene, locus or function…" value={query} onChange={event => setQuery(event.target.value)} />
+            {query && <button type="button" aria-label="Clear target search" onClick={() => setQuery("")}>×</button>}
           </div>
-          <div className="assess-stages">
-            {STATUS_ORDER.map(key => {
-              const value = statusCounts.get(key) ?? 0;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  className="assess-stage"
-                  aria-pressed={status === key}
-                  title={STATUS_BASIS[key]}
-                  onClick={() => {
-                    setStatus(status === key ? null : key);
-                    setSelected(null);
-                  }}
-                >
-                  <span className="assess-stage-name">{STATUS_LABEL[key]}</span>
-                  <span className="assess-bar" style={{ width: `${(value / widest) * 100}%` }} />
-                  <span className="assess-stage-n">{value.toLocaleString()}</span>
-                </button>
-              );
-            })}
-          </div>
-          <p className="assess-caveat">
-            Status reflects the most advanced record present and does not imply that earlier stages
-            were completed. MmpL3 holds clinical-stage chemical matter with no recorded assay
-            against the purified protein; its ligands reach it through the <i>M. smegmatis</i>{" "}
-            orthologue.
-          </p>
-        </section>
-
-        <section className="assess-panel">
-          <div className="assess-panel-head">
-            <p className="lab">Cohort</p>
-            <span className="assess-note">
-              {cohort.length.toLocaleString()} of {genes.length.toLocaleString()} coding loci
-            </span>
-          </div>
-          <div className="assess-funnel">
-            <div className="assess-step base">
-              <span className="assess-step-n">{genes.length.toLocaleString()}</span>
-              <span className="assess-step-l">H37Rv coding loci</span>
-              <span className="assess-step-d" />
-            </div>
-            {steps.map(step => (
-              <div className="assess-step" key={step.label}>
-                <span className="assess-step-n">{step.count.toLocaleString()}</span>
-                <span className="assess-step-l">{step.label}</span>
-                <span className="assess-step-d">−{step.drop.toLocaleString()}</span>
-              </div>
+        </div>
+        {activeCount > 0 && (
+          <div className="targets-active-filters" aria-label="Active filters">
+            {status && <button type="button" onClick={() => setStatus(null)} aria-label={`Remove ${STATUS_LABEL[status]} filter`}>{STATUS_LABEL[status]} <span aria-hidden="true">×</span></button>}
+            {CRITERIA.filter(c => picks[c.id]).map(c => (
+              <button key={c.id} type="button" onClick={() => removePick(c.id)} aria-label={`Remove ${c.label} filter`}>
+                {c.label}: {VERDICTS.find(([key]) => key === picks[c.id])?.[1]} <span aria-hidden="true">×</span>
+              </button>
             ))}
-            {!steps.length && (
-              <p className="assess-basis">
-                No criterion applied. Choose states in the rail to define a cohort; each step shows
-                the loci it excludes.
-              </p>
-            )}
+            <button type="button" className="targets-reset" onClick={clearFilters}>Clear all</button>
           </div>
-        </section>
-
-        <section className="assess-panel">
-          <div className="assess-panel-head">
-            <p className="lab">Loci</p>
-            <span className="assess-note">
-              {cohort.length > 200 ? `first 200 of ${cohort.length.toLocaleString()}` : `${cohort.length} shown`}
-            </span>
-          </div>
-          <div className="detail-table-scroll">
-            <table className="clinical-table workspace-table">
-              <thead>
-                <tr>
-                  <th>Locus</th>
-                  <th>Gene</th>
-                  <th>Status</th>
-                  <th>Essentiality</th>
-                  <th className="num">VI</th>
-                  <th className="num">PDB</th>
-                  <th className="num">Assays</th>
-                  <th className="num">Compounds</th>
+        )}
+        {steps.length > 0 && (
+          <details className="targets-filter-steps">
+            <summary>Filter breakdown <span>{searched.length.toLocaleString()} → {cohort.length.toLocaleString()}</span></summary>
+            <div className="assess-funnel">
+              {steps.map(step => <div className="assess-step" key={step.label}><span>{step.label}</span><b>{step.count.toLocaleString()}</b><span className="assess-step-d">−{step.drop.toLocaleString()}</span></div>)}
+            </div>
+          </details>
+        )}
+        <div className="detail-table-scroll targets-table-scroll" ref={tableRef}>
+          <table className="clinical-table workspace-table targets-table">
+            <caption className="sr-only">H37Rv protein targets</caption>
+            <thead><tr>{columns.map(column => (
+              <th key={column.key} className={"numeric" in column ? "num" : ""}
+                aria-sort={sort.key === column.key ? sort.descending ? "descending" : "ascending" : "none"}>
+                <button type="button" title={"hint" in column ? column.hint : undefined} onClick={() => {
+                  setSort({ key: column.key, descending: sort.key === column.key ? !sort.descending : "numeric" in column });
+                  setPage(0);
+                }}>{column.label}<span aria-hidden="true">{sort.key === column.key ? sort.descending ? "↓" : "↑" : "↕"}</span></button>
+              </th>
+            ))}</tr></thead>
+            <tbody>
+              {rows.map(row => (
+                <tr key={row.rv_id} aria-selected={selected === row.rv_id} onClick={event => {
+                  returnFocus.current = event.currentTarget.querySelector<HTMLButtonElement>(".row-open");
+                  setProfileTab("overview");
+                  setSelected(row.rv_id);
+                }}>
+                  <td className="targets-identity">
+                    <button type="button" className="row-open" aria-label={`View ${row.gene_name ?? row.rv_id} target profile`}>
+                      <strong>{row.gene_name ?? row.rv_id}</strong>{row.gene_name && row.gene_name !== row.rv_id && <span>{row.rv_id}</span>}
+                    </button>
+                    <span className="targets-product" title={row.product ?? undefined}>{row.product ?? "Unannotated protein"}</span>
+                  </td>
+                  <td><span className={`target-status status-${row.validation_status ?? "unknown"}`} title={row.validation_status ? STATUS_BASIS[row.validation_status] : "Validation status unavailable"}>
+                    {row.validation_status ? STATUS_LABEL[row.validation_status] : "No record"}
+                  </span></td>
+                  <td><span className={`target-essentiality ess-${row.essentiality ?? "none"}`} title={row.essentiality_label ?? undefined}>{row.essentiality ?? "—"}</span></td>
+                  <td className="num">{f2(row.vulnerability_index) ?? "—"}</td>
+                  {(!chosen || sort.key === "n_pdb") && <td className="num">{n0(row.n_pdb) ?? "—"}</td>}
+                  {(!chosen || sort.key === "n_protein_assays") && <td className="num"><button type="button" className="assess-value-link" aria-label={`View ${row.n_protein_assays} protein assays for ${row.gene_name ?? row.rv_id}`} onClick={event => {
+                    event.stopPropagation();
+                    returnFocus.current = event.currentTarget.closest("tr")?.querySelector<HTMLButtonElement>(".row-open") ?? null;
+                    setProfileTab("assays");
+                    setSelected(row.rv_id);
+                  }}>{n0(row.n_protein_assays) ?? "—"}</button></td>}
+                  {(!chosen || sort.key === "n_compounds") && <td className="num">{n0(row.n_compounds) ?? "—"}</td>}
                 </tr>
-              </thead>
-              <tbody>
-                {cohort.slice(0, 200).map(row => (
-                  <tr
-                    key={row.rv_id}
-                    aria-selected={selected === row.rv_id}
-                    onClick={() => setSelected(row.rv_id)}
-                  >
-                    <td>{row.rv_id}</td>
-                    <td className="gene-name">{row.gene_name ?? "—"}</td>
-                    <td>{row.validation_status ? STATUS_LABEL[row.validation_status] : "—"}</td>
-                    <td>{row.essentiality ?? "—"}</td>
-                    <td className="num">{f2(row.vulnerability_index) ?? "—"}</td>
-                    <td className="num">{row.n_pdb.toLocaleString()}</td>
-                    <td className="num">{row.n_protein_assays.toLocaleString()}</td>
-                    <td className="num">{row.n_compounds.toLocaleString()}</td>
-                  </tr>
-                ))}
-                {!cohort.length && (
-                  <tr>
-                    <td colSpan={8} className="assess-basis">
-                      No locus carries every state asked for. The cohort is empty.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
+              ))}
+              {!rows.length && <tr><td colSpan={columns.length}><div className="targets-empty"><InterfaceIcon name="search" /><h3>No targets found</h3><p>{active ? "Try a different search or remove a filter." : "No protein-coding targets are available."}</p>{active && <button type="button" className="rowbtn" onClick={clearFilters}>Clear search &amp; filters</button>}</div></td></tr>}
+            </tbody>
+          </table>
+        </div>
+        <div className="targets-pagination">
+          <span role="status">{sorted.length ? `${(currentPage * PAGE_SIZE + 1).toLocaleString()}–${Math.min((currentPage + 1) * PAGE_SIZE, sorted.length).toLocaleString()} of ${sorted.length.toLocaleString()}` : "0 targets"}</span>
+          <div><button type="button" className="rowbtn" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous</button><span>{currentPage + 1} / {pageCount}</span><button type="button" className="rowbtn" disabled={currentPage >= pageCount - 1} onClick={() => setPage(currentPage + 1)}>Next</button></div>
+        </div>
       </main>
 
       {chosen && (
-        <aside className="col detailcol assess-side">
-          <div className="assess-panel">
-            <div className="assess-panel-head">
-              <p className="lab">Target profile</p>
-              <button type="button" className="rowbtn" onClick={() => setSelected(null)}>
-                Close
-              </button>
-            </div>
-            <Profile row={chosen} onOpenGene={onOpenGene} />
-          </div>
+        <aside className="col detailcol assess-side" aria-label="Target profile" ref={profileRef}>
+          <div className="assess-panel-head"><p className="lab">Target profile</p><button ref={closeRef} type="button" className="rowbtn" onClick={closeProfile}>Close</button></div>
+          <Profile key={chosen.rv_id} row={chosen} onOpenGene={onOpenGene} picks={picks} statusFilter={status} tab={profileTab} onTab={setProfileTab} />
         </aside>
       )}
     </div>

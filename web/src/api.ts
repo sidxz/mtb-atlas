@@ -313,6 +313,18 @@ export interface WholeCellCondition {
   best_pmic: number | null;
 }
 
+export interface ProteinAssay {
+  assay_chembl_id: string;
+  target_chembl_id: string;
+  description: string | null;
+  n_compounds: number;
+  n_measurements: number;
+  endpoint_types: string[];
+  latest_year: number | null;
+  document_ids: string[];
+  source_version: string | null;
+}
+
 export interface Activity {
   activity_id: number | null;
   molecule_chembl_id: string | null;
@@ -945,6 +957,7 @@ export const api = {
       query as Record<string, unknown>,
     ),
   target: (rvId: string) => get<TargetDetail>(`/targets/${rvId}`),
+  proteinAssays: (rvId: string) => get<ProteinAssay[]>(`/targets/${encodeURIComponent(rvId)}/protein-assays`),
   compound: (id: string) => get<CompoundDetail>(`/compounds/${id}`),
   drugs: () => get<Page<DrugSummary>>("/drugs", { limit: 1000 }),
   drug: (id: string) => get<DrugDetail>(`/drugs/${id}`),

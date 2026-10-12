@@ -218,6 +218,36 @@ def test_target_page_carries_drugs_and_trials(client: TestClient) -> None:
     assert {t["nct_id"] for t in page["trials"]} == {"NCT03036163", "NCT03423030"}
 
 
+def test_protein_assays_match_the_census_including_non_potency(client: TestClient) -> None:
+    targets = client.get("/targets", params={"limit": 5000}).json()["items"]
+    for target in targets:
+        response = client.get(f"/targets/{target['rv_id']}/protein-assays")
+        assert response.status_code == 200
+        assays = response.json()
+        assert len(assays) == target["n_protein_assays"]
+        assert len({a["assay_chembl_id"] for a in assays}) == len(assays)
+        assert [a["n_compounds"] for a in assays] == sorted(
+            (a["n_compounds"] for a in assays), reverse=True
+        )
+    assays = client.get("/targets/Rv3790/protein-assays").json()
+    primary = next(a for a in assays if a["assay_chembl_id"] == "CHEMBL9000001")
+    assert primary["n_compounds"] == 5
+    assert primary["endpoint_types"] == ["Percent Effect"]
+    assert primary["description"] is None
+    assert primary["source_version"] == "chembl_37"
+    assert any(a["description"] for a in assays)
+
+
+def test_protein_assays_exclude_complex_unknown_and_orthologue_targets(client: TestClient) -> None:
+    # clpP1/clpP2 have complex assays; mmpL3's assays are on an orthologue.
+    # Rv3545c has a census row but no confirmed single-protein target type.
+    for rv_id in ("Rv2461c", "Rv2460c", "Rv0206c", "Rv3545c"):
+        response = client.get(f"/targets/{rv_id}/protein-assays")
+        assert response.status_code == 200
+        assert response.json() == []
+    assert client.get("/targets/Rv_missing/protein-assays").status_code == 404
+
+
 def test_a_gene_without_drugs_says_so(client: TestClient) -> None:
     page = client.get("/targets/Rv0667").json()  # rpoB: resistance, but no target claim
     assert not [d for d in page["drugs"] if d["link"] in ("mechanism", "bosch_2021")]

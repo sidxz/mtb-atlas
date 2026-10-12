@@ -698,6 +698,83 @@ def protein_assays(rv_id: str) -> list[dict[str, Any]]:
     )
 
 
+class ConceptGene(BaseModel):
+    rv_id: str
+    gene_name: str | None = None
+    product: str | None = None
+    # log2 fold change for a TnSeq condition; NULL for an annotation.
+    log2fc: float | None = None
+
+
+class Concept(BaseModel):
+    kind: str
+    id: str
+    label: str | None = None
+    basis: str
+    genes: list[ConceptGene]
+
+
+# An annotation is shared by every protein UniProt files it on; `rv_ids` already
+# fans a shared accession out to each of its loci. Sharing a domain or a GO term
+# is a statement about annotation, not about function or a binding site.
+CONCEPT_ANNOTATIONS = {
+    "pfam": ("list_contains(pfam_ids, ?)", "UniProt cross-reference to this Pfam domain."),
+    "go": (
+        "list_contains(go_process, ?) OR list_contains(go_function, ?)"
+        " OR list_contains(go_component, ?)",
+        "UniProt GO annotation with this term name.",
+    ),
+    "pathway": ("list_contains(pathways, ?)", "UniProt pathway annotation."),
+}
+
+
+@app.get("/concepts/{kind}", response_model=Concept)
+def concept(
+    kind: Literal["pfam", "go", "pathway", "condition"],
+    id: Annotated[
+        str, Query(min_length=1, description="Pfam id, GO or pathway name, TnSeq screen id")
+    ],
+) -> dict[str, Any]:
+    """Every gene that shares one annotation or one conditional TnSeq call."""
+    connection = _db()
+    if kind == "condition":
+        if not (built("conditional_tnseq") and built("tnseq_screens")):
+            raise HTTPException(503, "Conditional TnSeq is unavailable in this store.")
+        screen = _query(
+            connection,
+            "SELECT description FROM tnseq_screens WHERE screen_id = ? AND annotated",
+            [id],
+        )
+        if not screen:
+            raise HTTPException(404, f"no annotated TnSeq screen {id}")
+        # Same cut as the gene record's conditions: measured, q < 0.05 (this atlas's).
+        genes = _query(
+            connection,
+            "SELECT t.rv_id, g.gene_name, g.product, t.log2fc FROM conditional_tnseq t"
+            " LEFT JOIN genes g USING (rv_id)"
+            " WHERE t.screen_id = ? AND t.measured AND t.q_value < 0.05"
+            " ORDER BY t.q_value, abs(t.log2fc) DESC LIMIT 1000",
+            [id],
+        )
+        return {
+            "kind": kind,
+            "id": id,
+            "label": screen[0]["description"],
+            "basis": "Measured in this screen and significant at q < 0.05, this atlas's cut.",
+            "genes": genes,
+        }
+    where, basis = CONCEPT_ANNOTATIONS[kind]
+    genes = _query(
+        connection,
+        "SELECT DISTINCT r.rv_id, g.gene_name, g.product FROM proteins, UNNEST(rv_ids) AS r(rv_id)"
+        f" LEFT JOIN genes g ON g.rv_id = r.rv_id WHERE {where} ORDER BY r.rv_id LIMIT 1000",
+        [id] * where.count("?"),
+    )
+    if not genes:
+        raise HTTPException(404, f"no gene carries {kind} {id}")
+    return {"kind": kind, "id": id, "label": id, "basis": basis, "genes": genes}
+
+
 @app.get("/targets/{rv_id}", response_model=TargetDetail)
 def target(rv_id: str) -> TargetDetail:
     connection = _db()

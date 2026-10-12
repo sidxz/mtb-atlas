@@ -1039,3 +1039,52 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   .targets-pagination > div { gap: 8px; }
   .targets-pagination button { min-height: 36px; }
 }
+
+/* ---- map ------------------------------------------------------------------
+   A left-to-right tree: an object, then what its records join it to. The kind
+   colour is the dot; the line style is the claim (dashed: shown, not counted). */
+.assess-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.map-canvas { position: relative; background: var(--surface); }
+.map-empty { margin: 32px; max-width: 60ch; color: var(--fg-dim); }
+.map-plane { position: relative; margin: 16px; }
+.map-plane > svg { position: absolute; inset: 0; overflow: visible; }
+.map-link { fill: none; stroke: var(--line-strong); stroke-width: 1.25; }
+.map-link.weak { stroke-dasharray: 4 4; }
+.map-legend p { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font-size: 12px; color: var(--fg-dim); }
+.map-legend p:last-child { display: block; line-height: 1.45; }
+.map-starts { display: flex; flex-wrap: wrap; gap: 6px; }
+.map-starts .chip { cursor: pointer; }
+
+.map-node { position: absolute; display: flex; align-items: stretch; height: 54px; }
+.map-node[data-kind="gene"] { --k: var(--accent); }
+.map-node[data-kind="drug"], .map-node[data-kind="trial"] { --k: var(--ess-ES); }
+.map-node[data-kind="compound"] { --k: var(--ok); }
+.map-node[data-kind="screen"] { --k: var(--warn); }
+.map-node[data-kind="pfam"], .map-node[data-kind="go"], .map-node[data-kind="pathway"], .map-node[data-kind="condition"] { --k: var(--ess-GD); }
+.map-node[data-kind="target"], .map-node[data-kind="structure"], .map-node[data-kind="human"] { --k: var(--fg-faint); }
+.map-node-main {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 1px;
+  text-align: left; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--surface); color: var(--fg); font: inherit; cursor: pointer;
+}
+.map-node-main:hover:not(:disabled) { border-color: var(--line-strong); }
+.map-node-main[aria-expanded="true"] { border-color: var(--k, var(--accent)); }
+.map-node-main:disabled { cursor: default; }
+.map-node[data-kind="group"] .map-node-main { background: var(--surface-2); }
+.map-node[data-kind="more"] .map-node-main { background: transparent; border-style: dashed; color: var(--accent); font-weight: 600; font-size: 12px; }
+.map-node.absent .map-node-main { color: var(--fg-faint); background: transparent; border-style: dashed; }
+.map-node.cycle .map-node-main { opacity: 0.6; }
+.map-node.weak .map-node-main { border-style: dashed; }
+.map-title { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.map-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--k, var(--fg-faint)); }
+.map-count { font-weight: 500; color: var(--fg-dim); }
+.map-sub, .map-edge { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.map-sub { color: var(--fg-dim); }
+.map-edge { color: var(--fg-faint); font-style: italic; }
+.map-state { font-weight: 400; color: var(--fg-faint); }
+.map-open {
+  flex: none; width: 24px; margin-left: 2px; display: grid; place-items: center;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
+  color: var(--fg-dim); text-decoration: none; cursor: pointer; font-size: 12px;
+}
+.map-open:hover { color: var(--accent); border-color: var(--line-strong); }

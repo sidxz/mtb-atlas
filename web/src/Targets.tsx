@@ -211,11 +211,12 @@ function ProfileEvidence({ children }: { children: React.ReactNode }) {
   return <>{Children.toArray(children).sort((a, b) => matches(b) - matches(a))}</>;
 }
 
-function Profile({ row, onOpenGene, onOpenScreens, onOpenDrug, picks, statusFilter, tab, onTab }: {
+function Profile({ row, onOpenGene, onOpenScreens, onOpenDrug, onOpenMap, picks, statusFilter, tab, onTab }: {
   row: TargetSummary;
   onOpenGene: (rv: string) => void;
   onOpenScreens: (rv: string) => void;
   onOpenDrug: (id: string) => void;
+  onOpenMap: (rv: string) => void;
   picks: Record<string, Verdict>;
   statusFilter: ValidationStatus | null;
   tab: ProfileTab;
@@ -240,9 +241,14 @@ function Profile({ row, onOpenGene, onOpenScreens, onOpenDrug, picks, statusFilt
           {row.gene_name && row.gene_name !== row.rv_id && <span className="assess-note">{row.rv_id}</span>}
           <p className="assess-product">{row.product}</p>
         </div>
-        <button type="button" className="rowbtn" onClick={() => onOpenGene(row.rv_id)}>
-          Open gene record
-        </button>
+        <div className="assess-actions">
+          <button type="button" className="rowbtn" onClick={() => onOpenGene(row.rv_id)}>
+            Open gene record
+          </button>
+          <button type="button" className="rowbtn" onClick={() => onOpenMap(row.rv_id)}>
+            Open in map
+          </button>
+        </div>
       </div>
       {status ? (
         <p className={`assess-status-line${statusFilter ? " filter-match" : ""}`}>
@@ -415,11 +421,13 @@ export function Targets({
   onOpenGene,
   onOpenScreens,
   onOpenDrug,
+  onOpenMap,
 }: {
   all: TargetSummary[];
   onOpenGene: (rvId: string) => void;
   onOpenScreens: (rvId: string) => void;
   onOpenDrug: (id: string) => void;
+  onOpenMap: (rvId: string) => void;
 }) {
   const [picks, setPicks] = useState<Record<string, Verdict>>({});
   const [status, setStatus] = useState<ValidationStatus | null>(null);
@@ -698,7 +706,7 @@ export function Targets({
       {chosen && (
         <aside className="col detailcol assess-side" aria-label="Target profile" ref={profileRef}>
           <div className="assess-panel-head"><p className="lab">Target profile</p><button ref={closeRef} type="button" className="rowbtn" onClick={closeProfile}>Close</button></div>
-          <Profile key={chosen.rv_id} row={chosen} onOpenGene={onOpenGene} onOpenScreens={onOpenScreens} onOpenDrug={onOpenDrug} picks={picks} statusFilter={status} tab={profileTab} onTab={setProfileTab} />
+          <Profile key={chosen.rv_id} row={chosen} onOpenGene={onOpenGene} onOpenScreens={onOpenScreens} onOpenDrug={onOpenDrug} onOpenMap={onOpenMap} picks={picks} statusFilter={status} tab={profileTab} onTab={setProfileTab} />
         </aside>
       )}
     </div>

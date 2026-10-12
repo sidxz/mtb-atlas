@@ -248,6 +248,30 @@ def test_protein_assays_exclude_complex_unknown_and_orthologue_targets(client: T
     assert client.get("/targets/Rv_missing/protein-assays").status_code == 404
 
 
+def test_every_concept_on_a_gene_leads_back_to_it(client: TestClient) -> None:
+    # The map walks gene -> concept -> genes; a concept that dropped its own gene
+    # would make the walk lose the place it started from.
+    seen = 0
+    for target in client.get("/targets", params={"limit": 5000}).json()["items"]:
+        page = client.get(f"/targets/{target['rv_id']}").json()
+        concepts = [("pfam", p) for p in page["pfam_ids"]]
+        concepts += [("go", g) for g in page["go_process"] + page["go_function"]]
+        concepts += [("pathway", p) for p in page["pathways"]]
+        concepts += [("condition", c["screen_id"]) for c in page["conditions"]]
+        for kind, ident in concepts:
+            response = client.get(f"/concepts/{kind}", params={"id": ident})
+            assert response.status_code == 200, (kind, ident)
+            assert target["rv_id"] in {g["rv_id"] for g in response.json()["genes"]}
+            seen += 1
+    assert seen  # the fixture store must exercise the walk at all
+
+
+def test_an_unknown_concept_is_not_found(client: TestClient) -> None:
+    assert client.get("/concepts/pfam", params={"id": "PF_missing"}).status_code == 404
+    assert client.get("/concepts/condition", params={"id": "no_screen"}).status_code == 404
+    assert client.get("/concepts/ligand", params={"id": "x"}).status_code == 422
+
+
 def test_a_gene_without_drugs_says_so(client: TestClient) -> None:
     page = client.get("/targets/Rv0667").json()  # rpoB: resistance, but no target claim
     assert not [d for d in page["drugs"] if d["link"] in ("mechanism", "bosch_2021")]

@@ -939,6 +939,17 @@ export interface CompoundEvidence extends ScreenResult {
   pubmed_id: string | null;
 }
 
+export type ConceptKind = "pfam" | "go" | "pathway" | "condition";
+
+/** Every gene sharing one annotation, or called in one conditional TnSeq screen. */
+export interface Concept {
+  kind: ConceptKind;
+  id: string;
+  label: string | null;
+  basis: string;
+  genes: { rv_id: string; gene_name: string | null; product: string | null; log2fc: number | null }[];
+}
+
 export const api = {
   meta: () => get<Meta>("/meta"),
   screens: (query: Record<string, unknown> = {}) => get<ScreenPage>("/screens", { limit: 1000, ...query }),
@@ -957,6 +968,7 @@ export const api = {
       query as Record<string, unknown>,
     ),
   target: (rvId: string) => get<TargetDetail>(`/targets/${rvId}`),
+  concept: (kind: ConceptKind, id: string) => get<Concept>(`/concepts/${kind}`, { id }),
   proteinAssays: (rvId: string) => get<ProteinAssay[]>(`/targets/${encodeURIComponent(rvId)}/protein-assays`),
   compound: (id: string) => get<CompoundDetail>(`/compounds/${id}`),
   drugs: () => get<Page<DrugSummary>>("/drugs", { limit: 1000 }),

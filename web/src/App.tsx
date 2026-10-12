@@ -13,6 +13,7 @@ import { Ask } from "./Ask";
 import { DrugsAndTrials, phaseLabel, type Focus } from "./Clinical";
 import { HitProfiling, Screens } from "./Screens";
 import { Targets } from "./Targets";
+import { AtlasMap, type MapOpenKind } from "./Map";
 import { Search } from "./Search";
 import { TableControls, useTablePreferences } from "./TableControls";
 import { cellFormatting, scaleRanges, type Rule, type Range } from "./table-formatting";
@@ -376,7 +377,7 @@ export function App() {
     order: "asc",
   });
 
-  const [view, setView] = useState<"genome" | "targets" | "screens" | "hits" | "clinical">("genome");
+  const [view, setView] = useState<"genome" | "targets" | "screens" | "hits" | "clinical" | "map">("genome");
   const [visitedViews, setVisitedViews] = useState<string[]>([]);
   useEffect(() => { setVisitedViews(previous => previous.includes(view) ? previous : [...previous, view]); }, [view]);
   const [hitFocus, setHitFocus] = useState<string | null>(null);
@@ -384,6 +385,7 @@ export function App() {
   // the same page rather than a second copy of it.
   const [screenFocus, setScreenFocus] = useState<string | null>(null);
   const [screenGene, setScreenGene] = useState<{ rv: string } | null>(null);
+  const [mapSeed, setMapSeed] = useState<{ rv: string } | null>(null);
   // A campaign handed to hit profiling: its compounds, each with its own whole profile.
   const [profileScreen, setProfileScreen] = useState<{ id: string; title: string | null } | null>(null);
   const [focus, setFocus] = useState<Focus>(null);
@@ -555,6 +557,9 @@ export function App() {
           <button type="button" aria-pressed={view === "clinical"} onClick={() => setView("clinical")}>
             <InterfaceIcon name="clinical" /> Drugs &amp; trials
           </button>
+          <button type="button" aria-pressed={view === "map"} onClick={() => setView("map")}>
+            <InterfaceIcon name="map" /> Map
+          </button>
         </div>
         <Search
           onPick={(kind, id) => {
@@ -594,7 +599,17 @@ export function App() {
           onOpenGene={openGene}
           onOpenScreens={rv => { setScreenFocus(null); setScreenGene({ rv }); setView("screens"); }}
           onOpenDrug={id => openClinical({ kind: "drug", id })}
+          onOpenMap={rv => { setMapSeed({ rv }); setView("map"); }}
         />
+      </div>}
+      {/* Kept mounted too: a walk several hops deep is worth coming back to. */}
+      {(view === "map" || visitedViews.includes("map")) && <div className="workspace-view" hidden={view !== "map"}>
+        <AtlasMap all={all} seed={mapSeed} onOpen={(kind: MapOpenKind, id) => {
+          if (kind === "gene") openGene(id);
+          else if (kind === "drug" || kind === "trial") openClinical({ kind, id });
+          else if (kind === "screen") { setScreenFocus(id); setView("screens"); }
+          else { setProfileScreen(null); setHitFocus(id); setView("hits"); }
+        }} />
       </div>}
       {view === "clinical" ? (
         <DrugsAndTrials meta={meta} focus={focus} onFocus={setFocus} onSelectGene={openGene} />

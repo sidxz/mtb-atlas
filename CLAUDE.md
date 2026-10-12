@@ -493,9 +493,9 @@ aggregate over `screen_results` into a route's per-request SQL.
 
 ## Querying it
 
-Five ways in, and they all read the same store: the genome canvas, the Targets
-view, the drugs and trials view, `/search` over every object at once, and the
-agent. A new kind of evidence is not finished until the agent's schema carries
+Six ways in, and they all read the same store: the genome canvas, the Targets
+view, the drugs and trials view, the Map, `/search` over every object at once,
+and the agent. A new kind of evidence is not finished until the agent's schema carries
 its trap, because that is the only surface where a wrong join is silent.
 
 **The Targets view is the genome read as a landscape rather than a list.** It
@@ -506,6 +506,18 @@ criteria, each resolving to **yes / no / no record** with all three counts
 shown, and each step prints the loci it excludes. Nothing is ranked, weighted
 or summed into a score; the criteria are the reader's and the output is a set
 size. `/targets?validation_status=` filters the same column server-side.
+
+**The Map is association, not lineage.** It walks from any gene, drug,
+compound, screen or concept (Pfam domain, GO term, pathway, TnSeq condition) to
+what that object's own record joins it to, and draws a line only where a record
+does, labelled with that record's claim. It must never draw screen -> drug or
+hit -> project: no public source states which campaign a drug came from, and
+inferring it from shared compounds draws isoniazid as the outcome of 23 inhA
+papers that used it as a comparator. Dashed lines are the shown-not-counted
+links (complex member, WHO resistance, bound ligand, orthologue structure,
+nearest relative), and empty groups stay on the map as absences. It reuses the
+detail endpoints; the only route it added is `/concepts/{kind}?id=`, whose test
+walks every concept on every fixture gene back to that gene.
 
 The screening tables are reachable through the agent and through the Screens
 and Hit profiling views (`/screens`, `/hits`, `/compounds/{id}`).

@@ -1568,7 +1568,21 @@ def screen_results(
         " r.stage_id, r.result_tag, r.activity_id LIMIT ? OFFSET ?",
         [*params, limit, offset],
     )
-    return {"total": total, "limit": limit, "offset": offset, "items": items}
+    # `compounds` holds the ChEMBL potency set, which is not the screened set: a
+    # depiction is drawn from a SMILES, so this is how many of these rows a page can
+    # draw at all. Stated, so the gap reads as coverage and not as a broken renderer.
+    drawable = connection.execute(
+        "SELECT count(*) FROM screen_results r JOIN compounds c USING (molecule_chembl_id)"
+        f" WHERE {clause} AND c.smiles IS NOT NULL",
+        params,
+    ).fetchone()[0]
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "items": items,
+        "n_with_structure": drawable,
+    }
 
 
 # --- hit profiling: one row per compound, a column per thing measured ------------
@@ -1593,13 +1607,41 @@ TIERS = ("n_cytotox", "n_adme", "n_in_vivo")
 # and it is the first thing triage asks after potency. Only endpoints that name
 # selectivity, and only dimensionless rows: 5 rows carry a `10^4No_unit` scale factor,
 # and mixing those in would read as 10,000-fold more selective.
+#
+# **The organism guard is the important half.** A `Selectivity Index` row is not a TB
+# number: 389 rows of the endpoint family are HIV, Plasmodium, influenza, Yersinia and
+# M. abscessus selectivity, filed on derived stages of the same papers. Requiring the
+# stage's own description to name tuberculosis removes them, and costs one LIKE.
+#
+# The endpoint set, matched on the name rather than parsed out of the prose: the
+# `selectivity`/`cc50/ic50` family, plus `SI`, `TI` and `PI` exactly. The last two read
+# like different quantities and are not -- every one of ChEMBL's `TI` descriptions here
+# is an in-vitro cytotoxicity-over-MIC ratio despite the name "therapeutic index", and
+# `PI` expands to "protection index" with the same shape. The few that are something
+# else (a ciprofloxacin potency index, a rotarod neurotoxicity ratio) name no
+# mycobacterium and the organism guard drops them.
+#
+# **Left out, and it is an under-count rather than a clean boundary:** 1,154 rows over
+# 667 compounds sit on a bare `Ratio` or `Ratio IC50` endpoint whose description does
+# say what was divided ("Selectivity index, ratio of IC50 for Vero cells to MIC for
+# M. tuberculosis"), beside rows that are something else entirely ("Ratio of ethambutol
+# MIC to compound MIC"). Telling those apart means classifying prose, which belongs in
+# an ingester with tests and not in the read layer. See the follow-up in the spec.
 SELECTIVITY = (
     "st.derived AND r.standard_value IS NOT NULL"
-    " AND (lower(r.endpoint) LIKE '%selectivity%' OR lower(r.endpoint) LIKE '%cc50/ic50%')"
+    " AND lower(st.description) LIKE '%tubercul%'"
+    " AND (lower(r.endpoint) LIKE '%selectivity%' OR lower(r.endpoint) LIKE '%cc50/ic50%'"
+    "      OR r.endpoint IN ('SI', 'TI', 'PI'))"
+    # Dimensionless, or carrying the name of the quantity as its unit. The excluded
+    # units are a measurement of something else (`ug ml-1`) or a scale factor
+    # (`10^3No_unit` upwards), which would read as 100,000-fold more selective.
     " AND (r.standard_units IS NULL OR r.standard_units = 'SI')"
 )
 # A bound is not a value, the same rule `pmic` follows for a censored MIC: "> 100-fold"
 # says the experiment never reached the number, so it is counted and not averaged in.
+# Stated as the complement of a measurement rather than a list of bound operators:
+# `>= ` and `<=` are as censored as `>`, and a rule naming only `>` and `<` lets 32
+# rows through as though they were measured.
 MEASURED_SELECTIVITY = "r.standard_relation IS NULL OR r.standard_relation = '='"
 PROFILE_SORTS = (
     *PROFILE_COLUMNS,
@@ -1706,12 +1748,15 @@ def hits(
         params.append(beyond_potency)
     clause = f"WHERE {' AND '.join(where)}" if where else ""
     connection = _db()
-    connection.sql(f"CREATE TEMP TABLE profile AS {PROFILE_SQL}")
+    connection.sql(
+        f"CREATE TEMP TABLE profile AS SELECT p.*, c.smiles FROM ({PROFILE_SQL}) p"
+        " LEFT JOIN compounds c USING (molecule_chembl_id)"
+    )
     base = " FROM profile p LEFT JOIN compounds c USING (molecule_chembl_id)"
     total = connection.execute(f"SELECT count(*){base} {clause}", params).fetchone()[0]
     items = _query(
         connection,
-        f"SELECT p.*, c.pref_name, c.smiles{base} {clause}"
+        f"SELECT p.*, c.pref_name{base} {clause}"
         f" ORDER BY p.{sort} {order.upper()} NULLS LAST, p.molecule_chembl_id LIMIT ? OFFSET ?",
         [*params, limit, offset],
     )
@@ -1735,6 +1780,9 @@ def hits(
         f" count(*) FILTER (WHERE n_mtb_whole_cell IS NOT NULL AND {nothing_else})"
         " AS whole_cell_and_nothing_else,"
         " count(n_selectivity) AS with_selectivity,"
+        # See `/screens/{id}/results`: the screened set is not the set the atlas
+        # holds a structure for, and the shortfall is a fact about coverage.
+        " count(smiles) AS with_structure,"
         f" {', '.join(f'count({t}) AS {t}' for t in TIERS)} FROM profile"
     )
     return {

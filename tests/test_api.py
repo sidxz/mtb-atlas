@@ -69,6 +69,14 @@ def screen_store(evidence_store: Path, tmp_path_factory: pytest.TempPathFactory)
             ("CHEMBL9300002", None, "Cytotoxicity against African green monkey Vero cells"),
             ("CHEMBL9300003", None, "Metabolic stability in mouse liver microsomes"),
             ("CHEMBL9300004", "CHEMBL352", "Antibacterial activity against S. aureus"),
+            # A selectivity index that is not a TB number. ChEMBL files these on the
+            # derived stages of the same papers, and the endpoint string cannot tell
+            # them apart -- only the description names the organism.
+            (
+                "CHEMBL9300005",
+                None,
+                "Selectivity index, ratio of CC50 for human MT4 cells to IC50 for HIV1 3B",
+            ),
         )
     ]
     organisms = {
@@ -109,6 +117,17 @@ def screen_store(evidence_store: Path, tmp_path_factory: pytest.TempPathFactory)
             ((MACOZINONE, "40", "="), (MACOZINONE, "1000", ">"), ("CHEMBL_BOUND_ONLY", "500", ">"))
         )
     ]
+    acts.append(
+        {
+            "assay_chembl_id": "CHEMBL9300005",
+            "molecule_chembl_id": MACOZINONE,
+            "activity_id": 950,
+            "standard_type": "Selectivity Index",
+            "standard_value": "9999",
+            "standard_relation": "=",
+            "standard_units": None,
+        }
+    )
     new_stages = chembl.stamp_stage_counts(
         chembl.normalize_campaign_assays(assays, organisms), acts
     )
@@ -462,6 +481,9 @@ def test_a_published_selectivity_index_is_served_and_a_bound_is_not(screens: Tes
     (row,) = screens.get("/hits", params={"q": MACOZINONE}).json()["items"]
     assert (row["n_selectivity"], row["selectivity_min"], row["selectivity_max"]) == (1, 40, 40)
     assert row["n_selectivity_censored"] == 1
+    # The HIV selectivity index on the same paper is not this compound's TB selectivity,
+    # and only the stage's description says so.
+    assert row["selectivity_max"] != 9999
     # A compound whose only reported ratio is a bound has no measured one at all.
     (bound,) = screens.get("/hits", params={"q": "CHEMBL_BOUND_ONLY"}).json()["items"]
     assert bound["n_selectivity"] is None and bound["n_selectivity_censored"] == 1

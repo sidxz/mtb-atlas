@@ -715,3 +715,14 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .cond-table td:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cond-table td:nth-child(2), .cond-table th:nth-child(2) { width: 18%; }
 .cond-table td:nth-child(n+3), .cond-table th:nth-child(n+3) { width: 17%; }
+
+/* The campaign page: a page, not a panel, so it scrolls on its own and its
+   prose keeps the 78ch measure the detail panel uses. */
+.screen-page { overflow-y: auto; padding: 16px 20px; }
+.screen-page > p, .screen-page > .caveat, .screen-page > .note { max-width: 78ch; }
+.screen-facts { display: flex; flex-wrap: wrap; gap: 8px 32px; margin: 12px 0; }
+
+/* Actives with their depictions: the point of opening a campaign. */
+.screen-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.screen-gallery figure { margin: 0; border: 1px solid var(--line); border-radius: var(--radius); padding: 6px; }
+.screen-gallery figcaption { display: flex; flex-direction: column; font-size: 12px; gap: 2px; }

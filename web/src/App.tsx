@@ -11,7 +11,7 @@ import { CATEGORIES, GenomeCanvas, RINGS, colourOf, type ColourBy } from "./Geno
 import { TargetDetailPanel } from "./TargetDetail";
 import { Ask } from "./Ask";
 import { DrugsAndTrials, phaseLabel, type Focus } from "./Clinical";
-import { Screens } from "./Screens";
+import { HitProfiling, Screens } from "./Screens";
 import { Search } from "./Search";
 import { TableControls, useTablePreferences } from "./TableControls";
 import { cellFormatting, scaleRanges, type Rule, type Range } from "./table-formatting";
@@ -375,7 +375,7 @@ export function App() {
     order: "asc",
   });
 
-  const [view, setView] = useState<"genome" | "screens" | "clinical">("genome");
+  const [view, setView] = useState<"genome" | "screens" | "hits" | "clinical">("genome");
   const [focus, setFocus] = useState<Focus>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<TargetDetail | null>(null);
@@ -536,6 +536,9 @@ export function App() {
           <button type="button" aria-pressed={view === "screens"} onClick={() => setView("screens")}>
             <InterfaceIcon name="clinical" /> Screens
           </button>
+          <button type="button" aria-pressed={view === "hits"} onClick={() => setView("hits")}>
+            <InterfaceIcon name="clinical" /> Hit profiling
+          </button>
           <button type="button" aria-pressed={view === "clinical"} onClick={() => setView("clinical")}>
             <InterfaceIcon name="clinical" /> Drugs &amp; trials
           </button>
@@ -557,6 +560,8 @@ export function App() {
 
       {view === "screens" ? (
         <Screens onSelectGene={openGene} />
+      ) : view === "hits" ? (
+        <HitProfiling />
       ) : view === "clinical" ? (
         <DrugsAndTrials meta={meta} focus={focus} onFocus={setFocus} onSelectGene={openGene} />
       ) : (

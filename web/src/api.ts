@@ -738,6 +738,8 @@ export interface ScreenSummary {
   n_active: number | null;
   n_inactive: number | null;
   modalities: string[];
+  document_chembl_id: string | null;
+  pubmed_id: string | null;
   genes: ScreenGene[];
   /** Proteins this atlas could not key to a locus: another strain, a GenBank id, a PDB chain. */
   unplaced_targets: ScreenTarget[];
@@ -759,6 +761,29 @@ export interface ScreenStage {
   n_inactive_rows: number | null;
   n_no_call_rows: number | null;
   endpoints: string[] | null;
+}
+
+/** One result row as the source deposited it: a sample or an activity, not a compound. */
+export interface ScreenResult {
+  stage_id: string;
+  stage: string | null;
+  modality: string | null;
+  pubchem_cid: string | null;
+  pubchem_sid: string | null;
+  molecule_chembl_id: string | null;
+  pref_name: string | null;
+  smiles: string | null;
+  /** NULL means the source stated no call. It does not mean inactive. */
+  outcome: string | null;
+  activity_score: number | null;
+  endpoint: string | null;
+  standard_relation: string | null;
+  standard_value: number | null;
+  standard_units: string | null;
+  activity_comment: string | null;
+  /** The row's own identity: PubChem numbers its table rows, ChEMBL its activities. */
+  result_tag: number | null;
+  activity_id: number | null;
 }
 
 export interface ScreenDetail extends ScreenSummary {
@@ -815,6 +840,8 @@ export interface HitPage {
     elsewhere_only: number;
     whole_cell_and_nothing_else: number;
     with_selectivity: number;
+    /** `compounds` is the ChEMBL potency set, not the screened set: the rest cannot be drawn. */
+    with_structure: number;
     n_cytotox: number;
     n_adme: number;
     n_in_vivo: number;
@@ -825,6 +852,11 @@ export const api = {
   meta: () => get<Meta>("/meta"),
   screens: (query: Record<string, unknown> = {}) => get<ScreenPage>("/screens", { limit: 1000, ...query }),
   screen: (id: string) => get<ScreenDetail>(`/screens/${encodeURIComponent(id)}`),
+  screenResults: (id: string, query: Record<string, unknown> = {}) =>
+    get<Page<ScreenResult> & { n_with_structure: number }>(
+      `/screens/${encodeURIComponent(id)}/results`,
+      { limit: 60, ...query },
+    ),
   hits: (query: Record<string, unknown> = {}) => get<HitPage>("/hits", { limit: 300, ...query }),
   targets: (query: TargetQuery) =>
     get<{ total: number; limit: number; offset: number; items: TargetSummary[] }>(

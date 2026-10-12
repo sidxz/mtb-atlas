@@ -7,6 +7,11 @@ answer can name the release it came from.
 
 from __future__ import annotations
 
+import atexit
+import shutil
+import tempfile
+import threading
+from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import duckdb
@@ -140,18 +145,41 @@ app = FastAPI(
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET"], allow_headers=["*"])
 
 
+# One DuckDB instance per process, so this ceiling is the process's and not a request's:
+# a connection per request was an instance per request, each defaulting to 80% of RAM, and
+# concurrent requests stacked. `/hits` aggregates all 5.4M screen results on every call and
+# alone took the process to 1.31 GB (2026-10-12). Capped, it spills: 0.4 s rather than
+# 0.1 s, with the process at 0.79 GB. It does not fit in 256 MB, nor in 512 MB without
+# spilling, so the margin is under 2x and a larger screening layer must re-measure.
+MEMORY_LIMIT = "512MB"
+_instances: dict[Path, duckdb.DuckDBPyConnection] = {}
+_instances_lock = threading.Lock()
+
+
 def _db() -> duckdb.DuckDBPyConnection:
-    """A fresh connection per request; DuckDB reads Parquet straight off disk."""
-    connection = duckdb.connect()
+    """A cursor per request on the process's one instance; DuckDB reads Parquet off disk.
+
+    The views are TEMP, so they belong to this cursor: each request sees the store as it
+    is now, and a table built since the last request is found rather than stood in for.
+    """
+    with _instances_lock:
+        instance = _instances.get(STORE)
+        if instance is None:
+            spill = tempfile.mkdtemp(prefix="atlas-api-")
+            atexit.register(shutil.rmtree, spill, ignore_errors=True)
+            instance = _instances[STORE] = duckdb.connect(
+                config={"memory_limit": MEMORY_LIMIT, "temp_directory": spill}
+            )
+        connection = instance.cursor()
     for name in (*LICENCES, *DERIVED):
         path = STORE / f"{name}.parquet"
         if path.exists():
-            connection.sql(f"CREATE VIEW {name} AS SELECT * FROM '{path}'")
+            connection.sql(f"CREATE TEMP VIEW {name} AS SELECT * FROM '{path}'")
         elif name in EMPTY:
             # An empty stand-in, so a store without the clinical layer (or built before
             # `compound_structures`) answers rather than failing. Without it DuckDB falls
             # back to a replacement scan and binds the route function of the same name.
-            connection.sql(f"CREATE VIEW {name} AS {EMPTY[name]}")
+            connection.sql(f"CREATE TEMP VIEW {name} AS {EMPTY[name]}")
     return connection
 
 
@@ -428,7 +456,7 @@ def meta() -> Meta:
             "SELECT count(*) FROM target_summary WHERE n_target_screens > 0"
         ).fetchone()[0]
         numbers["profiled_compounds"] = connection.sql(
-            f"SELECT count(*) FROM ({PROFILE_SQL})"
+            f"SELECT count(*) FROM {_profile(connection)}"
             f" WHERE {' OR '.join(f'{t} IS NOT NULL' for t in TIERS)}"
         ).fetchone()[0]
     return Meta(
@@ -1743,6 +1771,37 @@ LEFT JOIN calls c USING (molecule_chembl_id)
 """
 
 
+# What the profile is computed from, so a rebuild of any of them is a new profile.
+PROFILE_INPUTS = ("screen_results", "screen_stages", "screens", "compound_structures")
+_profiles: dict[Path, tuple[tuple[int, ...], str]] = {}
+_profiles_lock = threading.Lock()
+
+
+def _profile(connection: duckdb.DuckDBPyConnection) -> str:
+    """The hit-profiling table for this build: made once, shared by every request.
+
+    It is the same 23,730 rows whatever a request filters on, and computing it reads all
+    5.4M screen results. Per request, eight concurrent `/hits` held 8.67 GB (2026-10-12);
+    built once under a lock, a concurrent request waits for it rather than repeating it.
+    It is keyed on its inputs' modification times, so a rebuilt store makes a new one.
+    """
+    paths = [STORE / f"{name}.parquet" for name in PROFILE_INPUTS]
+    stamp = tuple(path.stat().st_mtime_ns if path.exists() else 0 for path in paths)
+    with _profiles_lock:
+        seen = _profiles.get(STORE)
+        if seen and seen[0] == stamp:
+            return seen[1]
+        name = f"profile_{len(_profiles)}_{abs(hash(stamp))}"
+        connection.sql(
+            f"CREATE TABLE {name} AS SELECT p.*, s.canonical_smiles AS smiles"
+            f" FROM ({PROFILE_SQL}) p LEFT JOIN compound_structures s USING (molecule_chembl_id)"
+        )
+        if seen:
+            connection.sql(f"DROP TABLE IF EXISTS {seen[1]}")
+        _profiles[STORE] = (stamp, name)
+        return name
+
+
 @app.get("/hits")
 def hits(
     q: Annotated[str | None, Query(description="ChEMBL id or name")] = None,
@@ -1814,10 +1873,7 @@ def hits(
         )
     clause = f"WHERE {' AND '.join(where)}" if where else ""
     connection = _db()
-    connection.sql(
-        "CREATE TEMP TABLE profile AS SELECT p.*, s.canonical_smiles AS smiles"
-        f" FROM ({PROFILE_SQL}) p LEFT JOIN compound_structures s USING (molecule_chembl_id)"
-    )
+    connection.sql(f"CREATE TEMP VIEW profile AS SELECT * FROM {_profile(connection)}")
     base = " FROM profile p LEFT JOIN compounds c USING (molecule_chembl_id)"
     total = connection.execute(f"SELECT count(*){base} {clause}", params).fetchone()[0]
     items = _query(

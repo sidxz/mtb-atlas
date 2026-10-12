@@ -9,6 +9,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+import duckdb
 import pytest
 from fastapi.testclient import TestClient
 
@@ -649,6 +650,52 @@ def test_a_store_built_before_compound_structures_still_answers(
     assert results["n_with_structure"] == 0
     assert {row["smiles"] for row in results["items"]} == {None}
     assert client.get("/compounds/CHEMBL_POTENCY_ONLY").json()["smiles"] is None
+
+
+def test_every_request_shares_one_memory_ceiling(screens: TestClient) -> None:
+    """A connection per request was an instance per request, each with 80% of RAM."""
+    first, second = api._db(), api._db()
+    assert first.execute("SELECT current_setting('memory_limit')").fetchone()[0] == "488.2 MiB"
+    first.execute("CREATE TABLE shared_probe AS SELECT 1 AS x")
+    assert second.execute("SELECT x FROM shared_probe").fetchone() == (1,)
+    first.execute("DROP TABLE shared_probe")
+
+
+def test_the_profile_is_built_once_and_rebuilt_with_the_store(
+    screen_store: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Shared across requests, so it must notice a rebuild rather than serve the old one."""
+    copy = tmp_path / "store"
+    shutil.copytree(screen_store, copy)
+    for module in (api, store, summary):
+        monkeypatch.setattr(module, "STORE", copy)
+    client = TestClient(api.app)
+    assert client.get("/hits").json()["population"]["with_structure"] == 2
+    built = api._profiles[copy]
+    client.get("/hits", params={"coverage": "potency_only"})
+    assert api._profiles[copy] == built  # the same table, not a second one
+    # A rebuild in which the potency-only compound was not found.
+    rows = [
+        {**row, "has_structure": False, "canonical_smiles": None, "standard_inchi_key": None}
+        if row["molecule_chembl_id"] == "CHEMBL_POTENCY_ONLY"
+        else row
+        for row in store.records("compound_structures", store=copy)
+    ]
+    for row in rows:
+        for column in ("source", "source_version", "retrieved_at"):
+            row.pop(column)
+    store.write_parquet(
+        "compound_structures",
+        rows,
+        source="chembl",
+        source_version="chembl_37",
+        retrieved_at="2026-10-12",
+        store=copy,
+    )
+    assert client.get("/hits").json()["population"]["with_structure"] == 1
+    old = built[1]
+    with pytest.raises(duckdb.CatalogException):
+        api._db().execute(f"SELECT 1 FROM {old}")  # dropped, not left to accumulate
 
 
 def test_a_store_without_screen_results_says_so(client: TestClient) -> None:

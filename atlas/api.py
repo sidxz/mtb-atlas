@@ -1645,6 +1645,8 @@ def screen_results(
         f" WHERE {clause} AND s.has_structure",
         params,
     ).fetchone()[0]
+    # A store built before the table: not looked up, which is not "none can be drawn".
+    drawable = drawable if built("compound_structures") else None
     return {
         "total": total,
         "limit": limit,
@@ -1923,7 +1925,11 @@ def hits(
         "limit": limit,
         "offset": offset,
         "items": items,
-        "population": dict(zip(population.columns, population.fetchone(), strict=True)),
+        "population": {
+            **dict(zip(population.columns, population.fetchone(), strict=True)),
+            # As on `/screens/{id}/results`: never looked up is NULL, not 0.
+            **({} if built("compound_structures") else {"with_structure": None}),
+        },
     }
 
 

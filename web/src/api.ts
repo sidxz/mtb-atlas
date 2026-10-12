@@ -877,8 +877,8 @@ export interface HitPage {
     elsewhere_only: number;
     whole_cell_and_nothing_else: number;
     with_selectivity: number;
-    /** `compounds` is the ChEMBL potency set, not the screened set: the rest cannot be drawn. */
-    with_structure: number;
+    /** Drawable from `compound_structures`; null when the store predates that table. */
+    with_structure: number | null;
     n_cytotox: number;
     n_adme: number;
     n_in_vivo: number;
@@ -900,7 +900,7 @@ export const api = {
   screens: (query: Record<string, unknown> = {}) => get<ScreenPage>("/screens", { limit: 1000, ...query }),
   screen: (id: string) => get<ScreenDetail>(`/screens/${encodeURIComponent(id)}`),
   screenResults: (id: string, query: Record<string, unknown> = {}) =>
-    get<Page<ScreenResult> & { n_with_structure: number }>(
+    get<Page<ScreenResult> & { n_with_structure: number | null }>(
       `/screens/${encodeURIComponent(id)}/results`,
       { limit: 60, ...query },
     ),

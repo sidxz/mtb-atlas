@@ -645,9 +645,10 @@ def test_a_store_built_before_compound_structures_still_answers(
     for module in (api, store, summary):
         monkeypatch.setattr(module, "STORE", copy)
     client = TestClient(api.app)
-    assert client.get("/hits").json()["population"]["with_structure"] == 0
+    # Not built is not "none can be drawn": NULL, the rule `counts()` keeps for a layer.
+    assert client.get("/hits").json()["population"]["with_structure"] is None
     results = client.get("/screens/pubchem:9000008/results").json()
-    assert results["n_with_structure"] == 0
+    assert results["n_with_structure"] is None
     assert {row["smiles"] for row in results["items"]} == {None}
     assert client.get("/compounds/CHEMBL_POTENCY_ONLY").json()["smiles"] is None
 

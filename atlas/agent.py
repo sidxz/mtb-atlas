@@ -498,9 +498,9 @@ TABLE_NOTES = {
     "PubChem row means unmapped, not untested. **`compounds` is the ChEMBL potency set "
     "(5,178), not the screened set**: a screened compound's structure is in "
     "`compound_structures`, which has one for 478,985 of the 479,023 screened ChEMBL ids. A "
-    "row with a NULL molecule_chembl_id (572,581 of them, 361,870 distinct CIDs) is "
-    "PubChem-only and was never looked up there, so no structure may be assumed for it. "
-    "There is no "
+    "row with a NULL molecule_chembl_id (572,581 of them: 361,870 distinct CIDs, and 88 rows "
+    "with no CID either) is PubChem-only and was never looked up there, so no structure may "
+    "be assumed for it. There is no "
     "target column: a ChEMBL result's target is its stage's, a PubChem result's is on "
     "`screens.targets`. `activity_comment` is ChEMBL's own words, including 'Not "
     "Determined' -- a measurement that failed, with no "
@@ -605,13 +605,20 @@ class Answer:
 
 
 _connection: duckdb.DuckDBPyConnection | None = None
+# Two first questions at once would otherwise build two sandboxes, each with its own ceiling.
+_connection_lock = threading.Lock()
 
 
 def connection() -> duckdb.DuckDBPyConnection:
     """An in-memory copy of the store with external access locked off."""
     global _connection
-    if _connection is not None:
+    with _connection_lock:
+        if _connection is None:
+            _connection = _sandbox()
         return _connection
+
+
+def _sandbox() -> duckdb.DuckDBPyConnection:
     # Set at open, before the lock below, so the model's SQL cannot lift either ceiling.
     spill = tempfile.mkdtemp(prefix="atlas-agent-")
     atexit.register(shutil.rmtree, spill, ignore_errors=True)
@@ -631,7 +638,6 @@ def connection() -> duckdb.DuckDBPyConnection:
     # cannot turn that back on.
     con.execute("SET enable_external_access=false")
     con.execute("SET lock_configuration=true")
-    _connection = con
     return con
 
 

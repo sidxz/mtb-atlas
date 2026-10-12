@@ -149,9 +149,11 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET"], a
 # a connection per request was an instance per request, each defaulting to 80% of RAM, and
 # concurrent requests stacked. `/hits` aggregates all 5.4M screen results on every call and
 # alone took the process to 1.31 GB (2026-10-12). Capped, it spills: 0.4 s rather than
-# 0.1 s, with the process at 0.79 GB. It does not fit in 256 MB, nor in 512 MB without
+# 0.1 s, with the process at 0.80 GB. It does not fit in 256 MB, nor in 512 MB without
 # spilling, so the margin is under 2x and a larger screening layer must re-measure.
 MEMORY_LIMIT = "512MB"
+# DuckDB's default disk ceiling for spill is 90% of the free disk.
+SPILL_LIMIT = "8GB"
 _instances: dict[Path, duckdb.DuckDBPyConnection] = {}
 _instances_lock = threading.Lock()
 
@@ -168,7 +170,11 @@ def _db() -> duckdb.DuckDBPyConnection:
             spill = tempfile.mkdtemp(prefix="atlas-api-")
             atexit.register(shutil.rmtree, spill, ignore_errors=True)
             instance = _instances[STORE] = duckdb.connect(
-                config={"memory_limit": MEMORY_LIMIT, "temp_directory": spill}
+                config={
+                    "memory_limit": MEMORY_LIMIT,
+                    "temp_directory": spill,
+                    "max_temp_directory_size": SPILL_LIMIT,
+                }
             )
         connection = instance.cursor()
     for name in (*LICENCES, *DERIVED):
@@ -1778,28 +1784,33 @@ _profiles_lock = threading.Lock()
 
 
 def _profile(connection: duckdb.DuckDBPyConnection) -> str:
-    """The hit-profiling table for this build: made once, shared by every request.
+    """This request's copy of the hit-profiling table, which is built once per store build.
 
     It is the same 23,730 rows whatever a request filters on, and computing it reads all
     5.4M screen results. Per request, eight concurrent `/hits` held 8.67 GB (2026-10-12);
     built once under a lock, a concurrent request waits for it rather than repeating it.
-    It is keyed on its inputs' modification times, so a rebuilt store makes a new one.
+    It is keyed on its inputs' modification times, so a rebuilt store makes a new one and
+    drops the old. A request reads a TEMP copy taken under the same lock, because `/hits`
+    runs several queries and a rebuild noticed by another request between them would
+    otherwise drop the table from under it.
     """
-    paths = [STORE / f"{name}.parquet" for name in PROFILE_INPUTS]
-    stamp = tuple(path.stat().st_mtime_ns if path.exists() else 0 for path in paths)
     with _profiles_lock:
+        # Inside the lock: a stamp read before it could file a newer build under an older
+        # stamp, and the next request would build and drop again.
+        paths = [STORE / f"{name}.parquet" for name in PROFILE_INPUTS]
+        stamp = tuple(path.stat().st_mtime_ns if path.exists() else 0 for path in paths)
         seen = _profiles.get(STORE)
-        if seen and seen[0] == stamp:
-            return seen[1]
-        name = f"profile_{len(_profiles)}_{abs(hash(stamp))}"
-        connection.sql(
-            f"CREATE TABLE {name} AS SELECT p.*, s.canonical_smiles AS smiles"
-            f" FROM ({PROFILE_SQL}) p LEFT JOIN compound_structures s USING (molecule_chembl_id)"
-        )
-        if seen:
-            connection.sql(f"DROP TABLE IF EXISTS {seen[1]}")
-        _profiles[STORE] = (stamp, name)
-        return name
+        if not seen or seen[0] != stamp:
+            name = f"profile_{len(_profiles)}_{abs(hash(stamp))}"
+            connection.sql(
+                f"CREATE TABLE {name} AS SELECT p.*, s.canonical_smiles AS smiles FROM"
+                f" ({PROFILE_SQL}) p LEFT JOIN compound_structures s USING (molecule_chembl_id)"
+            )
+            if seen:
+                connection.sql(f"DROP TABLE IF EXISTS {seen[1]}")
+            seen = _profiles[STORE] = (stamp, name)
+        connection.sql(f"CREATE OR REPLACE TEMP TABLE profile AS SELECT * FROM {seen[1]}")
+    return "profile"
 
 
 @app.get("/hits")
@@ -1873,7 +1884,7 @@ def hits(
         )
     clause = f"WHERE {' AND '.join(where)}" if where else ""
     connection = _db()
-    connection.sql(f"CREATE TEMP VIEW profile AS SELECT * FROM {_profile(connection)}")
+    _profile(connection)  # this request's `profile`
     base = " FROM profile p LEFT JOIN compounds c USING (molecule_chembl_id)"
     total = connection.execute(f"SELECT count(*){base} {clause}", params).fetchone()[0]
     items = _query(

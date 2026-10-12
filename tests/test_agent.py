@@ -130,6 +130,8 @@ def test_the_sandbox_has_a_memory_ceiling_the_model_cannot_lift() -> None:
     assert limit == "488.2 MiB"  # 512MB as DuckDB reports it
     spill = connection.execute("SELECT current_setting('temp_directory')").fetchone()[0]
     assert Path(spill).name.startswith("atlas-agent-")
+    disk = connection.execute("SELECT current_setting('max_temp_directory_size')").fetchone()[0]
+    assert disk == "7.4 GiB"  # 8GB, not 90% of the free disk
     for setting in (
         "memory_limit='100GB'",
         "temp_directory='/tmp'",

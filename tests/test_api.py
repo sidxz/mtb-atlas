@@ -656,6 +656,8 @@ def test_every_request_shares_one_memory_ceiling(screens: TestClient) -> None:
     """A connection per request was an instance per request, each with 80% of RAM."""
     first, second = api._db(), api._db()
     assert first.execute("SELECT current_setting('memory_limit')").fetchone()[0] == "488.2 MiB"
+    disk = first.execute("SELECT current_setting('max_temp_directory_size')").fetchone()[0]
+    assert disk == "7.4 GiB"  # 8GB, not 90% of the free disk
     first.execute("CREATE TABLE shared_probe AS SELECT 1 AS x")
     assert second.execute("SELECT x FROM shared_probe").fetchone() == (1,)
     first.execute("DROP TABLE shared_probe")
@@ -696,6 +698,25 @@ def test_the_profile_is_built_once_and_rebuilt_with_the_store(
     old = built[1]
     with pytest.raises(duckdb.CatalogException):
         api._db().execute(f"SELECT 1 FROM {old}")  # dropped, not left to accumulate
+
+
+def test_a_rebuild_mid_request_does_not_pull_the_profile_from_under_it(
+    screen_store: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`/hits` runs three queries; a rebuild another request notices between them drops the
+    shared table, so each request reads its own copy rather than the shared name."""
+    copy = tmp_path / "store"
+    shutil.copytree(screen_store, copy)
+    for module in (api, store, summary):
+        monkeypatch.setattr(module, "STORE", copy)
+    reader = api._db()
+    table = api._profile(reader)
+    before = reader.execute(f"SELECT count(*) FROM {table}").fetchone()
+    shutil.copy2(copy / "compound_structures.parquet", tmp_path / "cs.parquet")
+    (copy / "compound_structures.parquet").unlink()
+    shutil.copy(tmp_path / "cs.parquet", copy / "compound_structures.parquet")  # a new mtime
+    assert TestClient(api.app).get("/hits").status_code == 200  # rebuilds, drops the old one
+    assert reader.execute(f"SELECT count(*) FROM {table}").fetchone() == before
 
 
 def test_a_store_without_screen_results_says_so(client: TestClient) -> None:

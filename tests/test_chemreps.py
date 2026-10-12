@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 from pathlib import Path
 
 import pytest
@@ -71,6 +72,15 @@ def test_an_id_listed_twice_is_refused(tmp_path: Path) -> None:
     path.write_text("".join([*lines, lines[1]]))
     with pytest.raises(ValueError, match=MACOZINONE):
         list(chemreps.normalize(path, {MACOZINONE}))
+
+
+def test_the_gzipped_file_reads_like_the_plain_one(tmp_path: Path) -> None:
+    """The live file is `.gz`; the fixture is plain text so a diff can show it."""
+    path = tmp_path / "chembl_37_chemreps.txt.gz"
+    with gzip.open(path, "wt", encoding="utf-8") as handle:
+        handle.write(CHEMREPS.read_text())
+    wanted = {MACOZINONE, "CHEMBL64", "CHEMBL999999999"}
+    assert list(chemreps.normalize(path, wanted)) == list(chemreps.normalize(CHEMREPS, wanted))
 
 
 def test_the_release_comes_from_the_mapping_file() -> None:

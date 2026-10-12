@@ -85,6 +85,9 @@ def test_gene_fields_are_typed() -> None:
     assert dpre1["is_pseudogene"] is False
     assert genes["Rv2099c"]["is_pseudogene"] is True
     assert genes["Rv1484"]["resistance_drugs"] == ["ETH", "INH"]
+    # Mycobrowser states no licence, and its curated prose is the part of it most
+    # plainly copyrightable; the Function the atlas shows is UniProt's.
+    assert "function" not in dpre1
 
 
 # --- accession resolution ----------------------------------------------------

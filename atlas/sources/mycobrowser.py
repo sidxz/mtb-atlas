@@ -68,7 +68,8 @@ def normalize(path: Path) -> Iterator[dict[str, Any]]:
             "feature": row[col["Feature"]],
             "gene_name": row[col["Name"]].strip() or None,
             "product": row[col["Product"]].strip() or None,
-            "function": row[col["Function"]].strip() or None,
+            # No `Function`: Mycobrowser states no licence, and its curated prose is
+            # the part most plainly copyrightable. The atlas shows UniProt's instead.
             "functional_category": row[col["Functional_Category"]].strip() or None,
             "start": int(row[col["Start"]]),
             "stop": int(row[col["Stop"]]),

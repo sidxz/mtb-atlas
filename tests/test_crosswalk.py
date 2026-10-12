@@ -84,10 +84,9 @@ def test_gene_fields_are_typed() -> None:
     assert dpre1["functional_category"] == "lipid metabolism"
     assert dpre1["is_pseudogene"] is False
     assert genes["Rv2099c"]["is_pseudogene"] is True
-    assert genes["Rv1484"]["resistance_drugs"] == ["ETH", "INH"]
-    # Mycobrowser states no licence, and its curated prose is the part of it most
-    # plainly copyrightable; the Function the atlas shows is UniProt's.
-    assert "function" not in dpre1
+    # Mycobrowser states no licence, so only what the atlas uses is kept: the
+    # Function shown is UniProt's, and resistance comes from the WHO catalogue.
+    assert "function" not in dpre1 and "resistance_drugs" not in dpre1
 
 
 # --- accession resolution ----------------------------------------------------

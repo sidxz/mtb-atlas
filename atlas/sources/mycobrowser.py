@@ -78,11 +78,6 @@ def normalize(path: Path) -> Iterator[dict[str, Any]]:
             # Mycobrowser's own UniProt claim. The crosswalk compares it against
             # the reference proteome rather than trusting either side blindly.
             "mycobrowser_uniprot_ac": row[col["UniProt_AC"]].strip() or None,
-            # Drug abbreviations (e.g. "ETH,INH"), not mutations -- a coarse
-            # "this gene is implicated in resistance to" flag.
-            "resistance_drugs": [
-                d.strip() for d in row[col["Drug Resistance Mutations"]].split(",") if d.strip()
-            ],
         }
 
 

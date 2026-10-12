@@ -198,7 +198,6 @@ def build(*, store: Path | None = None, with_orthologues: bool = True) -> Path:
                 "chembl_targets": chembl_targets,
                 "n_chembl_targets": len(chembl_targets),
                 "chembl_evidence": chembl_targets[0]["evidence"] if chembl_targets else None,
-                "resistance_drugs": list(gene[gene_cols["resistance_drugs"]] or []),
             }
         )
 

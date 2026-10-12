@@ -375,17 +375,23 @@ This is the rule that outranks completeness.
   and 6,443 of those nothing else at all, which is the answer and not a low grade. No column is ranked, weighted or combined with
   another. A derived row (a ratio of two other assays) is labelled `derived`,
   carries no funnel position, and is never a measurement *this atlas* made, but
-  its value may be a ratio the depositor published. Its `endpoint` is several
-  quantities in one column -- `Selectivity Index` and `Selectivity index` (two
-  strings), a bare `Ratio`, `TI` (a therapeutic index in an animal), `PI`, and
-  `SI`, whose 21 `ug ml-1` rows are concentrations -- so choose an endpoint
-  family and check the units; a large minority are censored, so the `pmic` rule
-  applies.
-- **Three screen columns carry their own honesty rule.**
-  `screen_stages.assay_condition` is set only on whole-cell stages, so NULL
-  (12,212) is not a whole-cell stage and `unspecified` (4,763) is not
-  `standard_media`. `strain` mixes Mtb strains, host animals and an *S. aureus*
-  strain. `screen_results.activity_score` is depositor-defined: comparable within
+  its value may be a ratio the depositor published. Its `endpoint` is at least
+  four quantities in one column (23 strings) -- `Selectivity Index` and
+  `Selectivity index` (two strings), a bare `Ratio`, `TI`, which is a
+  therapeutic index in name only (an in-vitro ratio of cytotoxicity to an MIC,
+  not an animal dose ratio), and `PI`, mostly a protection index of cell CC50 to
+  MIC -- so choose an endpoint family and check the units (21 `SI` rows in
+  `ug ml-1` are one mislabelled assay, `CHEMBL874728`); `Ratio CC50/IC50` also
+  holds HIV, *Plasmodium* and influenza ratios, so filter Mtb on the stage
+  description; a large minority are censored, so the `pmic` rule applies.
+- **Five screen columns carry their own honesty rule.**
+  `screen_stages.assay_condition` is set only on whole-cell stages and has four
+  states: NULL on 12,184 ChEMBL stages is classified, not whole-cell; NULL on the
+  28 PubChem stages is never classified, and several are whole-cell Mtb screens
+  (AID 1626), so `IS NULL` does not exclude whole-cell stages; `unspecified`
+  (4,763) is not `standard_media`. `strain` mixes Mtb strains, host animals and
+  879 strains of other pathogens, and means something only beside `modality`.
+  `screen_results.activity_score` is depositor-defined: comparable within
   a deposit and never across them. `library_name` is dead by construction and
   `deposit_kind` restates `source` (and its `dataset` is not ChEMBL's DATASET
   type); both are named for removal.

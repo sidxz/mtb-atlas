@@ -419,16 +419,26 @@ campaigns: ChEMBL files the funnel position in the assay description, so `stage`
 stages that are a ratio of two other assays, with `stage` NULL and `modality` `other` by
 assignment. A derived row occupies no funnel position and is never a measurement *this atlas*
 made, but its value may be a ratio the depositor published, and a large minority of its result
-rows are censored (`>` or `<`), so the `pmic` rule applies. **Its `endpoint` is four quantities in
-one column**, and a reader must choose an endpoint family rather than trust it: `Selectivity
-Index` (about 1,950 rows with a value), `Selectivity index` (145; a distinct string, so an exact
-match on one case silently loses the other), `Ratio CC50/IC50` (183) and `Selectivity ratio` (116)
-are selectivity indices; a bare `Ratio` (1,350) and `Ratio IC50` (630) say nothing about what was
-divided by what; `TI` (63) is a *therapeutic* index, a dose ratio in an animal and not
-cytotoxicity over potency; `PI` (100) is unexpanded. `SI` is a trap the other way: 26 rows with a
-value, 21 of them in units `ug ml-1`, which are concentrations filed under a ratio's name, so a
-units check is what stops one being served as a selectivity index. No overall count of derived
-compounds is given here, because any count depends on the family chosen. `atlas summary` prints
+rows are censored (`>` or `<`), so the `pmic` rule applies. **Its `endpoint` is at least four
+quantities in one column** (23 strings; 161 rows, 3%, fit none of the four: `AUC`, `FC`,
+`Delta Tm`, `Kcat/Km`, `Ratio Ki`, `MIC>99`, `RatioAUC/MIC`), and a reader must choose an
+endpoint family rather than trust it. Counts are rows with a value. `Selectivity Index` (1,951),
+`Selectivity index` (145; a distinct string, so an exact match on one case silently loses the
+other), `Ratio CC50/IC50` (183) and `Selectivity ratio` (116) are selectivity indices, though
+`Ratio CC50/IC50` also holds HIV, *Plasmodium*, influenza, *Leishmania* and *Giardia* ones, so an
+Mtb query filters on the stage description. A bare `Ratio` (1,350) and `Ratio IC50` (630) say
+nothing about what was divided by what. `TI` (63) is a therapeutic index in name only: all ten of
+its stage descriptions are an in-vitro ratio of red-cell MHC50 or cell-line IC50, CC50 or
+cytotoxicity to an MIC or GI50 (nine on *M. tuberculosis*, one on *S. aureus*), the most
+selectivity-shaped endpoint in the column and not an animal dose ratio. `PI` (100) is expanded in
+its descriptions: 92 are a protection index of cell CC50 (or Vero MNTD) to MIC, 6 a ciprofloxacin
+potency index and 2 a neurotoxicity protective index in mice. **The units need checking too.**
+All 21 `SI` rows in `ug ml-1` come from one assay, `CHEMBL874728`, whose description says "ratio
+of IC50 and MIC" and whose values run 0.77 to 470, so its unit or its endpoint is mislabelled
+(it is one assay, not a systematic fault); 23 bare `Ratio` rows are also `ug ml-1`, and 5
+`Selectivity Index` rows carry scaled units (`10^3No_unit`, `10^4No_unit`, `10^5No_unit`): 1,946
+of its 1,951 rows with a value have NULL units. No overall count of derived compounds is given
+here, because any count depends on the family chosen. `atlas summary` prints
 how much the classifiers fall back: 1,266 of 16,516 non-derived stages with a modality are
 `other` (7.7%) and 12,719 of 16,544 sit at the default stage `primary` (76.9%). The second
 starts high because genuine primaries are most of the base; it is a signal only as a change
@@ -757,15 +767,21 @@ could. `latest_screen_year` is NULL for a gene whose only screens are PubChem's:
 carries no deposit year.
 
 **Columns that are easy to misread.** `screen_stages.assay_condition` is set only on
-`phenotypic_mtb` stages, so it has three states: NULL on 12,212 of the 17,530 stages means *not a
-whole-cell stage*, while `unspecified` on 4,763 means *whole-cell, medium not stated* (of the
-5,318 whole-cell stages), the same rule as `activities`: **`unspecified` is not
-`standard_media`**, and a condition query over all stages has the wrong denominator. No stage
-matches `caseum`. `screen_stages.strain` is ChEMBL's `assay_strain` (9,259 stages) and mixes
-organisms: `H37Rv` 2,262, `H37Rv ATCC 27294` 437, `H37Ra` 251, `variant bovis BCG` 168, then host
-animals (`BALB/c` 159, `Sprague-Dawley` 155, `C57BL/6` 102) and `ATCC 29213` 101, which is
-*S. aureus*; `WHERE strain = 'H37Rv'` undercounts and `GROUP BY strain` returns a column that
-means different things per row. `screen_results.activity_score` is PubChem's depositor-defined
+`phenotypic_mtb` stages, and it has **four states**, not three. NULL on 12,184 ChEMBL stages
+means *classified, not whole-cell*; NULL on the 28 PubChem stages means *never classified at
+all* (`pubchem.py` hardcodes both `assay_condition` and `modality` to `None`), and several of
+those are whole-cell Mtb growth screens: AID 1626 (215,397 substances), 1671161, 1671162 and
+1671174. So `assay_condition IS NULL` does not exclude whole-cell stages, and a reader who writes
+it drops the largest screens in the layer. `unspecified` on 4,763 means *whole-cell, medium not
+stated*, the same rule as `activities`: **`unspecified` is not `standard_media`**. The 5,318
+whole-cell stages are ChEMBL only, so a condition query over all 17,530 stages has the wrong
+denominator. No stage matches `caseum`. `screen_stages.strain` is ChEMBL's `assay_strain` (9,259
+stages) and mixes organisms: `H37Rv` 2,262, `H37Rv ATCC 27294` 437, `H37Ra` 251, `variant bovis
+BCG` 168, then host animals (`BALB/c` 159, `Sprague-Dawley` 155, `C57BL/6` 102) and 879 distinct
+strains of other pathogens across the `other_pathogen` stages (`ATCC 29213`, 101 stages, is
+*S. aureus*). It is meaningful only beside `modality`: 4,166 of the 9,259 are `phenotypic_mtb`.
+`WHERE strain = 'H37Rv'` undercounts and `GROUP BY strain` returns a column that means different
+things per row. `screen_results.activity_score` is PubChem's depositor-defined
 `PUBCHEM_ACTIVITY_SCORE`, populated on 4,584,652 rows (PubChem's only) and ranging from -8,525 to
 228 overall but 0 to 80 in AID 1626 and -8,525 to 100 in AID 2221: comparable within one deposit,
 meaningless across them, so `ORDER BY activity_score` over the table ranks across incompatible

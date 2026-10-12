@@ -223,13 +223,20 @@ def test_the_schema_warns_about_every_screens_trap() -> None:
             "screens.targets",  # PubChem stages have no ChEMBL target: the other route
             "derived",  # an index ChEMBL computed has no funnel position
             "defaults to `primary`",  # `stage`'s fallback, for a description matching nothing
-            "so it has three states",  # `assay_condition` NULL is not 'unspecified'
-            "`unspecified` is not `standard_media`",  # ... and the silence must not become a medium
-            "`strain` mixes organisms",  # H37Rv spellings, host animals and S. aureus in one column
+            "means never classified at all",  # PubChem's NULL condition is not 'not whole-cell'
+            "does not exclude whole-cell stages",  # ... so IS NULL drops the largest screens
+            "and it is not `standard_media`",  # ... and the silence must not become a medium
+            "`strain` mixes organisms",  # H37Rv spellings, host animals, 879 other-pathogen strains
+            "879 distinct strains",  # ... so a strain filter is not an Mtb filter
+            "none is an animal dose ratio",  # TI is an in-vitro ratio to an MIC, selectivity-shaped
+            "in name only",  # ... a therapeutic index by name, not by quantity
+            "mostly a protection index",  # PI is described, not 'unexpanded'
+            "its unit or its endpoint is mislabelled",  # SI ug ml-1: one assay, not systematic
+            "at least four quantities",  # 23 endpoint strings; 3% fit none of the four
+            "filter on the stage description for Mtb",  # Ratio CC50/IC50 also holds HIV, malaria
             "THIS ATLAS",  # a derived row: a ratio the atlas did not make
             "choose an endpoint family",  # Selectivity Index, a bare Ratio, TI and PI differ
             "a distinct string",  # 'Selectivity Index' and 'Selectivity index' are two strings
-            "concentrations filed under a ratio's name",  # `SI` rows with units ug ml-1
             "falls back to `other`",  # `modality`'s, and it reads the target record too
         ),
         "screen_results": (

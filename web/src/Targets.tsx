@@ -4,7 +4,7 @@ import { FilterRail } from "./FilterRail";
 import { InterfaceIcon } from "./InterfaceIcon";
 import { ProteinAssays } from "./ProteinAssays";
 
-import type { TargetSummary, ValidationStatus } from "./api";
+import { api, type GeneDrug, type TargetSummary, type ValidationStatus } from "./api";
 
 const STATUS_ORDER: ValidationStatus[] = [
   "clinically_validated",
@@ -21,7 +21,7 @@ const STATUS_LABEL: Record<ValidationStatus, string> = {
   clinical_stage: "Clinical stage",
   biochemically_interrogated: "Protein assays",
   annotated_target: "Annotated target",
-  screened: "Screened",
+  screened: "Screened only",
   genetically_nominated: "Genetically nominated",
   not_interrogated: "Not interrogated",
 };
@@ -108,6 +108,18 @@ const CRITERIA: Criterion[] = [
     verdict: r => (r.n_precedent_approved == null ? "r" : r.n_precedent_approved > 0 ? "y" : "n"),
   },
   {
+    id: "screen",
+    label: "Screening campaign",
+    hint: "A campaign with a stage on this protein's own single-protein target. Unbuilt layer reads as no record.",
+    verdict: r => (r.n_target_screens == null ? "r" : r.n_target_screens > 0 ? "y" : "n"),
+  },
+  {
+    id: "drug",
+    label: "Drug acting on the protein",
+    hint: "A ChEMBL mechanism or Bosch 2021 names this protein. Complex membership and resistance do not count.",
+    verdict: r => (r.has_clinical_drug == null ? "r" : r.has_clinical_drug ? "y" : "n"),
+  },
+  {
     id: "who",
     label: "WHO resistance catalogue",
     verdict: r => (r.in_who_catalogue ? "y" : "n"),
@@ -117,7 +129,7 @@ const CRITERIA: Criterion[] = [
 const FILTER_GROUPS = [
   { label: "Genetic evidence", ids: ["essential", "vulnerable", "strain", "cholesterol"] },
   { label: "Structure & selectivity", ids: ["structure", "orthologue", "human", "paralog"] },
-  { label: "Chemical evidence", ids: ["assay", "chembl", "precedent", "who"] },
+  { label: "Chemical evidence", ids: ["assay", "chembl", "screen", "drug", "precedent", "who"] },
 ];
 const PAGE_SIZE = 50;
 const COLUMNS = [
@@ -142,14 +154,40 @@ const HighlightedCriteria = createContext<ReadonlySet<string>>(new Set());
 type ProfileTab = "overview" | "assays";
 
 /** Missing values stay distinct from zero, including highlighted filter matches. */
-function Row({ label, value, criterion, onClick }: { label: string; value: string | null; criterion?: string; onClick?: () => void }) {
+function Row({ label, value, criterion, onClick, action }: { label: string; value: string | null; criterion?: string; onClick?: () => void; action?: string }) {
   const highlighted = useContext(HighlightedCriteria);
   const match = criterion != null && highlighted.has(criterion);
   return (
     <div className={`assess-row${match ? " filter-match" : ""}`}>
       <div className="k">{label}{match && <span className="sr-only"> (selected filter)</span>}</div>
       <div className={value == null ? "v none" : "v"}>
-        {onClick ? <button type="button" className="assess-value-link" onClick={onClick} aria-label={`View ${value} protein assays`}>{value} <span aria-hidden="true">→</span></button> : value ?? "no record"}
+        {onClick ? <button type="button" className="assess-value-link" onClick={onClick} aria-label={action}>{value} <span aria-hidden="true">→</span></button> : value ?? "no record"}
+      </div>
+    </div>
+  );
+}
+
+/** The roll-up carries drug names only; the gene record carries their ids. */
+function ProfileDrugs({ row, onOpenDrug }: { row: TargetSummary; onOpenDrug: (id: string) => void }) {
+  const [drugs, setDrugs] = useState<GeneDrug[] | null>(null);
+  useEffect(() => {
+    let current = true;
+    api.target(row.rv_id).then(detail => { if (current) setDrugs(detail.drugs); }).catch(() => {});
+    return () => { current = false; };
+  }, [row.rv_id]);
+  const names = row.drug_names ?? [];
+  const byName = new Map((drugs ?? []).map(d => [d.pref_name, d.molecule_chembl_id]));
+  const match = useContext(HighlightedCriteria).has("drug");
+  return (
+    <div className={`assess-row${match ? " filter-match" : ""}`}>
+      <div className="k">Drugs{match && <span className="sr-only"> (selected filter)</span>}</div>
+      <div className="v chips">
+        {names.map(name => {
+          const id = byName.get(name);
+          return id
+            ? <button type="button" className="chip accent" key={name} onClick={() => onOpenDrug(id)} title="Open in Drugs & trials">{name}</button>
+            : <span className="chip" key={name}>{name}</span>;
+        })}
       </div>
     </div>
   );
@@ -173,9 +211,11 @@ function ProfileEvidence({ children }: { children: React.ReactNode }) {
   return <>{Children.toArray(children).sort((a, b) => matches(b) - matches(a))}</>;
 }
 
-function Profile({ row, onOpenGene, picks, statusFilter, tab, onTab }: {
+function Profile({ row, onOpenGene, onOpenScreens, onOpenDrug, picks, statusFilter, tab, onTab }: {
   row: TargetSummary;
   onOpenGene: (rv: string) => void;
+  onOpenScreens: (rv: string) => void;
+  onOpenDrug: (id: string) => void;
   picks: Record<string, Verdict>;
   statusFilter: ValidationStatus | null;
   tab: ProfileTab;
@@ -274,7 +314,7 @@ function Profile({ row, onOpenGene, picks, statusFilter, tab, onTab }: {
       >
         <Row label="ChEMBL targets" criterion="chembl" value={n0(row.n_chembl_targets)} />
         <Row label="Evidence class" value={row.chembl_evidence} />
-        <Row label="Protein assays" criterion="assay" onClick={() => onTab("assays")} value={n0(row.n_protein_assays)} />
+        <Row label="Protein assays" criterion="assay" onClick={() => onTab("assays")} action={`View ${n0(row.n_protein_assays)} protein assays`} value={n0(row.n_protein_assays)} />
         <Row label="Largest assay (compounds)" value={n0(row.max_assay_compounds)} />
         <Row label="Assays against complexes" value={n0(row.n_complex_assays)} />
         <Row label="In the WHO catalogue" criterion="who" value={row.in_who_catalogue ? "yes" : "no"} />
@@ -321,7 +361,8 @@ function Profile({ row, onOpenGene, picks, statusFilter, tab, onTab }: {
           label="MICs, of which censored"
           value={`${n0(row.n_mic)} of which ${n0(row.n_mic_censored)}`}
         />
-        <Row label="Campaigns on this protein" criterion="screen" value={n0(row.n_target_screens)} />
+        <Row label="Campaigns on this protein" criterion="screen" value={n0(row.n_target_screens)}
+          onClick={row.n_target_screens ? () => onOpenScreens(row.rv_id) : undefined} action="Open these campaigns in Screens" />
         <Row label="Largest campaign, compounds" value={n0(row.max_screen_compounds)} />
         <Row label="Compounds called active" value={n0(row.n_screen_actives)} />
       </Dimension>
@@ -355,7 +396,7 @@ function Profile({ row, onOpenGene, picks, statusFilter, tab, onTab }: {
           criteria={["drug"]}
           basis="ChEMBL single-protein mechanisms or annotations matched to ChEMBL synonyms. Complex membership and resistance alone do not establish target engagement."
         >
-          <Row label="Drugs" criterion="drug" value={row.drug_names.join(", ")} />
+          <ProfileDrugs row={row} onOpenDrug={onOpenDrug} />
           <Row
             label="Highest phase for a TB indication" criterion="drug"
             value={row.best_drug_phase == null ? null : `phase ${row.best_drug_phase}`}
@@ -372,9 +413,13 @@ function Profile({ row, onOpenGene, picks, statusFilter, tab, onTab }: {
 export function Targets({
   all,
   onOpenGene,
+  onOpenScreens,
+  onOpenDrug,
 }: {
   all: TargetSummary[];
   onOpenGene: (rvId: string) => void;
+  onOpenScreens: (rvId: string) => void;
+  onOpenDrug: (id: string) => void;
 }) {
   const [picks, setPicks] = useState<Record<string, Verdict>>({});
   const [status, setStatus] = useState<ValidationStatus | null>(null);
@@ -397,7 +442,8 @@ export function Targets({
     if (!selected) return;
     closeRef.current?.focus();
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closeProfile();
+      // Targets stays mounted while hidden; Escape belongs to whichever view is showing.
+      if (event.key === "Escape" && profileRef.current?.checkVisibility()) closeProfile();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -652,7 +698,7 @@ export function Targets({
       {chosen && (
         <aside className="col detailcol assess-side" aria-label="Target profile" ref={profileRef}>
           <div className="assess-panel-head"><p className="lab">Target profile</p><button ref={closeRef} type="button" className="rowbtn" onClick={closeProfile}>Close</button></div>
-          <Profile key={chosen.rv_id} row={chosen} onOpenGene={onOpenGene} picks={picks} statusFilter={status} tab={profileTab} onTab={setProfileTab} />
+          <Profile key={chosen.rv_id} row={chosen} onOpenGene={onOpenGene} onOpenScreens={onOpenScreens} onOpenDrug={onOpenDrug} picks={picks} statusFilter={status} tab={profileTab} onTab={setProfileTab} />
         </aside>
       )}
     </div>

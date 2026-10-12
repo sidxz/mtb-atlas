@@ -221,9 +221,11 @@ function CampaignResults({ id, stages, stage, onStage, onCompound }: { id: strin
   </>;
 }
 
-export function Screens({ onSelectGene, focus, onFocus, onProfile, onCompound }: {
+export function Screens({ onSelectGene, focus, onFocus, onProfile, onCompound, geneFocus }: {
   onSelectGene?: (id: string) => void; focus?: string | null; onFocus?: (id: string | null) => void;
   onProfile?: (id: string, title: string | null) => void; onCompound?: (id: string) => void;
+  /** Set from outside to list one gene's own-protein campaigns; a new object re-applies it. */
+  geneFocus?: { rv: string } | null;
 }) {
   const [ownFocus, setOwnFocus] = useState<string | null>(null);
   const open = focus === undefined ? ownFocus : focus, setOpen = onFocus ?? setOwnFocus;
@@ -235,6 +237,11 @@ export function Screens({ onSelectGene, focus, onFocus, onProfile, onCompound }:
   const [gene, setGene] = useState("");
   const rv = useDebounced(gene);
   const [reach, setReach] = useState("");
+  useEffect(() => {
+    if (!geneFocus) return;
+    setGene(geneFocus.rv);
+    setReach("own");
+  }, [geneFocus]);
   const [outcome, setOutcome] = useState("");
   const [sort, setSort] = useState<Sort>({ key: "n_tested", order: "desc" });
   const [paging, setPaging] = useState({ key: "", offset: 0 });

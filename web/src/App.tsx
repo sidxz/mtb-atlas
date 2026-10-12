@@ -383,6 +383,7 @@ export function App() {
   // A campaign opened from a gene page or the search box, so those routes reach
   // the same page rather than a second copy of it.
   const [screenFocus, setScreenFocus] = useState<string | null>(null);
+  const [screenGene, setScreenGene] = useState<{ rv: string } | null>(null);
   // A campaign handed to hit profiling: its compounds, each with its own whole profile.
   const [profileScreen, setProfileScreen] = useState<{ id: string; title: string | null } | null>(null);
   const [focus, setFocus] = useState<Focus>(null);
@@ -575,6 +576,7 @@ export function App() {
         <Screens
           onSelectGene={openGene}
           focus={screenFocus}
+          geneFocus={screenGene}
           onFocus={setScreenFocus}
           onProfile={(id, title) => { setProfileScreen({ id, title }); setHitFocus(null); setView("hits"); }}
           onCompound={id => { setProfileScreen(null); setHitFocus(id); setView("hits"); }}
@@ -585,10 +587,17 @@ export function App() {
           focus={hitFocus} onFocus={setHitFocus} onSelectGene={openGene}
           onCampaign={id => { setScreenFocus(id); setView("screens"); }} />
       </div>}
+      {/* Kept mounted, so a cohort survives a trip to Screens or Drugs and back. */}
+      {(view === "targets" || visitedViews.includes("targets")) && <div className="workspace-view" hidden={view !== "targets"}>
+        <Targets
+          all={all}
+          onOpenGene={openGene}
+          onOpenScreens={rv => { setScreenFocus(null); setScreenGene({ rv }); setView("screens"); }}
+          onOpenDrug={id => openClinical({ kind: "drug", id })}
+        />
+      </div>}
       {view === "clinical" ? (
         <DrugsAndTrials meta={meta} focus={focus} onFocus={setFocus} onSelectGene={openGene} />
-      ) : view === "targets" ? (
-        <Targets all={all} onOpenGene={openGene} />
       ) : view === "genome" ? (
         <div className={`body${selected ? " detail-open" : ""}`}>
           <FilterRail>

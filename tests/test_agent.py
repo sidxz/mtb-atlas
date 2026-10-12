@@ -228,8 +228,6 @@ def test_the_schema_warns_about_every_screens_trap() -> None:
             "outcome_method",  # PubChem's Method is not a stage
             "project_declared",  # false is not "had no follow-up"
             "licence is per depositor",
-            "`library_name` is NULL on every row",  # dead by construction
-            "NOT ChEMBL's DATASET",  # `deposit_kind` 'dataset' is a PubChem deposit
             "27,954",  # the 218 Active rows are confined to six campaigns
             "count of ingested campaigns",  # the table is not the universe of campaigns ...
             "1,932 documents",  # ... ChEMBL has this many whole-cell Mtb documents ...

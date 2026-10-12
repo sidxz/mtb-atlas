@@ -796,8 +796,6 @@ SCREEN_KEYS = {
     "aid",
     "title",
     "depositor",
-    "deposit_kind",
-    "library_name",
     "library_size_stated",
     "year",
     "n_stages",
@@ -916,7 +914,6 @@ def test_a_campaign_row_counts_its_stages_and_states_where_they_came_from():
     assert len(screens) == 1
     screen = screens[0]
     assert screen["screen_id"] == "chembl:CHEMBL_DOC1"
-    assert screen["deposit_kind"] == "publication"
     assert (screen["n_stages"], screen["n_tested"]) == (7, 2)
     assert (screen["title"], screen["year"], screen["pubmed_id"]) == ("A paper", 2019, "12345")
     assert screen["document_chembl_id"] == "CHEMBL_DOC1"
@@ -933,7 +930,7 @@ def test_a_campaign_row_counts_its_stages_and_states_where_they_came_from():
     # A paper has no AID and no single target, and a literature campaign has no library.
     assert screen["aid"] is None
     assert screen["targets"] == []
-    assert (screen["library_name"], screen["library_size_stated"]) == (None, None)
+    assert screen["library_size_stated"] is None
 
 
 def test_every_compound_of_a_literature_campaign_is_unspecified_not_missing():

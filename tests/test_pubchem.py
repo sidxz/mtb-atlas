@@ -276,8 +276,6 @@ def test_a_campaign_row_has_exactly_the_agreed_keys():
         "aid",
         "title",
         "depositor",
-        "deposit_kind",
-        "library_name",
         "library_size_stated",
         "year",
         "n_stages",

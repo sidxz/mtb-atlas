@@ -225,13 +225,6 @@ def normalize_screens(summaries: Iterable[Mapping[str, Any]]) -> list[dict[str, 
                 "title": summary.get("Name"),
                 # Stored as given: AID 2060911's is the bare string "11908".
                 "depositor": _required(summary, "SourceName"),
-                # A restatement of `source`, kept because the table is shared. Not ChEMBL's
-                # DATASET document type, which `build_campaigns` excludes. A follow-up removes it.
-                "deposit_kind": "dataset",
-                # The depositor names the library in prose or not at all;
-                # PubChem has no field for it.
-                # Never populated: no source states it. A follow-up removes the column.
-                "library_name": None,
                 "library_size_stated": _library_size(summary),
                 # `LastDataChange` is a revision date, not a deposit year.
                 "year": None,

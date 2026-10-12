@@ -402,11 +402,7 @@ TABLE_NOTES = {
     "that size: before saying a protein was never screened, look for an unplaced accession "
     "here. ChEMBL campaigns have empty "
     "`targets` and reach genes through screen_stages. `year` is NULL for PubChem, which "
-    "carries no deposit year. `library_name` is NULL on every row and is never populated "
-    "(no source states it; a prose library size is in `library_size_stated`). "
-    "`deposit_kind` only restates `source` (`dataset` on every PubChem row, `publication` on "
-    "every ChEMBL one), and its `dataset` is a PubChem deposit, NOT ChEMBL's DATASET "
-    "document type, which the campaign builder excludes. `depositor` matters legally: "
+    "carries no deposit year. `depositor` matters legally: "
     "PubChem's licence is per "
     "depositor (`licence`), 'Scientific Literature' marks a ChEMBL paper.",
     "screen_stages": "One row per ASSAY within a campaign, keyed on stage_id "

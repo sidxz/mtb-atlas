@@ -831,9 +831,6 @@ def campaign_screens(
                 "aid": None,
                 "title": document.get("title"),
                 "depositor": "Scientific Literature",
-                "deposit_kind": (document.get("doc_type") or "").lower() or None,
-                # Never populated, as in `pubchem.normalize_screens`. A follow-up removes it.
-                "library_name": None,
                 "library_size_stated": None,
                 "year": document.get("year"),
                 "n_stages": len(members),

@@ -42,9 +42,9 @@ type Item = Omit<MapNode, "key">;
 
 const ENTITY = new Set<Kind>(["gene", "drug", "compound", "screen", "pfam", "go", "pathway", "condition"]);
 const PAGE = 12;
-const COL = 270;
-const ROW = 62;
-const NODE_W = 220;
+const COL = 230;
+const ROW = 60;
+const NODE_W = 206;
 
 const KIND_LABEL: Record<Kind, string> = {
   gene: "Gene", drug: "Drug", compound: "Compound", screen: "Screen", pfam: "Pfam domain", go: "GO term",
@@ -240,7 +240,9 @@ function layout(root: MapNode) {
     let y: number;
     if (kids.length) {
       const ys = kids.map(k => place(k, depth + 1, here));
-      y = (ys[0] + ys[ys.length - 1]) / 2;
+      // Keep a branch on the same reading line as its first child. This also
+      // keeps ancestors steady as deeper branches expand beneath them.
+      y = ys[0];
       kids.forEach((k, i) => links.push({ x1: depth * COL + NODE_W, y1: y, x2: (depth + 1) * COL, y2: ys[i], weak: !!k.weak, key: k.key }));
     } else {
       y = row++ * ROW + ROW / 2;
@@ -270,12 +272,35 @@ export function AtlasMap({ all, root: rootGene, onPick, onOpen }: {
   const [query, setQuery] = useState("");
   const [missing, setMissing] = useState(false);
   const canvas = useRef<HTMLDivElement>(null);
+  const [zoom, setZoom] = useState(1);
+  const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  const [startingKey, setStartingKey] = useState<string | null>(null);
+  const drag = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
+  const motion = (): ScrollBehavior => window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+  const scrollToNode = (selector: string, center = false) => requestAnimationFrame(() => {
+    const el = canvas.current;
+    const node = el?.querySelector(selector);
+    if (!el || !node) return;
+    const box = node.getBoundingClientRect();
+    const view = el.getBoundingClientRect();
+    const delta = (start: number, end: number, low: number, high: number) =>
+      center ? (start + end - low - high) / 2 : start < low ? start - low : end > high ? end - high : 0;
+    el.scrollTo({
+      left: el.scrollLeft + delta(box.left, box.right, view.left + 16, view.right - 16),
+      top: el.scrollTop + delta(box.top, box.bottom, view.top + 16, view.bottom - 16),
+      behavior: motion(),
+    });
+  });
+  const focusNode = (key: string) => {
+    setFocusedKey(key);
+    scrollToNode(`[data-key="${CSS.escape(key)}"]`, true);
+  };
 
-  // A branch opens to the right, often past the edge: bring its first child into view.
-  const reveal = (key: string) => requestAnimationFrame(() =>
-    canvas.current?.querySelector(`[data-parent="${CSS.escape(key)}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" }));
+  // Scroll only the canvas, never the surrounding page or a hidden workspace.
+  const reveal = (key: string) => scrollToNode(`[data-parent="${CSS.escape(key)}"]`);
 
   const expand = async (node: MapNode, path: Set<string>) => {
+    setFocusedKey(node.kind === "more" ? node.id : node.key);
     if (node.kind === "more") {
       setRoot(r => r && update(r, node.id, g => ({ ...g, shown: (g.shown ?? PAGE) + PAGE })));
       return;
@@ -291,14 +316,18 @@ export function AtlasMap({ all, root: rootGene, onPick, onOpen }: {
     if (!ENTITY.has(node.kind)) return;
     if (node.children) {
       setRoot(r => r && update(r, node.key, n => ({ ...n, open: !n.open })));
+      if (!node.open) reveal(node.key);
       return;
     }
+    const token = current.current;
     setRoot(r => r && update(r, node.key, n => ({ ...n, loading: true, error: false })));
     try {
       const items = await neighbours(node.kind as EntityKind, node.id, resolveName);
+      if (token !== current.current) return;
       setRoot(r => r && update(r, node.key, n => ({ ...n, loading: false, open: true, children: items.map(i => keyed(i, n.key, path)) })));
       reveal(node.key);
     } catch {
+      if (token !== current.current) return;
       setRoot(r => r && update(r, node.key, n => ({ ...n, loading: false, error: true })));
     }
   };
@@ -315,6 +344,9 @@ export function AtlasMap({ all, root: rootGene, onPick, onOpen }: {
     const path = new Set([entityKey(node)]);
     setRoot({ ...node, loading: true });
     setOpened(null);
+    setZoom(1);
+    setFocusedKey(node.key);
+    setStartingKey(null);
     setMissing(false);
     canvas.current?.scrollTo(0, 0);
     try {
@@ -360,6 +392,8 @@ export function AtlasMap({ all, root: rootGene, onPick, onOpen }: {
       if (token !== current.current) return;
       setRoot({ ...node, open: true, children: groups });
       setOpened(note);
+      setStartingKey(deepest);
+      setFocusedKey(deepest);
       reveal(deepest);
     } catch {
       if (token === current.current) setRoot({ ...node, error: true });
@@ -369,92 +403,176 @@ export function AtlasMap({ all, root: rootGene, onPick, onOpen }: {
   // Back to the same root, keeps the walk as it was.
   const started = useRef<string | null>(null);
   useEffect(() => {
-    if (!rootGene || !genes.length || rootGene === started.current) return;
+    if (!rootGene) {
+      ++current.current;
+      started.current = null;
+      setRoot(null);
+      setOpened(null);
+      setStartingKey(null);
+      setFocusedKey(null);
+      return;
+    }
+    if (!genes.length || rootGene === started.current) return;
     started.current = rootGene;
     void start(rootGene);
   }, [rootGene, genes.length]);
 
   const submit = () => {
     const rv = byName.get(query.trim().toLowerCase());
-    if (rv) onPick(rv);
+    if (rv) { onPick(rv); setQuery(""); }
     else setMissing(true);
   };
 
   const { placed, links, width, height } = useMemo(() => (root ? layout(root) : { placed: [], links: [], width: 0, height: 0 }), [root]);
 
+  const trail = placed.filter(p => focusedKey === p.node.key || focusedKey?.startsWith(`${p.node.key}/`)).sort((a, b) => a.x - b.x);
+  const changeZoom = (value: number) => {
+    const el = canvas.current;
+    const next = Math.max(0.4, Math.min(1.5, Math.round(value * 100) / 100));
+    const x = el ? (el.scrollLeft + el.clientWidth / 2 - 24) / zoom : 0;
+    const y = el ? (el.scrollTop + el.clientHeight / 2 - 24) / zoom : 0;
+    setZoom(next);
+    requestAnimationFrame(() => el?.scrollTo({ left: x * next + 24 - el.clientWidth / 2, top: y * next + 24 - el.clientHeight / 2 }));
+  };
+  const fit = () => {
+    const el = canvas.current;
+    if (!el) return;
+    setZoom(Math.max(0.4, Math.min(1, (el.clientWidth - 48) / width, (el.clientHeight - 48) / height)));
+    requestAnimationFrame(() => el.scrollTo(0, 0));
+  };
+  const returnToStart = () => {
+    if (!startingKey) return;
+    // Restore the initial path's visibility without discarding the rest of the walk.
+    setRoot(r => {
+      if (!r) return r;
+      const reopen = (n: MapNode): MapNode => startingKey === n.key || startingKey.startsWith(`${n.key}/`)
+        ? { ...n, open: true, children: n.children?.map(reopen) } : n;
+      return reopen(r);
+    });
+    setZoom(1);
+    setFocusedKey(startingKey);
+    reveal(startingKey);
+  };
+  const pickExample = (name: string) => {
+    const rv = byName.get(name.toLowerCase());
+    if (rv) { onPick(rv); setQuery(""); setMissing(false); }
+  };
+
   return (
     <div className="body map-body">
-      <FilterRail label="Map">
+      <FilterRail label="Map · search and guide">
         <div className="rail-heading">
           <InterfaceIcon name="map" />
-          <h2>Map</h2>
+          <h2>Relationship map</h2>
         </div>
         <form className="group" onSubmit={event => { event.preventDefault(); submit(); }}>
           <label className="lab" htmlFor="map-start">Start from a gene</label>
-          <input id="map-start" className="search" value={query} placeholder="Gene name or Rv ID" list="map-genes"
-            onChange={event => {
-              setQuery(event.target.value);
-              setMissing(false);
-              // A datalist pick arrives as a replacement (Chrome) or a plain Event
-              // (Safari, Firefox); typing stays a draft until Enter, so "fadD1"
-              // does not start before "fadD10" is finished.
-              const native = event.nativeEvent;
-              const picked = !(native instanceof InputEvent) || native.inputType === "insertReplacementText";
-              const rv = picked ? byName.get(event.target.value.trim().toLowerCase()) : undefined;
-              if (rv) onPick(rv);
-            }} />
-          <datalist id="map-genes">{genes.filter(g => g.gene_name).map(g => <option key={g.rv_id} value={g.gene_name!}>{g.rv_id}</option>)}</datalist>
-          {missing && <p className="note" role="status">No CDS locus by that name.</p>}
+          <div className="map-search-field">
+            <input id="map-start" className="search" value={query} placeholder="Gene name or Rv ID" list="map-genes"
+              aria-invalid={missing || undefined} aria-describedby={missing ? "map-search-error" : undefined}
+              onChange={event => { setQuery(event.target.value); setMissing(false); }} />
+            <button type="submit" aria-label="Explore gene" disabled={!query.trim() || !genes.length} title="Explore gene"><InterfaceIcon name="search" /></button>
+          </div>
+          <datalist id="map-genes">{genes.map(g => <option key={g.rv_id} value={g.gene_name ?? g.rv_id}>{g.rv_id}</option>)}</datalist>
+          {missing && <p className="note map-search-error" id="map-search-error" role="status">No gene found. Try a gene name such as inhA or an Rv ID.</p>}
         </form>
-        <div className="group map-starts">
-          {START.map(name => <button type="button" className="chip" key={name} onClick={() => { const rv = byName.get(name.toLowerCase()); if (rv) onPick(rv); }}>{name}</button>)}
+        <div className="group">
+          <p className="lab">Quick starts</p>
+          <div className="map-starts">
+            {START.map(name => <button type="button" className="chip" key={name} disabled={!byName.has(name.toLowerCase())} aria-pressed={root?.id === byName.get(name.toLowerCase())} onClick={() => pickExample(name)}>{name}</button>)}
+          </div>
         </div>
-        {opened && <p className="group note map-opened" role="status">{opened}</p>}
+        {root && <div className="group map-origin">
+          <span className="lab">Starting gene</span>
+          <button type="button" onClick={() => focusNode(root.key)} title="Locate the starting gene"><strong>{root.label}</strong><span>{root.id}</span><span aria-hidden="true">⌖</span></button>
+          <p>{root.sub}</p>
+          <button className="map-text-button" type="button" onClick={() => onOpen("gene", root.id)}>Open gene details ↗</button>
+        </div>}
+        {opened && <div className="group map-opened" role="status"><span className="lab">Why this path?</span><p>{opened}</p><button type="button" className="map-text-button" onClick={returnToStart}>Return to starting path →</button></div>}
         <div className="group map-legend">
           <p className="lab">Reading the map</p>
-          <p><svg width="36" height="8" aria-hidden="true"><path d="M0 4h36" className="map-link" /></svg> a source joins the two</p>
-          <p><svg width="36" height="8" aria-hidden="true"><path d="M0 4h36" className="map-link weak" /></svg> shown, not counted</p>
-          <p>Click a node to expand it. A group with 0 is an absent record, not a gap. The claim on each line is printed on the node it leads to.</p>
+          <p><svg width="28" height="8" aria-hidden="true"><path d="M0 4h28" className="map-link" /></svg>A source joins the two</p>
+          <p><svg width="28" height="8" aria-hidden="true"><path d="M0 4h28" className="map-link weak" /></svg>Shown, not counted</p>
+          <p>Each card names its relationship. Expand a card to follow it; ↗ opens its details. A group with 0 means no record in the atlas.</p>
         </div>
       </FilterRail>
-      <main className="col canvascol map-canvas" ref={canvas} aria-label="Relationship map">
-        {!root ? (
-          <p className="map-empty">Pick a gene to start. Every line on the map is a record in the atlas, and each node expands into what its own record joins it to.</p>
-        ) : (
-          <div className="map-plane" style={{ width, height }}>
-            <svg width={width} height={height} aria-hidden="true">
-              {links.map(l => {
-                const bend = (l.x2 - l.x1) / 2;
-                return <path key={l.key} className={`map-link${l.weak ? " weak" : ""}`} d={`M${l.x1} ${l.y1}C${l.x1 + bend} ${l.y1} ${l.x2 - bend} ${l.y2} ${l.x2} ${l.y2}`} />;
+      <main className="col canvascol map-canvas" aria-label="Relationship map">
+        <div className="map-toolbar">
+          <div className="map-heading"><InterfaceIcon name="map" /><div><h2>{root ? root.label : "Relationship map"}</h2><span>{root ? `${root.id} · relationship map` : "Genes, drugs, compounds, screens and trials"}</span></div></div>
+          {root && <div className="map-tools" aria-label="Map controls">
+            <button type="button" onClick={returnToStart} disabled={!startingKey} title="Return to the evidence path opened at the start">Starting path</button>
+            <button type="button" onClick={fit} title="Fit the map in view (minimum 40%)">Fit map</button>
+            <div className="map-zoom" role="group" aria-label="Zoom">
+              <button type="button" aria-label="Zoom out" disabled={zoom <= 0.4} onClick={() => changeZoom(zoom - 0.1)}>−</button>
+              <button type="button" className="map-zoom-value" aria-label="Reset zoom to 100%" onClick={() => changeZoom(1)}>{Math.round(zoom * 100)}%</button>
+              <button type="button" aria-label="Zoom in" disabled={zoom >= 1.5} onClick={() => changeZoom(zoom + 0.1)}>+</button>
+            </div>
+          </div>}
+        </div>
+        {root && <nav className="map-breadcrumb" aria-label="Current map path">
+          <span className="map-path-label">Following</span>
+          {trail.map(({ node }, i) => <span key={node.key}>{i > 0 && <span className="map-crumb-separator" aria-hidden="true">/</span>}<button type="button" aria-current={node.key === focusedKey ? "location" : undefined} onClick={() => focusNode(node.key)} title={node.label}>{node.label}</button></span>)}
+        </nav>}
+        <div className="map-viewport" ref={canvas} tabIndex={0} role="region" aria-label="Map canvas. Scroll to navigate or drag the background." aria-busy={root?.loading || false}
+          onPointerDown={event => {
+            if (event.button !== 0 || event.pointerType === "touch" || (event.target as HTMLElement).closest("button, a")) return;
+            const el = event.currentTarget;
+            drag.current = { x: event.clientX, y: event.clientY, left: el.scrollLeft, top: el.scrollTop };
+            el.setPointerCapture(event.pointerId);
+            el.classList.add("is-dragging");
+          }}
+          onPointerMove={event => {
+            if (!drag.current) return;
+            event.currentTarget.scrollLeft = drag.current.left - (event.clientX - drag.current.x);
+            event.currentTarget.scrollTop = drag.current.top - (event.clientY - drag.current.y);
+          }}
+          onPointerUp={event => { drag.current = null; event.currentTarget.classList.remove("is-dragging"); if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }}
+          onLostPointerCapture={event => { drag.current = null; event.currentTarget.classList.remove("is-dragging"); }}>
+          {!root ? <div className="map-empty">
+            <div className="map-empty-icon"><InterfaceIcon name="map" /></div>
+            <h2>Choose a gene</h2>
+            <p>Search by gene name or Rv ID in the sidebar, or select a gene below.</p>
+            <div className="map-examples">{START.slice(0, 3).map(name => <button type="button" key={name} disabled={!byName.has(name.toLowerCase())} onClick={() => pickExample(name)}><span><strong>{name}</strong><span>{byName.get(name.toLowerCase()) ?? "Gene"}</span></span><span aria-hidden="true">→</span></button>)}</div>
+          </div> : root.loading ? <div className="map-message" role="status"><span className="map-loading-dot" /><h3>Loading map for {root.label}</h3><p>Loading connected records…</p></div>
+          : root.error && !root.children ? <div className="map-message" role="alert"><h3>Couldn’t load this map</h3><p>The records for {root.label} could not be retrieved. Try again.</p><button className="iconbtn" type="button" onClick={() => void start(root.id)}>Retry map</button></div>
+          : <div className="map-space" style={{ width: width * zoom + 48, height: height * zoom + 48 }}>
+            <div className="map-plane" style={{ width, height, transform: `scale(${zoom})` }}>
+              <svg width={width} height={height} aria-hidden="true">
+                {links.map(l => {
+                  const bend = (l.x2 - l.x1) / 2;
+                  const onPath = focusedKey === l.key || focusedKey?.startsWith(`${l.key}/`);
+                  return <path key={l.key} className={`map-link${l.weak ? " weak" : ""}${onPath ? " on-path" : ""}`} d={`M${l.x1} ${l.y1}C${l.x1 + bend} ${l.y1} ${l.x2 - bend} ${l.y2} ${l.x2} ${l.y2}`} />;
+                })}
+              </svg>
+              {placed.map(({ node, x, y, path }) => {
+                const empty = node.kind === "group" && !node.children?.length;
+                const expandable = !node.cycle && (ENTITY.has(node.kind) || node.kind === "more" || (node.kind === "group" && !empty));
+                const opens = (["gene", "drug", "compound", "screen", "trial"] as Kind[]).includes(node.kind);
+                const onPath = focusedKey === node.key || focusedKey?.startsWith(`${node.key}/`);
+                return (
+                  <div key={node.key} className={`map-node${node.weak ? " weak" : ""}${empty ? " absent" : ""}${node.cycle ? " cycle" : ""}${onPath ? " on-path" : ""}${focusedKey === node.key ? " is-focused" : ""}`}
+                    data-kind={node.kind} data-key={node.key} data-parent={node.key.slice(0, node.key.lastIndexOf("/"))} style={{ left: x, top: y - 27, width: NODE_W }}>
+                    <button type="button" className="map-node-main" disabled={!expandable || node.loading} aria-expanded={expandable && node.kind !== "more" ? !!node.open : undefined}
+                      aria-label={`${node.label}${node.kind === "group" ? `, ${node.children?.length ?? 0} records` : ""}${node.error ? ", could not load. Click to retry" : ""}`}
+                      title={[node.label, node.edge, node.sub, node.basis, node.cycle ? "Already on this path" : null].filter(Boolean).join("\n")} onClick={() => void expand(node, path)}>
+                      {node.edge && <span className="map-edge">{node.edge}</span>}
+                      <span className="map-title">
+                        {node.kind !== "group" && node.kind !== "more" && <span className="map-dot" aria-hidden="true" />}
+                        <span className="map-node-label">{node.label}</span>
+                        {node.kind === "group" && <span className="map-count">{(node.children?.length ?? 0).toLocaleString()}</span>}
+                        {expandable && !node.loading && <span className="map-chevron" aria-hidden="true">{node.open ? "−" : "+"}</span>}
+                      </span>
+                      {node.loading ? <span className="map-state" role="status">Loading connections…</span> : node.error ? <span className="map-state map-node-error" role="status">Couldn’t load · click to retry</span> : node.kind === "group" ? <span className="map-sub">{empty ? "No records in the atlas" : node.open ? `${Math.min(node.shown ?? PAGE, node.children?.length ?? 0)} shown · click to collapse` : "Click to explore"}</span> : node.kind !== "more" && <span className="map-sub">{KIND_LABEL[node.kind]}{node.sub ? ` · ${node.sub}` : ""}{node.cycle ? " · on this path" : ""}</span>}
+                    </button>
+                    {opens && <button type="button" className="map-open" title={`Open this ${KIND_LABEL[node.kind].toLowerCase()} in its view`} aria-label={`Open ${node.label}`} onClick={() => onOpen(node.kind as MapOpenKind, node.id)}>↗</button>}
+                    {node.kind === "structure" && <a className="map-open" href={`https://www.rcsb.org/structure/${node.id}`} target="_blank" rel="noreferrer" aria-label={`${node.id} at RCSB PDB`}>↗</a>}
+                  </div>
+                );
               })}
-            </svg>
-            {placed.map(({ node, x, y, path }) => {
-              const empty = node.kind === "group" && !node.children?.length;
-              const expandable = !node.cycle && (ENTITY.has(node.kind) || node.kind === "more" || (node.kind === "group" && !empty));
-              const opens = (["gene", "drug", "compound", "screen", "trial"] as Kind[]).includes(node.kind);
-              return (
-                <div key={node.key} className={`map-node${node.weak ? " weak" : ""}${empty ? " absent" : ""}${node.cycle ? " cycle" : ""}`}
-                  data-kind={node.kind} data-parent={node.key.slice(0, node.key.lastIndexOf("/"))} style={{ left: x, top: y - ROW / 2 + 4, width: NODE_W }}>
-                  <button type="button" className="map-node-main" disabled={!expandable} aria-expanded={expandable && node.kind !== "more" ? !!node.open : undefined}
-                    title={node.basis ?? (node.cycle ? "Already on this path" : undefined)} onClick={() => void expand(node, path)}>
-                    {node.edge && <span className="map-edge" title={node.edge}>{node.edge}</span>}
-                    <span className="map-title">
-                      {node.kind !== "group" && node.kind !== "more" && <span className="map-dot" aria-hidden="true" />}
-                      {node.kind === "group" ? <>{node.label} <span className="map-count">{(node.children?.length ?? 0).toLocaleString()}</span></> : node.label}
-                      {node.loading && <span className="map-state"> loading…</span>}
-                      {node.error && <span className="map-state"> could not load, click to retry</span>}
-                    </span>
-                    {node.kind !== "group" && node.kind !== "more" && (
-                      <span className="map-sub">{KIND_LABEL[node.kind]}{node.sub ? ` · ${node.sub}` : ""}{node.cycle ? " · on this path" : ""}</span>
-                    )}
-                  </button>
-                  {opens && <button type="button" className="map-open" title={`Open this ${KIND_LABEL[node.kind].toLowerCase()} in its view`} aria-label={`Open ${node.label}`} onClick={() => onOpen(node.kind as MapOpenKind, node.id)}>↗</button>}
-                  {node.kind === "structure" && <a className="map-open" href={`https://www.rcsb.org/structure/${node.id}`} target="_blank" rel="noreferrer" aria-label={`${node.id} at RCSB PDB`}>↗</a>}
-                </div>
-              );
-            })}
-          </div>
-        )}
+            </div>
+          </div>}
+        </div>
+        {root && !root.loading && !root.error && <div className="map-footer"><span><strong>{placed.filter(p => p.node.kind !== "group" && p.node.kind !== "more").length}</strong> objects on map</span><span>Scroll or drag to move · + to expand · ↗ for details</span></div>}
       </main>
     </div>
   );

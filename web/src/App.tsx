@@ -900,7 +900,7 @@ export function App() {
           <aside className="col detailcol">
             {/* Closing returns the table to its full width, which is the other
                 half of the trade: browse wide, or read wide. */}
-            <button
+            {(!detail || detailError) && <button
               className="closedetail"
               type="button"
               title="Close and widen the gene table (Esc)"
@@ -908,7 +908,7 @@ export function App() {
               onClick={() => setSelected(null)}
             >
               ×
-            </button>
+            </button>}
             {detailError ? (
               <div className="errbox">{detailError}</div>
             ) : detail ? (
@@ -917,6 +917,7 @@ export function App() {
                 meta={meta}
                 onOpen={openClinical}
                 onOpenScreen={setScreenFocus}
+                onClose={() => setSelected(null)}
               />
             ) : (
               <div className="empty">Loading {selected}…</div>

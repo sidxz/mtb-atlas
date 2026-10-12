@@ -239,7 +239,6 @@ function Profile({ row, onOpenGene, onOpenScreens, onOpenDrug, picks, statusFilt
         <div>
           <h3>{row.gene_name ?? row.rv_id}</h3>
           {row.gene_name && row.gene_name !== row.rv_id && <span className="assess-note">{row.rv_id}</span>}
-          <p className="assess-product">{row.product}</p>
         </div>
         <div className="assess-actions">
           <button type="button" className="rowbtn" onClick={() => onOpenGene(row.rv_id)}>
@@ -250,6 +249,7 @@ function Profile({ row, onOpenGene, onOpenScreens, onOpenDrug, picks, statusFilt
           </Link>
         </div>
       </div>
+      <p className="assess-product">{row.product}</p>
       {status ? (
         <p className={`assess-status-line${statusFilter ? " filter-match" : ""}`}>
           <span className="chip accent" title={STATUS_BASIS[status]}>{STATUS_LABEL[status]}</span>

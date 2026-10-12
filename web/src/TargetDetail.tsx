@@ -173,11 +173,13 @@ export function TargetDetailPanel({
   meta,
   onOpen,
   onOpenScreen,
+  onClose,
 }: {
   detail: Detail;
   meta: Meta | null;
   onOpen: (focus: Focus) => void;
   onOpenScreen?: (id: string) => void;
+  onClose: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("evidence");
   const [structureIndex, setStructureIndex] = useState(0);
@@ -204,15 +206,20 @@ export function TargetDetailPanel({
 
   return (
     <>
-      <div className="detailhead">
-        <div className="row">
-          <span className="rv">{detail.rv_id}</span>
-          {detail.gene_name && detail.gene_name !== detail.rv_id && (
-            <span className="gn">{detail.gene_name}</span>
-          )}
-          {detail.conflict && <span className="chip warn">{detail.acc_status?.replace(/_/g, " ")}</span>}
-          {detail.is_pseudogene && <span className="chip warn">pseudogene</span>}
-          <Link className="rowbtn detail-map-link" to={`/map/${encodeURIComponent(detail.rv_id)}`}>Open in map</Link>
+      <div className="detailhead gene-detail-head">
+        <div className="gene-detail-title">
+          <div className="row">
+            <span className="rv">{detail.rv_id}</span>
+            {detail.gene_name && detail.gene_name !== detail.rv_id && (
+              <span className="gn">{detail.gene_name}</span>
+            )}
+            {detail.conflict && <span className="chip warn">{detail.acc_status?.replace(/_/g, " ")}</span>}
+            {detail.is_pseudogene && <span className="chip warn">pseudogene</span>}
+          </div>
+          <div className="detail-head-actions">
+            <Link className="rowbtn detail-map-link" to={`/map/${encodeURIComponent(detail.rv_id)}`}>Open in map</Link>
+            <button className="closedetail" type="button" title="Close and widen the gene table (Esc)" aria-label="Close gene detail" onClick={onClose}>×</button>
+          </div>
         </div>
         <p>{detail.product}</p>
       </div>

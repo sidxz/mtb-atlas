@@ -100,9 +100,11 @@ def main(argv: list[str] | None = None) -> int:
             "check",
             "refresh",
             "diff",
+            "eval-ask",
         ),
         help="build everything or one stage; check for upstream releases; "
-        "refresh one source; diff the store against the one before the last refresh",
+        "refresh one source; diff the store against the one before the last refresh; "
+        "eval-ask: put fixed questions to the /ask model this deployment configures",
     )
     parser.add_argument(
         "source",
@@ -133,6 +135,11 @@ def main(argv: list[str] | None = None) -> int:
         "way to count its entries and the only probe that is not a single request",
     )
     args = parser.parse_args(argv)
+
+    if args.command == "eval-ask":
+        from . import ask_eval
+
+        return ask_eval.main()
 
     if args.command == "check":
         return _check(args.expensive, args.source, args.as_json, args.exit_code)

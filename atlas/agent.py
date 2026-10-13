@@ -22,13 +22,16 @@ from __future__ import annotations
 
 import atexit
 import json
+import os
 import shutil
 import tempfile
 import threading
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlsplit
 
 import duckdb
+import httpx
 
 from .store import STORE, provenance
 
@@ -738,8 +741,141 @@ def run_sql(sql: str, limit: int = MAX_ROWS) -> dict[str, Any]:
     }
 
 
-def ask(question: str, *, model: str = MODEL, effort: str = "high") -> Answer:
-    """Answer one question, returning the tool calls that produced it."""
+# --- which model answers -------------------------------------------------------------
+#
+# The deployer chooses, through the environment; a visitor never does. `anthropic` is the
+# default and the cheapest way to run Claude (prompt caching, effort). Everything else
+# speaks the OpenAI chat-completions dialect, which OpenRouter, Ollama, vLLM, LM Studio
+# and OpenAI itself all serve.
+
+PRESETS = {
+    "openrouter": "https://openrouter.ai/api/v1",
+    "ollama": "http://localhost:11434/v1",
+    "openai-compatible": None,
+}
+# A local model can take minutes on a broad question; a hung server must still end.
+LLM_TIMEOUT = 300.0
+
+
+@dataclass(frozen=True)
+class Backend:
+    name: str
+    model: str
+    base_url: str | None = None
+    api_key: str | None = None
+    max_tokens: int | None = None
+
+
+def _env(name: str) -> str | None:
+    return os.environ.get(name) or None
+
+
+def backend() -> Backend:
+    """The configured backend, or a RuntimeError naming the setting that is missing."""
+    name = (_env("ATLAS_LLM") or "anthropic").lower()
+    if name == "anthropic":
+        return Backend("anthropic", _env("ATLAS_LLM_MODEL") or MODEL)
+    if name not in PRESETS:
+        choices = ", ".join(["anthropic", *PRESETS])
+        raise RuntimeError(f"ATLAS_LLM={name!r} is not one of: {choices}.")
+    model = _env("ATLAS_LLM_MODEL")
+    if model is None:
+        raise RuntimeError(f"ATLAS_LLM={name} needs ATLAS_LLM_MODEL: there is no default model.")
+    base_url = _env("ATLAS_LLM_BASE_URL") or PRESETS[name]
+    if base_url is None:
+        raise RuntimeError(f"ATLAS_LLM={name} needs ATLAS_LLM_BASE_URL.")
+    api_key = _env("ATLAS_LLM_API_KEY")
+    if name == "openrouter" and api_key is None:
+        raise RuntimeError("ATLAS_LLM=openrouter needs ATLAS_LLM_API_KEY.")
+    max_tokens = _env("ATLAS_LLM_MAX_TOKENS")
+    if max_tokens is not None and not (max_tokens.isdigit() and int(max_tokens) > 0):
+        raise RuntimeError("ATLAS_LLM_MAX_TOKENS must be a positive whole number.")
+    return Backend(
+        name, model, base_url.rstrip("/"), api_key, int(max_tokens) if max_tokens else None
+    )
+
+
+def describe_backend() -> dict[str, str] | None:
+    """Where a question goes, in words for the privacy page; None if misconfigured."""
+    try:
+        b = backend()
+    except RuntimeError:
+        return None
+    host = urlsplit(b.base_url or "").hostname or ""
+    # A bare service name (`ollama`) or loopback is a model on the operator's own machines.
+    on_site = host in ("localhost", "127.0.0.1", "::1") or "." not in host
+    if b.name == "anthropic":
+        label = "Anthropic"
+    elif b.name == "openrouter":
+        label = "OpenRouter, which passes it to the model's provider"
+    elif on_site:
+        label = "a model run by the operator of this site"
+    elif b.name == "ollama":
+        label = f"an Ollama server at {host}"
+    else:
+        label = f"the model server at {host}"
+    return {"provider": b.name, "label": label, "model": b.model}
+
+
+# --- the two tools, shared by both loops ------------------------------------------------
+
+DESCRIBE_DOC = (
+    "Every table in the atlas: row counts, columns, source versions, and the traps in "
+    "each one. Call this before writing a query you are unsure about."
+)
+QUERY_DOC = (
+    "Run one read-only SQL SELECT against the atlas and return the rows as JSON. DuckDB "
+    "syntax. One statement, no semicolons, SELECT or WITH only. Results are capped at "
+    f"{MAX_ROWS} rows, so aggregate or filter rather than dumping a table."
+)
+
+
+def _describe_tool(calls: list[ToolCall]) -> str:
+    calls.append(ToolCall(name="describe_store", input={}))
+    return describe()
+
+
+def _query_tool(sql: str, calls: list[ToolCall]) -> str:
+    call = ToolCall(name="query_store", input={"sql": sql})
+    calls.append(call)
+    try:
+        payload = run_sql(sql)
+    except Exception as error:  # noqa: BLE001 - the model should see and fix its own SQL
+        call.error = str(error)
+        return f"ERROR: {error}"
+    call.rows = payload["row_count"]
+    call.result = payload["rows"][:20]
+    return json.dumps(payload, default=str)
+
+
+def ask(question: str, *, effort: str = "high", transport: Any = None) -> Answer:
+    """Answer one question on the configured backend, with the tool calls behind it.
+
+    `effort` reaches Anthropic only; `transport` is a test seam for the OpenAI loop.
+    """
+    b = backend()
+    calls: list[ToolCall] = []
+    if b.name == "anthropic":
+        text, stop = _ask_anthropic(question, b, effort, calls)
+    else:
+        text, stop = _ask_openai(question, b, calls, transport)
+    if stop != "end_turn":
+        # Narration from a loop that never finished must not pass for an answer.
+        text = f"**{STOPPED.get(stop, stop)}**\n\n{text}".strip()
+
+    sources = {}
+    for name in available_tables():
+        try:
+            version, _ = provenance(name)
+            sources[name] = str(version)
+        except Exception:  # noqa: BLE001
+            continue
+    return Answer(text=text, calls=calls, sources=sources)
+
+
+def _ask_anthropic(
+    question: str, b: Backend, effort: str, calls: list[ToolCall]
+) -> tuple[str, str]:
     import anthropic
     from anthropic import beta_tool
 
@@ -751,15 +887,12 @@ def ask(question: str, *, model: str = MODEL, effort: str = "high") -> Answer:
             "No Anthropic credentials. Set ANTHROPIC_API_KEY, or run `ant auth login`."
         )
 
-    calls: list[ToolCall] = []
-
     @beta_tool
     def describe_store() -> str:
         """Every table in the atlas: row counts, columns, source versions, and the
         traps in each one. Call this before writing a query you are unsure about.
         """
-        calls.append(ToolCall(name="describe_store", input={}))
-        return describe()
+        return _describe_tool(calls)
 
     @beta_tool
     def query_store(sql: str) -> str:
@@ -771,19 +904,10 @@ def ask(question: str, *, model: str = MODEL, effort: str = "high") -> Answer:
         Args:
             sql: The SELECT statement to run.
         """
-        call = ToolCall(name="query_store", input={"sql": sql})
-        calls.append(call)
-        try:
-            payload = run_sql(sql)
-        except Exception as error:  # noqa: BLE001 - the model should see and fix its own SQL
-            call.error = str(error)
-            return f"ERROR: {error}"
-        call.rows = payload["row_count"]
-        call.result = payload["rows"][:20]
-        return json.dumps(payload, default=str)
+        return _query_tool(sql, calls)
 
     runner = client.beta.messages.tool_runner(
-        model=model,
+        model=b.model,
         max_tokens=16000,
         max_iterations=MAX_TURNS,
         # Every turn resends the ~9k-token schema dump the first one fetched.
@@ -798,17 +922,88 @@ def ask(question: str, *, model: str = MODEL, effort: str = "high") -> Answer:
     except anthropic.APIError as error:
         # Rate limit or outage upstream: this route is unavailable, the rest of the API is not.
         raise RuntimeError(f"The model call failed: {error}") from error
-
     text = "".join(block.text for block in final.content if block.type == "text").strip()
-    if final.stop_reason != "end_turn":
-        # Narration from a loop that never finished must not pass for an answer.
-        text = f"**{STOPPED.get(final.stop_reason, final.stop_reason)}**\n\n{text}".strip()
+    return text, final.stop_reason
 
-    sources = {}
-    for name in available_tables():
+
+OPENAI_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "describe_store",
+            "description": DESCRIBE_DOC,
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_store",
+            "description": QUERY_DOC,
+            "parameters": {
+                "type": "object",
+                "properties": {"sql": {"type": "string", "description": "The SELECT to run."}},
+                "required": ["sql"],
+            },
+        },
+    },
+]
+# OpenAI's finish reasons, in the Anthropic names STOPPED is keyed on.
+FINISH = {"stop": "end_turn", "length": "max_tokens", "content_filter": "refusal"}
+
+
+def _run_tool(name: str | None, arguments: Any, calls: list[ToolCall]) -> str:
+    """One tool call from the model; anything malformed goes back to it as an error."""
+    if isinstance(arguments, str):
         try:
-            version, _ = provenance(name)
-            sources[name] = str(version)
-        except Exception:  # noqa: BLE001
-            continue
-    return Answer(text=text, calls=calls, sources=sources)
+            arguments = json.loads(arguments or "{}")
+        except ValueError:
+            return "ERROR: the tool arguments were not valid JSON."
+    if not isinstance(arguments, dict):
+        return "ERROR: the tool arguments must be a JSON object."
+    if name == "describe_store":
+        return _describe_tool(calls)
+    if name == "query_store":
+        sql = arguments.get("sql")
+        if not isinstance(sql, str):
+            return "ERROR: query_store needs a `sql` string in its arguments."
+        return _query_tool(sql, calls)
+    return f"ERROR: there is no tool called {name!r}; use describe_store or query_store."
+
+
+def _ask_openai(
+    question: str, b: Backend, calls: list[ToolCall], transport: Any
+) -> tuple[str, str]:
+    """The same two tools over the chat-completions API, for every non-Anthropic backend."""
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM},
+        {"role": "user", "content": question},
+    ]
+    headers = {"Authorization": f"Bearer {b.api_key}"} if b.api_key else {}
+    text = ""
+    with httpx.Client(
+        base_url=b.base_url, headers=headers, timeout=LLM_TIMEOUT, transport=transport
+    ) as client:
+        for _ in range(MAX_TURNS):
+            body: dict[str, Any] = {"model": b.model, "messages": messages, "tools": OPENAI_TOOLS}
+            if b.max_tokens:
+                body["max_tokens"] = b.max_tokens
+            try:
+                response = client.post("/chat/completions", json=body)
+                response.raise_for_status()
+                choice = response.json()["choices"][0]
+                message = choice["message"]
+            except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as error:
+                raise RuntimeError(f"The model call failed: {error}") from error
+            text = (message.get("content") or "").strip()
+            tool_calls = message.get("tool_calls") or []
+            if not tool_calls:
+                return text, FINISH.get(choice.get("finish_reason") or "stop", "end_turn")
+            messages.append(
+                {"role": "assistant", "content": message.get("content"), "tool_calls": tool_calls}
+            )
+            for call in tool_calls:
+                function = call.get("function") or {}
+                result = _run_tool(function.get("name"), function.get("arguments"), calls)
+                messages.append({"role": "tool", "tool_call_id": call.get("id"), "content": result})
+    return text, "tool_use"

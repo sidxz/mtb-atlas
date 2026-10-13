@@ -61,7 +61,7 @@ def test_the_global_ceiling_refuses_everyone(tmp_path: Path) -> None:
     with sqlite3.connect(db) as connection:
         connection.executemany(
             "INSERT INTO asks VALUES (?, ?)",
-            [(f"orcid:{i}", T0 + 1 + i) for i in range(access.GLOBAL_LIMIT - 1)],
+            [(f"orcid:{i}", T0 + 1 + i) for i in range(access.global_limit() - 1)],
         )
     refused = access.admit("orcid:fresh", 20, access.DAY, now=T0 + 600, path=db)
     assert not refused.admitted
@@ -285,6 +285,14 @@ def test_an_ip_digest_is_not_a_session_signature(secret: None) -> None:
 # --- the gate on /ask and /auth/me ------------------------------------------------
 
 
+ALLOWANCE_VARS = (
+    "ATLAS_ASK_ANON_PER_HOUR",
+    "ATLAS_ASK_SIGNED_IN_PER_DAY",
+    "ATLAS_ASK_GLOBAL_PER_DAY",
+)
+LLM_VARS = ("ATLAS_LLM", "ATLAS_LLM_MODEL", "ATLAS_LLM_BASE_URL", "ATLAS_LLM_API_KEY")
+
+
 @pytest.fixture
 def asking(evidence_store: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> TestClient:
     """The API with limits on, Turnstile faked (token "good" passes) and the model faked."""
@@ -294,11 +302,18 @@ def asking(evidence_store: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     monkeypatch.setenv("TURNSTILE_SITE_KEY", "site-key")
     monkeypatch.setenv("TURNSTILE_SECRET_KEY", "secret-key")
     monkeypatch.setenv("ATLAS_USAGE_DB", str(tmp_path / "usage.sqlite"))
-    for name in ("ATLAS_ASK_LIMITS", "ORCID_CLIENT_ID", "ORCID_CLIENT_SECRET", "ATLAS_PUBLIC_URL"):
+    for name in (
+        "ATLAS_ASK_LIMITS",
+        "ORCID_CLIENT_ID",
+        "ORCID_CLIENT_SECRET",
+        "ATLAS_PUBLIC_URL",
+        *ALLOWANCE_VARS,
+        *LLM_VARS,
+    ):
         monkeypatch.delenv(name, raising=False)
     efforts: list[str] = []
 
-    def fake_ask(question: str, *, model: str = agent.MODEL, effort: str = "high"):
+    def fake_ask(question: str, *, effort: str = "high", transport=None):
         efforts.append(effort)
         return agent.Answer(text="dprE1 is Rv3790.")
 
@@ -389,7 +404,7 @@ def test_the_global_ceiling_refuses_a_signed_in_user_too(
     with sqlite3.connect(tmp_path / "usage.sqlite") as connection:
         connection.executemany(
             "INSERT INTO asks VALUES (?, ?)",
-            [(f"orcid:{i}", now - 60) for i in range(access.GLOBAL_LIMIT)],
+            [(f"orcid:{i}", now - 60) for i in range(access.global_limit())],
         )
     asking.cookies.set(access.SESSION_COOKIE, access.make_session(IRIS))
     refused = _ask(asking, token=None)
@@ -405,9 +420,10 @@ def test_me_reports_the_allowance_without_spending_it(asking: TestClient) -> Non
         "remaining": 5,
         "limit": 5,
         "window": "1h",
-        "global_remaining": access.GLOBAL_LIMIT,
+        "global_remaining": 500,
         "turnstile_site_key": "site-key",
         "signin_available": False,
+        "allowances": {"anonymous_per_hour": 5, "signed_in_per_day": 20, "global_per_day": 500},
     }
     _ask(asking)
     assert asking.get("/auth/me").json()["remaining"] == 4
@@ -566,6 +582,7 @@ def test_meta_says_who_runs_the_site_and_keeps_only_real_links(
         "operator": "Example Lab",
         "contact": "atlas@example.org",
         "footer_links": [{"label": "Site policies", "url": "https://example.org/p"}],
+        "llm": {"provider": "anthropic", "label": "Anthropic", "model": "claude-haiku-5-5"},
     }
 
 
@@ -574,3 +591,66 @@ def test_malformed_footer_links_are_none_not_an_error(
 ) -> None:
     monkeypatch.setenv("ATLAS_FOOTER_LINKS", "not json")
     assert asking.get("/meta").json()["site"]["footer_links"] == []
+
+
+# --- the deployer's choices: allowances and backend --------------------------------
+
+
+def test_the_deployer_sets_the_allowances(
+    asking: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ATLAS_ASK_ANON_PER_HOUR", "2")
+    monkeypatch.setenv("ATLAS_ASK_SIGNED_IN_PER_DAY", "3")
+    monkeypatch.setenv("ATLAS_ASK_GLOBAL_PER_DAY", "50")
+    me = asking.get("/auth/me").json()
+    assert me["allowances"] == {
+        "anonymous_per_hour": 2,
+        "signed_in_per_day": 3,
+        "global_per_day": 50,
+    }
+    assert (me["limit"], me["remaining"], me["global_remaining"]) == (2, 2, 50)
+    assert [_ask(asking).status_code for _ in range(3)] == [200, 200, 429]
+
+
+def test_a_global_allowance_of_one_refuses_the_second_asker(
+    asking: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ATLAS_ASK_GLOBAL_PER_DAY", "1")
+    assert _ask(asking).status_code == 200
+    asking.cookies.set(access.SESSION_COOKIE, access.make_session(IRIS))
+    refused = _ask(asking, token=None)
+    assert refused.status_code == 429 and refused.json()["detail"]["limit"] == "global"
+
+
+@pytest.mark.parametrize("value", ["lots", "0", "-3", "2.5"])
+def test_a_malformed_allowance_switches_questions_off(
+    asking: TestClient, monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("ATLAS_ASK_ANON_PER_HOUR", value)
+    refused = _ask(asking)
+    assert refused.status_code == 503 and "ATLAS_ASK_ANON_PER_HOUR" in refused.json()["detail"]
+    assert asking.get("/auth/me").status_code == 503
+
+
+def test_a_misconfigured_backend_refuses_before_counting(
+    asking: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ATLAS_LLM", "openrouter")  # no model, no key
+    refused = _ask(asking)
+    assert refused.status_code == 503 and "ATLAS_LLM_MODEL" in refused.json()["detail"]
+    assert asking.get("/auth/me").json()["remaining"] == 5
+    assert asking.efforts == []  # type: ignore[attr-defined]
+
+
+def test_meta_names_the_backend_the_deployer_chose(
+    asking: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ATLAS_LLM", "ollama")
+    monkeypatch.setenv("ATLAS_LLM_MODEL", "qwen3:14b")
+    assert asking.get("/meta").json()["site"]["llm"] == {
+        "provider": "ollama",
+        "label": "a model run by the operator of this site",
+        "model": "qwen3:14b",
+    }
+    monkeypatch.delenv("ATLAS_LLM_MODEL")
+    assert asking.get("/meta").json()["site"]["llm"] is None

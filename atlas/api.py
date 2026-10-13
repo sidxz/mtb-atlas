@@ -238,12 +238,22 @@ class FooterLink(BaseModel):
     url: str
 
 
+class LLM(BaseModel):
+    """Where a question goes, so the privacy page can say so. Set by the deployer."""
+
+    provider: str
+    label: str
+    model: str
+
+
 class Site(BaseModel):
     """Who runs this instance: set per deployment, so the image names nobody."""
 
     operator: str | None
     contact: str | None
     footer_links: list[FooterLink]
+    # None when the deployer's model settings are incomplete: /ask is off then.
+    llm: LLM | None
 
 
 def _site() -> Site:
@@ -263,7 +273,15 @@ def _site() -> Site:
         operator=os.environ.get("ATLAS_OPERATOR") or None,
         contact=os.environ.get("ATLAS_CONTACT") or None,
         footer_links=links,
+        llm=_llm(),
     )
+
+
+def _llm() -> LLM | None:
+    from . import agent
+
+    described = agent.describe_backend()
+    return LLM(**described) if described else None
 
 
 class Meta(BaseModel):
@@ -2378,6 +2396,12 @@ def references(text: str, limit: int = 20) -> dict[str, list[Hit]]:
     return found
 
 
+class Allowances(BaseModel):
+    anonymous_per_hour: int
+    signed_in_per_day: int
+    global_per_day: int
+
+
 class AuthMe(BaseModel):
     orcid: str | None
     limits: bool
@@ -2387,6 +2411,19 @@ class AuthMe(BaseModel):
     global_remaining: int | None
     turnstile_site_key: str | None
     signin_available: bool
+    allowances: Allowances
+
+
+def _allowances() -> Allowances:
+    """The deployer's three numbers; a malformed one switches questions off (503)."""
+    try:
+        return Allowances(
+            anonymous_per_hour=access.anonymous()[0],
+            signed_in_per_day=access.signed_in()[0],
+            global_per_day=access.global_limit(),
+        )
+    except RuntimeError as error:
+        raise HTTPException(503, f"Questions are switched off: {error}") from error
 
 
 def _client_ip(request: Request) -> str:
@@ -2399,8 +2436,8 @@ def _allowance(request: Request) -> tuple[str, str | None, tuple[int, float]]:
     """(usage key, signed-in iD or None, (limit, window)) for this caller."""
     orcid = access.read_session(request.cookies.get(access.SESSION_COOKIE))
     if orcid:
-        return access.orcid_key(orcid), orcid, access.SIGNED_IN
-    return access.ip_key(_client_ip(request)), None, access.ANONYMOUS
+        return access.orcid_key(orcid), orcid, access.signed_in()
+    return access.ip_key(_client_ip(request)), None, access.anonymous()
 
 
 def _admit(request: Request) -> None:
@@ -2409,6 +2446,7 @@ def _admit(request: Request) -> None:
         return
     if not access.secret_configured():
         raise HTTPException(503, "Questions are switched off: this site has no ATLAS_SECRET.")
+    _allowances()
     key, orcid, (limit, window) = _allowance(request)
     if orcid is None:
         if not access.turnstile_configured():
@@ -2432,8 +2470,9 @@ def _admit(request: Request) -> None:
 def auth_me(request: Request) -> AuthMe:
     """What this caller may still ask, and what the page needs to let them."""
     limits = access.limits_on()
+    allowances = _allowances()
     orcid = access.read_session(request.cookies.get(access.SESSION_COOKIE))
-    limit, window = access.SIGNED_IN if orcid else access.ANONYMOUS
+    limit, window = access.signed_in() if orcid else access.anonymous()
     remaining = global_remaining = None
     if limits and access.secret_configured():
         key, _, _ = _allowance(request)
@@ -2448,6 +2487,7 @@ def auth_me(request: Request) -> AuthMe:
         global_remaining=global_remaining,
         turnstile_site_key=(access.turnstile_site_key() if limits else None),
         signin_available=access.signin_available(),
+        allowances=allowances,
     )
 
 
@@ -2497,6 +2537,11 @@ def logout() -> Response:
 def ask(body: Question, request: Request) -> AgentAnswer:
     from . import agent
 
+    # A backend the deployer has not finished configuring refuses before an ask is spent.
+    try:
+        agent.backend()
+    except RuntimeError as error:
+        raise HTTPException(503, f"Questions are switched off: {error}") from error
     _admit(request)
     try:
         result = agent.ask(body.question, effort="high")

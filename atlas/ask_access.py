@@ -1,7 +1,9 @@
 """Who may ask, and how often: the one route that spends money gets an allowance.
 
 Anonymous askers pass a Cloudflare Turnstile check and get 5 an hour per IP; an
-ORCID sign-in gets 20 a day per iD; everyone together gets 500 a day. The counts
+ORCID sign-in gets 20 a day per iD; everyone together gets 500 a day. The deployer
+can change all three, because what a question costs depends on the model they
+chose (ATLAS_ASK_ANON_PER_HOUR, _SIGNED_IN_PER_DAY, _GLOBAL_PER_DAY). The counts
 live in a small SQLite file, not the Parquet store, and the pipeline never
 touches it. An IP is never written down: only its HMAC under ATLAS_SECRET, and
 every row is gone after 24 h.
@@ -29,9 +31,12 @@ from .fetch import ROOT
 
 HOUR = 3600.0
 DAY = 86400.0
-ANONYMOUS = (5, HOUR)
-SIGNED_IN = (20, DAY)
-GLOBAL_LIMIT = 500
+# Defaults for the deployer's three allowances, sized for the cheapest Claude model.
+ALLOWANCES = {
+    "ATLAS_ASK_ANON_PER_HOUR": 5,
+    "ATLAS_ASK_SIGNED_IN_PER_DAY": 20,
+    "ATLAS_ASK_GLOBAL_PER_DAY": 500,
+}
 SESSION_COOKIE = "atlas_session"
 STATE_COOKIE = "atlas_oauth_state"
 SESSION_SECONDS = 30 * DAY
@@ -48,9 +53,31 @@ def limits_on() -> bool:
     return (_env("ATLAS_ASK_LIMITS") or "on").lower() != "off"
 
 
+def _allowance(name: str) -> int:
+    """One allowance; a malformed value is a RuntimeError, never a silent default."""
+    raw = _env(name)
+    if raw is None:
+        return ALLOWANCES[name]
+    if not (raw.isdigit() and int(raw) > 0):
+        raise RuntimeError(f"{name} must be a positive whole number, not {raw!r}.")
+    return int(raw)
+
+
+def anonymous() -> tuple[int, float]:
+    return _allowance("ATLAS_ASK_ANON_PER_HOUR"), HOUR
+
+
+def signed_in() -> tuple[int, float]:
+    return _allowance("ATLAS_ASK_SIGNED_IN_PER_DAY"), DAY
+
+
+def global_limit() -> int:
+    return _allowance("ATLAS_ASK_GLOBAL_PER_DAY")
+
+
 def usage_db() -> Path:
     # ponytail: in the container this file is container-local, so a redeploy resets
-    # every count, the global 500 included. Harmless for 24 h windows, and it keeps
+    # every count, the global one included. Harmless for 24 h windows, and it keeps
     # SQLite off NFS, whose locking it cannot trust. Shared storage if that changes.
     return Path(_env("ATLAS_USAGE_DB") or ROOT / "data" / "ask_usage.sqlite")
 
@@ -91,6 +118,7 @@ def admit(
     the same question without spending anything (for `/auth/me`).
     """
     now = time.time() if now is None else now
+    ceiling = global_limit()
     connection = _connect(path or usage_db())
     try:
         connection.execute("BEGIN IMMEDIATE")
@@ -107,21 +135,19 @@ def admit(
                 "SELECT at FROM asks WHERE at > ? ORDER BY at", (now - DAY,)
             )
         ]
-        if len(everyone) >= GLOBAL_LIMIT:
-            # The next slot opens when the oldest of the last GLOBAL_LIMIT leaves the day.
-            opens = everyone[len(everyone) - GLOBAL_LIMIT] + DAY
+        if len(everyone) >= ceiling:
+            # The next slot opens when the oldest of the last `ceiling` leaves the day.
+            opens = everyone[len(everyone) - ceiling] + DAY
             verdict = Verdict(False, "global", opens - now, max(limit - len(mine), 0), 0)
         elif len(mine) >= limit:
             opens = mine[len(mine) - limit] + window
-            verdict = Verdict(
-                False, key.split(":", 1)[0], opens - now, 0, GLOBAL_LIMIT - len(everyone)
-            )
+            verdict = Verdict(False, key.split(":", 1)[0], opens - now, 0, ceiling - len(everyone))
         else:
             spent = 1 if record else 0
             if record:
                 connection.execute("INSERT INTO asks VALUES (?, ?)", (key, now))
             verdict = Verdict(
-                True, None, 0.0, limit - len(mine) - spent, GLOBAL_LIMIT - len(everyone) - spent
+                True, None, 0.0, limit - len(mine) - spent, ceiling - len(everyone) - spent
             )
         connection.execute("COMMIT")
         return verdict

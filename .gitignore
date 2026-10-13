@@ -28,3 +28,7 @@ web/dist/
 
 # Worktrees for isolated feature work (see docs/superpowers/)
 .claude/worktrees/
+
+# Design notes, plans and prototypes: kept locally, not published
+docs/
+poc/

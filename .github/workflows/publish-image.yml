@@ -10,30 +10,32 @@ jobs:
   image:
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # the release on a tag
+      contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           python-version: "3.12"
       - run: uv pip install --system -e '.[dev]'
       - run: ruff check . && ruff format --check .
       - run: pytest -q
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci && npm run typecheck && npm test
         working-directory: web
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@v5
+      - uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         id: meta
         with:
           images: ghcr.io/sidxz/mtb-atlas
@@ -45,7 +47,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
       - name: Build for the smoke test
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           platforms: linux/amd64
@@ -55,15 +57,16 @@ jobs:
           cache-to: type=gha,mode=max
       - name: Smoke test, with no store
         run: |
+          trap 'docker logs smoke || true' EXIT
           mkdir -p empty-store
           docker run -d --name smoke -p 8099:8099 -v "$PWD/empty-store:/store:ro" mtb-atlas:smoke
           for i in $(seq 1 30); do curl -fsS localhost:8099/api/auth/me && break; sleep 1; done
+          curl -fsS localhost:8099/api/auth/me >/dev/null
           curl -fsS localhost:8099/ | grep -q 'id="root"'
           curl -fsS localhost:8099/genome/Rv3790 | grep -q 'id="root"'
-          docker logs smoke
           docker rm -f smoke
       - name: Push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           platforms: linux/amd64
@@ -71,7 +74,14 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-      - if: github.ref_type == 'tag'
-        uses: softprops/action-gh-release@v2
+
+  release:
+    needs: image
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           generate_release_notes: true

@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+.claude
+.superpowers
+**/__pycache__
+**/.pytest_cache
+.ruff_cache
+data
+poc
+tests
+docs
+web/node_modules
+web/dist
+.env
+.env.*

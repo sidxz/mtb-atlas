@@ -1,0 +1,19 @@
+# The atlas as one container. Nothing here names a host.
+#
+#   make build                                  # the store, into ./data/store
+#   cp .env.example .env                        # optional: only /ask needs anything
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Then http://localhost:8099. Behind a reverse proxy, set FORWARDED_ALLOW_IPS to
+# the proxy's address or subnet, or every visitor shares one /ask allowance.
+services:
+  atlas:
+    image: ghcr.io/sidxz/mtb-atlas:${VERSION:-latest}
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "8099:8099"
+    volumes:
+      - ./data/store:/store:ro
+    restart: unless-stopped

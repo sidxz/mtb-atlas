@@ -135,13 +135,22 @@ export function Ask({ base, onGeneScreens }: { base: string; onGeneScreens: (rv:
           appearance: "interaction-only",
           callback: (value: string) => { token.current = value; },
           "expired-callback": () => { token.current = null; },
-          "error-callback": () => { token.current = null; },
+          "error-callback": () => { token.current = null; setCaptchaFailed(true); },
         });
+        setCaptchaFailed(false);
       })
       .catch(() => setCaptchaFailed(true));
   }, [needsCaptcha, me]);
 
-  const signInHref = `${base}/auth/orcid/login?next=${encodeURIComponent(location.pathname + location.search)}`;
+  // A first-focus race: focus can precede /auth/me, and /auth/me can fail and arrive later.
+  useEffect(() => { if (focused) startCaptcha(); }, [focused, startCaptcha]);
+
+  // `next` must not carry signin=failed, or a successful retry lands on a page still saying it failed.
+  const nextParams = new URLSearchParams(location.search);
+  const signinFailed = nextParams.get("signin") === "failed";
+  nextParams.delete("signin");
+  const nextSearch = nextParams.toString();
+  const signInHref = `${base}/auth/orcid/login?next=${encodeURIComponent(location.pathname + (nextSearch ? `?${nextSearch}` : ""))}`;
   const signOut = async () => {
     await fetch(`${base}/auth/logout`, { method: "POST" });
     void refreshMe();
@@ -167,10 +176,12 @@ export function Ask({ base, onGeneScreens }: { base: string; onGeneScreens: (rv:
     setState("asking");
     setResult(null);
     setError(null);
+    let sent = false;
     try {
       if (needsCaptcha && !token.current) {
         throw new Error(captchaFailed ? captchaUnavailableMessage(Boolean(me?.signin_available)) : "One moment: the human check is still running. Ask again in a few seconds.");
       }
+      sent = true;
       const response = await fetch(`${base}/ask`, {
         method: "POST",
         headers: {
@@ -192,9 +203,11 @@ export function Ask({ base, onGeneScreens }: { base: string; onGeneScreens: (rv:
       setState("error");
     } finally {
       // A token is single-use: whatever happened, the next ask needs a fresh one.
-      token.current = null;
-      if (widget.current) window.turnstile?.reset(widget.current);
-      void refreshMe();
+      if (sent) {
+        token.current = null;
+        if (widget.current) window.turnstile?.reset(widget.current);
+        void refreshMe();
+      }
     }
   };
 
@@ -233,8 +246,9 @@ export function Ask({ base, onGeneScreens }: { base: string; onGeneScreens: (rv:
         </button>
       </form>
 
+      {me && (needsCaptcha || allowanceLabel(me) || me.orcid || me.signin_available || signinFailed) && (
       <div className="askaccess">
-        <div ref={widgetHost} className="askaccess-captcha" />
+        {needsCaptcha && <div ref={widgetHost} className="askaccess-captcha" />}
         {me && allowanceLabel(me) && <span className="faint">{allowanceLabel(me)}</span>}
         {me?.orcid ? (
           <>
@@ -244,10 +258,11 @@ export function Ask({ base, onGeneScreens }: { base: string; onGeneScreens: (rv:
         ) : me?.signin_available ? (
           <a href={signInHref}>Sign in with ORCID for 20 a day</a>
         ) : null}
-        {new URLSearchParams(location.search).get("signin") === "failed" && (
+        {signinFailed && (
           <span className="caveat-inline">ORCID sign-in did not complete.</span>
         )}
       </div>
+      )}
 
       {focused && !result && state === "idle" && !error && (
         <div className="askexamples">

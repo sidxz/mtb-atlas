@@ -62,7 +62,7 @@ type Flag =
   | "conflict";
 
 const FLAGS: [Flag, string][] = [
-  ["structural_gap", "Essential · structure · no ligands"],
+  ["structural_gap", "Essential, structure, no ligands"],
   ["crispr_essential", "Essential by CRISPRi"],
   ["vulnerability_certain", "Vulnerability measured confidently"],
   ["has_structure", "Has an experimental structure"],

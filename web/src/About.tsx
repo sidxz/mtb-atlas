@@ -124,7 +124,8 @@ export function SiteFooter({ meta }: { meta: Meta | null }) {
       <Link to="/about/privacy">Privacy &amp; cookies</Link>
       <Link to="/about/terms">Terms &amp; disclaimer</Link>
       {meta?.site.footer_links.map((l) => <a key={l.url} href={l.url} target="_blank" rel="noreferrer">{l.label}</a>)}
-      <span className="faint"><a href={REPO} target="_blank" rel="noreferrer">Source code</a> · MIT licence</span>
+      <span className="faint"><a href={REPO} target="_blank" rel="noreferrer">Source code</a></span>
+      <a href={`${REPO}/issues`} target="_blank" rel="noreferrer">Report bugs</a>
     </footer>
   );
 }

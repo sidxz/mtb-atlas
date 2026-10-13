@@ -11,7 +11,7 @@ import remarkGfm from "remark-gfm";
 import { Link, useLocation } from "react-router";
 import { InterfaceIcon } from "./InterfaceIcon";
 import { api, type Hit, type Me, type SearchResults } from "./api";
-import { allowanceLabel, captchaUnavailableMessage, refusalMessage } from "./askAccess";
+import { allowanceLabel, captchaUnavailableMessage, refusalMessage, signInOffer } from "./askAccess";
 
 const EXAMPLES = [
   "Which essential genes have a structure, no ligands, and no close human homolog?",
@@ -198,7 +198,7 @@ export function Ask({ base, onGeneScreens }: { base: string; onGeneScreens: (rv:
         throw new Error(`The atlas could not answer (HTTP ${response.status}). Try again shortly.`);
       }
       if (!response.ok) {
-        throw new Error(response.status === 429 ? refusalMessage(body.detail, new Date()) : (typeof body.detail === "string" ? body.detail : `${response.status}`));
+        throw new Error(response.status === 429 ? refusalMessage(body.detail, new Date(), me) : (typeof body.detail === "string" ? body.detail : `${response.status}`));
       }
       setResult(body as Result);
       setState("idle");
@@ -261,7 +261,7 @@ export function Ask({ base, onGeneScreens }: { base: string; onGeneScreens: (rv:
             <button type="button" className="linkbtn" onClick={() => void signOut()}>Sign out</button>
           </>
         ) : me?.signin_available ? (
-          <a href={signInHref}>Sign in with ORCID for 20 a day</a>
+          <a href={signInHref}>{signInOffer(me)}</a>
         ) : null}
         {signinFailed && (
           <span className="caveat-inline">ORCID sign-in did not complete.</span>
@@ -323,11 +323,7 @@ export function Ask({ base, onGeneScreens }: { base: string; onGeneScreens: (rv:
               )}
 
               {error && (
-                <div className="caveat">
-                  {error.includes("credentials")
-                    ? "The agent needs Anthropic credentials. Set ANTHROPIC_API_KEY where the API runs; everything else in the atlas works without it."
-                    : error}
-                </div>
+                <div className="caveat">{error}</div>
               )}
 
               {result && (

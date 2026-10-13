@@ -468,6 +468,20 @@ so the lock is what stops them, not the guard. **That sandbox is the only thing
 between a generated string and the filesystem; it has its own tests and they
 test the lock as well as the guard.**
 
+**The deployer chooses the model; a visitor never does.** `ATLAS_LLM` picks the
+backend: `anthropic` (default, `claude-haiku-5-5`, the cheapest Claude, with
+prompt caching and effort), or `openrouter`, `ollama` and `openai-compatible`,
+which share one chat-completions loop over `httpx` with the same two tools, turn
+cap and sandbox. A backend the deployer has not finished configuring makes
+`/ask` answer 503 **before** an ask is counted, and `/meta` carries where a
+question goes so the privacy page names it. Two traps: other backends get no
+prompt caching, so the ~9k-token schema is resent every turn; and **Ollama's
+default context is smaller than that schema** and cannot be raised per request,
+so without `OLLAMA_CONTEXT_LENGTH` on the Ollama server the prompt is cut and
+answers go wrong with no error. `atlas eval-ask` puts five fixed questions to the
+configured model with expectations read from the store; run it before trusting
+a model, because the failure to catch is a plausible wrong join, not a refusal.
+
 The schema dump carries each table's trap (join `structures` on `uniprot_acc`
 not `rv_id`; `resistance` is keyed on gene symbol; the vulnerability index is
 negative; `max_phase_tb` is not `max_phase`; a `who_resistance` link is not a
@@ -502,8 +516,9 @@ image with the store inside would publish the whole store, and a store built in
 CI is one nobody read the diff of.
 
 `/ask` spends an allowance (`atlas/ask_access.py`): Turnstile and 5/hour per IP
-anonymously, 20/day per ORCID iD signed in, 500/day across everyone; effort is
-fixed at `high`. **Missing configuration fails closed** — no Turnstile keys
+anonymously, 20/day per ORCID iD signed in, 500/day across everyone, all three
+the deployer's to change (`ATLAS_ASK_*`) because cost per question depends on
+the model; effort is fixed at `high`. **Missing configuration fails closed** — no Turnstile keys
 means no anonymous asks, not unprotected ones. The usage file stores an IP only as an
 HMAC, for 24 h. The usage file is container-local on purpose (SQLite on NFS
 cannot trust its locks), so a redeploy resets the counts.

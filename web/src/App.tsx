@@ -962,7 +962,7 @@ export function App() {
         />
       )}
       <SiteFooter meta={meta} />
-      <SiteNotice />
+      <SiteNotice meta={meta} />
     </div>
   );
 }

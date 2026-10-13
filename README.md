@@ -173,6 +173,9 @@ it read-only, and configure everything else with environment variables — see
 - `/ask` is the only route that costs money. Anonymous askers pass Cloudflare
   Turnstile and get 5 an hour per IP; ORCID sign-in gives 20 a day; 500 a day
   across everyone. Missing keys switch `/ask` off rather than leaving it open.
+- The model is the deployer's choice: Anthropic by default, or OpenRouter, Ollama
+  or any OpenAI-compatible server (`ATLAS_LLM`, see `.env.example`). Run
+  `atlas eval-ask` before trusting a new one.
 - A data refresh never needs a new image: `atlas refresh`, read `atlas diff`,
   copy the store to where the container mounts it, restart.
 

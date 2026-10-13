@@ -736,7 +736,13 @@ export interface Meta {
   counts: Record<string, number>;
   sources: { name: string; version: string; licence: string; retrieved: string }[];
   caveats: string[];
-  site: { operator: string | null; contact: string | null; footer_links: { label: string; url: string }[] };
+  site: {
+    operator: string | null;
+    contact: string | null;
+    footer_links: { label: string; url: string }[];
+    /** Where /ask sends a question; null when the deployer's model settings are incomplete. */
+    llm: { provider: string; label: string; model: string } | null;
+  };
 }
 
 /** What this visitor may still ask (`/auth/me`). `remaining` is null when limits are off. */
@@ -749,6 +755,8 @@ export interface Me {
   global_remaining: number | null;
   turnstile_site_key: string | null;
   signin_available: boolean;
+  /** The deployer's three numbers, so every sentence quotes this site's own. */
+  allowances: { anonymous_per_hour: number; signed_in_per_day: number; global_per_day: number };
 }
 
 export interface TargetQuery {

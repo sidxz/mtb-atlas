@@ -6,6 +6,7 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import type { Meta } from "./api";
+import { questionDestination } from "./askAccess";
 
 const REPO = "https://github.com/sidxz/mtb-atlas";
 const NOTICE_KEY = "atlas.notice.v1";
@@ -72,7 +73,7 @@ function Privacy({ meta }: { meta: Meta | null }) {
       <p>There are no analytics, advertising or tracking cookies. The cookies above are strictly necessary for something you asked for, so the site does not ask for consent.</p>
       <h3>What is sent where</h3>
       <ul>
-        <li><strong>Questions</strong> typed into “Ask the atlas” are sent to Anthropic to be answered. The atlas does not log them.</li>
+        <li><strong>Questions</strong> typed into “Ask the atlas” are sent to {questionDestination(meta)} to be answered{meta?.site.llm ? <> (model: <code>{meta.site.llm.model}</code>)</> : null}. The atlas does not log them.</li>
         <li><strong>Cloudflare Turnstile</strong> checks that an anonymous asker is human. It loads (challenges.cloudflare.com) only when you first click into the Ask box, and receives signals from your browser. Cloudflare's check may set its own cookies when it loads.</li>
         <li><strong>ORCID</strong> handles sign-in. The atlas receives and keeps only your ORCID iD: not your name, email or record, and it can never write to your record.</li>
         <li><strong>RCSB PDB</strong> (models.rcsb.org): when you open an experimental structure, the viewer loads its coordinate file directly in your browser.</li>
@@ -125,12 +126,12 @@ function dismissed(): boolean {
 }
 
 /** Information, not a consent gate: the site behaves the same either way. */
-export function SiteNotice() {
+export function SiteNotice({ meta }: { meta: Meta | null }) {
   const [hidden, setHidden] = useState(dismissed);
   if (hidden) return null;
   return (
     <div className="sitenotice" role="note">
-      <span>The atlas sets no cookies unless you sign in with ORCID, and has no analytics. Asking a question sends it to Anthropic, and anonymous questions are checked by Cloudflare.</span>
+      <span>The atlas sets no cookies unless you sign in with ORCID, and has no analytics. Asking a question sends it to {questionDestination(meta)}, and anonymous questions are checked by Cloudflare.</span>
       <Link to="/about/privacy">Privacy &amp; cookies</Link>
       <button type="button" className="iconbtn" onClick={() => { try { localStorage.setItem(NOTICE_KEY, "1"); } catch { /* blocked: it just comes back */ } setHidden(true); }}>OK</button>
     </div>

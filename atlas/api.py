@@ -10,6 +10,7 @@ from __future__ import annotations
 import atexit
 import math
 import re
+import secrets
 import shutil
 import tempfile
 import threading
@@ -19,7 +20,7 @@ from typing import Annotated, Any, Literal
 import duckdb
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field
 
 from . import ask_access as access
@@ -2411,6 +2412,48 @@ def auth_me(request: Request) -> AuthMe:
         turnstile_site_key=(access.turnstile_site_key() if limits else None),
         signin_available=access.signin_available(),
     )
+
+
+def _set_cookie(response: Response, name: str, value: str, max_age: float) -> None:
+    response.set_cookie(
+        name, value, max_age=int(max_age), httponly=True, secure=True, samesite="lax", path="/"
+    )
+
+
+@app.get("/auth/orcid/login")
+def orcid_login(next: str = "/") -> RedirectResponse:
+    if not access.signin_available():
+        raise HTTPException(404, "Sign-in is not configured on this site.")
+    nonce = secrets.token_urlsafe(16)
+    response = RedirectResponse(access.authorize_url(nonce), status_code=302)
+    _set_cookie(response, access.STATE_COOKIE, access.make_state(nonce, next), access.STATE_SECONDS)
+    return response
+
+
+@app.get("/auth/orcid/callback")
+def orcid_callback(request: Request, code: str = "", state: str = "") -> RedirectResponse:
+    saved = access.read_state(request.cookies.get(access.STATE_COOKIE))
+    # compare_digest raises on non-ASCII str, so compare the bytes.
+    verified = bool(saved and code and secrets.compare_digest(saved[0].encode(), state.encode()))
+    orcid = access.exchange_code(code) if verified else None
+    # Only a state that matches its cookie returns to the page it left; anything else goes home.
+    target = saved[1] if verified and saved else "/"
+    if orcid is None:
+        target += ("&" if "?" in target else "?") + "signin=failed"
+    response = RedirectResponse(f"{access.public_url()}{target}", status_code=302)
+    response.delete_cookie(access.STATE_COOKIE, path="/")
+    if orcid:
+        _set_cookie(
+            response, access.SESSION_COOKIE, access.make_session(orcid), access.SESSION_SECONDS
+        )
+    return response
+
+
+@app.post("/auth/logout", status_code=204)
+def logout() -> Response:
+    response = Response(status_code=204)
+    response.delete_cookie(access.SESSION_COOKIE, path="/")
+    return response
 
 
 @app.post("/ask", response_model=AgentAnswer)

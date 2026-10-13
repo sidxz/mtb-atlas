@@ -417,3 +417,79 @@ def test_me_signed_in(asking: TestClient) -> None:
     asking.cookies.set(access.SESSION_COOKIE, access.make_session(IRIS))
     me = asking.get("/auth/me").json()
     assert (me["orcid"], me["limit"], me["window"], me["remaining"]) == (IRIS, 20, "24h", 20)
+
+
+@pytest.fixture
+def signing_in(asking: TestClient, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    monkeypatch.setenv("ORCID_CLIENT_ID", "APP-TEST")
+    monkeypatch.setenv("ORCID_CLIENT_SECRET", "orcid-secret")
+    monkeypatch.setenv("ATLAS_PUBLIC_URL", "https://atlas.example.org")
+    monkeypatch.setattr(access, "exchange_code", lambda code: IRIS if code == "ok" else None)
+    return asking
+
+
+def _login(client: TestClient, next_path: str) -> str:
+    """Start a sign-in and return the state ORCID would send back."""
+    started = client.get("/auth/orcid/login", params={"next": next_path}, follow_redirects=False)
+    assert started.status_code == 302
+    assert started.headers["location"].startswith("https://orcid.org/oauth/authorize?")
+    return started.headers["location"].split("state=")[1].split("&")[0]
+
+
+def test_sign_in_round_trip_returns_to_the_page_it_left(signing_in: TestClient) -> None:
+    state = _login(signing_in, "/targets/Rv1484?filter=x")
+    back = signing_in.get(
+        "/auth/orcid/callback", params={"code": "ok", "state": state}, follow_redirects=False
+    )
+    assert back.status_code == 302
+    assert back.headers["location"] == "https://atlas.example.org/targets/Rv1484?filter=x"
+    assert signing_in.get("/auth/me").json()["orcid"] == IRIS
+
+
+def test_a_crafted_next_comes_back_home(signing_in: TestClient) -> None:
+    state = _login(signing_in, "//evil.example/steal")
+    back = signing_in.get(
+        "/auth/orcid/callback", params={"code": "ok", "state": state}, follow_redirects=False
+    )
+    assert back.headers["location"] == "https://atlas.example.org/"
+
+
+def test_a_state_that_does_not_match_its_cookie_signs_nobody_in(signing_in: TestClient) -> None:
+    _login(signing_in, "/map")
+    back = signing_in.get(
+        "/auth/orcid/callback", params={"code": "ok", "state": "forged"}, follow_redirects=False
+    )
+    assert back.headers["location"] == "https://atlas.example.org/?signin=failed"
+    assert signing_in.get("/auth/me").json()["orcid"] is None
+
+
+def test_a_non_ascii_state_signs_nobody_in(signing_in: TestClient) -> None:
+    _login(signing_in, "/map")
+    back = signing_in.get(
+        "/auth/orcid/callback", params={"code": "ok", "state": "café"}, follow_redirects=False
+    )
+    assert back.status_code == 302
+    assert back.headers["location"] == "https://atlas.example.org/?signin=failed"
+    assert signing_in.get("/auth/me").json()["orcid"] is None
+
+
+def test_a_failed_exchange_says_so_and_signs_nobody_in(signing_in: TestClient) -> None:
+    state = _login(signing_in, "/genome?x=1")
+    back = signing_in.get(
+        "/auth/orcid/callback", params={"code": "bad", "state": state}, follow_redirects=False
+    )
+    assert back.headers["location"] == "https://atlas.example.org/genome?x=1&signin=failed"
+    assert signing_in.get("/auth/me").json()["orcid"] is None
+
+
+def test_logout_forgets_the_session(signing_in: TestClient) -> None:
+    # Sign in for real, so the cookie logout deletes is the one the server set.
+    state = _login(signing_in, "/")
+    signing_in.get("/auth/orcid/callback", params={"code": "ok", "state": state})
+    assert signing_in.get("/auth/me").json()["orcid"] == IRIS
+    assert signing_in.post("/auth/logout").status_code == 204
+    assert signing_in.get("/auth/me").json()["orcid"] is None
+
+
+def test_sign_in_is_404_when_not_configured(asking: TestClient) -> None:
+    assert asking.get("/auth/orcid/login", follow_redirects=False).status_code == 404

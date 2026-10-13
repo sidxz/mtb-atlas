@@ -191,7 +191,12 @@ export function Ask({ base, onGeneScreens }: { base: string; onGeneScreens: (rv:
         body: JSON.stringify({ question: text }),
         signal: controller.signal,
       });
-      const body = await response.json();
+      let body: { detail?: unknown };
+      try {
+        body = await response.json();
+      } catch {
+        throw new Error(`The atlas could not answer (HTTP ${response.status}). Try again shortly.`);
+      }
       if (!response.ok) {
         throw new Error(response.status === 429 ? refusalMessage(body.detail, new Date()) : (typeof body.detail === "string" ? body.detail : `${response.status}`));
       }

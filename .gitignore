@@ -8,6 +8,9 @@ data/raw/
 data/store/
 data/store.prev/
 
+# /ask's allowance counts: per-deployment state, never committed
+data/ask_usage.sqlite
+
 .venv/
 __pycache__/
 *.pyc

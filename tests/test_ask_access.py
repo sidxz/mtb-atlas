@@ -493,3 +493,59 @@ def test_logout_forgets_the_session(signing_in: TestClient) -> None:
 
 def test_sign_in_is_404_when_not_configured(asking: TestClient) -> None:
     assert asking.get("/auth/orcid/login", follow_redirects=False).status_code == 404
+
+
+def _cookie_attributes(response: httpx.Response, name: str) -> dict[str, str]:
+    """One Set-Cookie header's attributes, names lower-cased; flags map to ''."""
+    for header in response.headers.get_list("set-cookie"):
+        first, *rest = (part.strip() for part in header.split(";"))
+        if first.split("=", 1)[0] == name:
+            attrs = {}
+            for part in rest:
+                key, _, value = part.partition("=")
+                attrs[key.lower()] = value
+            return attrs
+    raise AssertionError(f"no Set-Cookie for {name}")
+
+
+def test_a_denied_sign_in_returns_to_its_page_without_a_session(signing_in: TestClient) -> None:
+    state = _login(signing_in, "/genome?x=1")
+    back = signing_in.get(
+        "/auth/orcid/callback",
+        params={"error": "access_denied", "state": state},
+        follow_redirects=False,
+    )
+    assert back.headers["location"] == "https://atlas.example.org/genome?x=1&signin=failed"
+    assert signing_in.get("/auth/me").json()["orcid"] is None
+
+
+def test_the_state_cookie_is_httponly_secure_lax_and_ten_minutes(signing_in: TestClient) -> None:
+    started = signing_in.get("/auth/orcid/login", follow_redirects=False)
+    attrs = _cookie_attributes(started, access.STATE_COOKIE)
+    assert "httponly" in attrs
+    assert "secure" in attrs
+    assert attrs["samesite"].lower() == "lax"
+    assert attrs["path"] == "/"
+    assert attrs["max-age"] == "600"
+
+
+def test_the_session_cookie_is_httponly_secure_lax_and_thirty_days(signing_in: TestClient) -> None:
+    state = _login(signing_in, "/")
+    back = signing_in.get(
+        "/auth/orcid/callback", params={"code": "ok", "state": state}, follow_redirects=False
+    )
+    attrs = _cookie_attributes(back, access.SESSION_COOKIE)
+    assert "httponly" in attrs
+    assert "secure" in attrs
+    assert attrs["samesite"].lower() == "lax"
+    assert attrs["path"] == "/"
+    assert attrs["max-age"] == str(int(access.SESSION_SECONDS))
+
+
+def test_the_state_cookie_is_cleared_on_return(signing_in: TestClient) -> None:
+    state = _login(signing_in, "/")
+    back = signing_in.get(
+        "/auth/orcid/callback", params={"code": "ok", "state": state}, follow_redirects=False
+    )
+    attrs = _cookie_attributes(back, access.STATE_COOKIE)
+    assert attrs["max-age"] == "0"

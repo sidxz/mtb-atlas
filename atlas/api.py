@@ -2434,10 +2434,10 @@ def orcid_login(next: str = "/") -> RedirectResponse:
 def orcid_callback(request: Request, code: str = "", state: str = "") -> RedirectResponse:
     saved = access.read_state(request.cookies.get(access.STATE_COOKIE))
     # compare_digest raises on non-ASCII str, so compare the bytes.
-    verified = bool(saved and code and secrets.compare_digest(saved[0].encode(), state.encode()))
-    orcid = access.exchange_code(code) if verified else None
+    state_ok = bool(saved and secrets.compare_digest(saved[0].encode(), state.encode()))
+    orcid = access.exchange_code(code) if state_ok and code else None
     # Only a state that matches its cookie returns to the page it left; anything else goes home.
-    target = saved[1] if verified and saved else "/"
+    target = saved[1] if state_ok else "/"
     if orcid is None:
         target += ("&" if "?" in target else "?") + "signin=failed"
     response = RedirectResponse(f"{access.public_url()}{target}", status_code=302)

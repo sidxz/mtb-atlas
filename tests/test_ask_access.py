@@ -299,6 +299,7 @@ def asking(evidence_store: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     for module in (api, store, summary):
         monkeypatch.setattr(module, "STORE", evidence_store)
     monkeypatch.setenv("ATLAS_SECRET", "test-secret")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
     monkeypatch.setenv("TURNSTILE_SITE_KEY", "site-key")
     monkeypatch.setenv("TURNSTILE_SECRET_KEY", "secret-key")
     monkeypatch.setenv("ATLAS_USAGE_DB", str(tmp_path / "usage.sqlite"))
@@ -653,4 +654,16 @@ def test_meta_names_the_backend_the_deployer_chose(
         "model": "qwen3:14b",
     }
     monkeypatch.delenv("ATLAS_LLM_MODEL")
+    assert asking.get("/meta").json()["site"]["llm"] is None
+
+
+def test_an_unkeyed_default_backend_refuses_before_counting(
+    asking: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("ANTHROPIC_API_KEY")
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    monkeypatch.setenv("HOME", "/nonexistent")
+    refused = _ask(asking)
+    assert refused.status_code == 503 and "ANTHROPIC_API_KEY" in refused.json()["detail"]
+    assert asking.get("/auth/me").json()["remaining"] == 5
     assert asking.get("/meta").json()["site"]["llm"] is None

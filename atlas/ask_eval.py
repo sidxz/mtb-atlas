@@ -7,7 +7,7 @@ number moves the expectation with it.
 
 The danger with /ask is not a weak model in general but a plausible wrong join that
 returns a confident number; a model that does that fails here rather than in front
-of a visitor. Five questions are a smoke test, not a benchmark: a pass says the
+of a visitor. Six questions are a smoke test, not a benchmark: a pass says the
 model can use the two tools and read the schema notes, not that every answer is right.
 """
 
@@ -17,6 +17,8 @@ import re
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
+
+import duckdb
 
 from . import agent, store
 
@@ -50,7 +52,9 @@ class Case:
 
 
 def _gene(name: str) -> dict | None:
-    relation = store.read("target_summary").filter(f"gene_name = '{name}'")
+    relation = store.read("target_summary").filter(
+        duckdb.ColumnExpression("gene_name") == duckdb.ConstantExpression(name)
+    )
     row = relation.fetchone()
     return dict(zip(relation.columns, row, strict=True)) if row else None
 
@@ -75,6 +79,15 @@ def cases() -> list[Case]:
                 "atlas? Reply with the number.",
                 str(inha["n_pdb"]),
                 has_number,
+            )
+        )
+        found.append(
+            Case(
+                # A yes beside mmpL3's no, so a model that never queries cannot guess both.
+                "inhA in the WHO catalogue",
+                "Is inhA in the WHO mutation catalogue? Start your reply with yes or no.",
+                "yes" if inha["in_who_catalogue"] else "no",
+                says,
             )
         )
     if mmpl3 := _gene("mmpL3"):

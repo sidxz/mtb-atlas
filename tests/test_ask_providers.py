@@ -21,12 +21,14 @@ LLM_VARS = (
     "ATLAS_LLM_BASE_URL",
     "ATLAS_LLM_API_KEY",
     "ATLAS_LLM_MAX_TOKENS",
+    "ATLAS_LLM_LABEL",
 )
 
 
 def _env(monkeypatch: pytest.MonkeyPatch, **values: str) -> None:
     for name in LLM_VARS:
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
     for name, value in values.items():
         monkeypatch.setenv(name, value)
 
@@ -38,6 +40,7 @@ def test_default_backend_is_anthropic_on_the_cheapest_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _env(monkeypatch)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
     backend = agent.backend()
     assert (backend.name, backend.model) == ("anthropic", agent.MODEL)
 
@@ -77,6 +80,10 @@ def test_ollama_needs_no_key(monkeypatch: pytest.MonkeyPatch) -> None:
             {"ATLAS_LLM": "ollama", "ATLAS_LLM_MODEL": "m", "ATLAS_LLM_MAX_TOKENS": "lots"},
             "ATLAS_LLM_MAX_TOKENS",
         ),
+        (
+            {"ATLAS_LLM": "ollama", "ATLAS_LLM_MODEL": "m", "ATLAS_LLM_MAX_TOKENS": "²"},
+            "ATLAS_LLM_MAX_TOKENS",
+        ),
     ],
 )
 def test_incomplete_configuration_names_what_is_missing(
@@ -105,7 +112,7 @@ def test_incomplete_configuration_names_what_is_missing(
                 "ATLAS_LLM_MODEL": "m",
                 "ATLAS_LLM_BASE_URL": "http://ollama:11434/v1",
             },
-            "a model run by the operator of this site",
+            "an Ollama server at ollama, chosen by the operator of this site",
         ),
         (
             {
@@ -113,15 +120,40 @@ def test_incomplete_configuration_names_what_is_missing(
                 "ATLAS_LLM_MODEL": "m",
                 "ATLAS_LLM_BASE_URL": "https://gpu.example.org/v1",
             },
-            "an Ollama server at gpu.example.org",
+            "an Ollama server at gpu.example.org, chosen by the operator of this site",
+        ),
+        (
+            # A proxy on a service name usually forwards to a hosted model: not "run by".
+            {
+                "ATLAS_LLM": "openai-compatible",
+                "ATLAS_LLM_MODEL": "m",
+                "ATLAS_LLM_BASE_URL": "http://litellm:4000/v1",
+            },
+            "a model server at litellm, chosen by the operator of this site",
         ),
         (
             {
                 "ATLAS_LLM": "openai-compatible",
                 "ATLAS_LLM_MODEL": "m",
-                "ATLAS_LLM_BASE_URL": "https://llm.example.org/v1",
+                "ATLAS_LLM_BASE_URL": "http://[2001:db8::1]:8000/v1",
             },
-            "the model server at llm.example.org",
+            "a model server at 2001:db8::1, chosen by the operator of this site",
+        ),
+        (
+            {
+                "ATLAS_LLM": "openai-compatible",
+                "ATLAS_LLM_MODEL": "m",
+                "ATLAS_LLM_BASE_URL": "http://127.0.0.1:8000/v1",
+            },
+            "a model run by the operator of this site",
+        ),
+        (
+            {
+                "ATLAS_LLM": "ollama",
+                "ATLAS_LLM_MODEL": "m",
+                "ATLAS_LLM_LABEL": "the lab's own GPU server",
+            },
+            "the lab's own GPU server",
         ),
     ],
 )
@@ -130,6 +162,19 @@ def test_the_privacy_label_names_where_questions_go(
 ) -> None:
     _env(monkeypatch, **env)
     assert agent.describe_backend()["label"] == label
+
+
+def test_anthropic_without_credentials_is_not_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Checked before an ask is counted, so an unkeyed default deploy spends nothing.
+    _env(monkeypatch)
+    for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("HOME", "/nonexistent")  # no `ant auth login` profile either
+    with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"):
+        agent.backend()
+    assert agent.describe_backend() is None
 
 
 def test_a_misconfigured_backend_describes_as_none(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -289,3 +334,50 @@ def test_arguments_given_as_an_object_are_accepted(ollama: None) -> None:
     fake = FakeModel([reply, final("Rv3790")])
     _ask(fake)
     assert "Rv3790" in fake.body(1)["messages"][-1]["content"]
+
+
+@pytest.mark.parametrize("reason", ["error", "tool_calls", "something_new"])
+def test_an_unknown_finish_reason_is_labelled_not_passed_off(ollama: None, reason: str) -> None:
+    answer = _ask(FakeModel([final("partial", finish=reason)]))
+    assert answer.text.startswith("**") and answer.text.endswith("partial")
+    assert answer.text != "partial"
+
+
+def test_upstream_errors_never_show_the_service_address_or_a_key(
+    ollama: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(
+        "ATLAS_LLM_BASE_URL", "https://user:sk-secret@llm.internal.example/v1?key=sk-q"
+    )
+    with pytest.raises(RuntimeError) as caught:
+        _ask(FakeModel([401]))
+    message = str(caught.value)
+    assert "401" in message
+    for leak in ("sk-secret", "sk-q", "llm.internal.example", "user"):
+        assert leak not in message
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"choices": [{"message": None}]},
+        {"choices": [{"message": {"tool_calls": ["not a call"]}}]},
+        {"choices": "nope"},
+    ],
+)
+def test_a_malformed_reply_is_a_runtime_error_not_a_crash(ollama: None, body: dict) -> None:
+    def reply(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=body)
+
+    with pytest.raises(RuntimeError, match="model call failed"):
+        agent.ask("What is dprE1?", transport=httpx.MockTransport(reply))
+
+
+def test_a_question_that_runs_past_its_deadline_stops_labelled(
+    ollama: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(agent, "ASK_DEADLINE", 0.0)
+    fake = FakeModel([tool_call("describe_store", {}), final("late")])
+    answer = _ask(fake)
+    assert len(fake.requests) == 1
+    assert answer.text.startswith(f"**{agent.STOPPED['deadline']}**")

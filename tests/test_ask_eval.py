@@ -64,6 +64,8 @@ def test_expectations_come_from_the_store_and_absent_genes_are_skipped() -> None
     by_name = {case.name: case for case in ask_eval.cases()}
     assert by_name["dprE1 locus tag"].expected == "Rv3790"
     assert by_name["mmpL3 in the WHO catalogue"].expected == "no"
+    # A yes beside the no, so a model that never queries cannot pass both by guessing.
+    assert by_name["inhA in the WHO catalogue"].expected == "yes"
     inha = store.read("target_summary").filter("gene_name = 'inhA'").fetchone()
     assert by_name["inhA structures"].expected == str(inha[inha_index()])
     # The fixture store has no groEL2, so its question is not asked rather than failed.

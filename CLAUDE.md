@@ -472,13 +472,17 @@ test the lock as well as the guard.**
 backend: `anthropic` (default, `claude-haiku-5-5`, the cheapest Claude, with
 prompt caching and effort), or `openrouter`, `ollama` and `openai-compatible`,
 which share one chat-completions loop over `httpx` with the same two tools, turn
-cap and sandbox. A backend the deployer has not finished configuring makes
-`/ask` answer 503 **before** an ask is counted, and `/meta` carries where a
-question goes so the privacy page names it. Two traps: other backends get no
+cap and sandbox. A backend the deployer has not finished configuring, an
+unkeyed Anthropic one included, makes `/ask` answer 503 **before** an ask is
+counted, and `/meta` carries where a question goes so the privacy page names
+it: only a loopback address is "run by the operator", anything else is named
+by host unless `ATLAS_LLM_LABEL` says otherwise, because a service name can be
+a proxy to a hosted model. A visitor never sees the service's address or an
+upstream error's text, only its status code. Two traps: other backends get no
 prompt caching, so the ~9k-token schema is resent every turn; and **Ollama's
 default context is smaller than that schema** and cannot be raised per request,
 so without `OLLAMA_CONTEXT_LENGTH` on the Ollama server the prompt is cut and
-answers go wrong with no error. `atlas eval-ask` puts five fixed questions to the
+answers go wrong with no error. `atlas eval-ask` puts six fixed questions to the
 configured model with expectations read from the store; run it before trusting
 a model, because the failure to catch is a plausible wrong join, not a refusal.
 

@@ -58,7 +58,7 @@ def _allowance(name: str) -> int:
     raw = _env(name)
     if raw is None:
         return ALLOWANCES[name]
-    if not (raw.isdigit() and int(raw) > 0):
+    if not (raw.isdecimal() and int(raw) > 0):
         raise RuntimeError(f"{name} must be a positive whole number, not {raw!r}.")
     return int(raw)
 

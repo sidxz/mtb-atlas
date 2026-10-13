@@ -22,10 +22,12 @@ from __future__ import annotations
 
 import atexit
 import json
+import logging
 import os
 import shutil
 import tempfile
 import threading
+import time
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlsplit
@@ -54,6 +56,7 @@ STOPPED = {
     "tool_use": f"No final answer: the agent used all {MAX_TURNS} turns.",
     "max_tokens": "Cut off at the length limit; what follows is incomplete.",
     "refusal": "The model declined to answer this question.",
+    "deadline": "No final answer: the question ran past its time limit.",
 }
 
 TABLES = (
@@ -755,6 +758,10 @@ PRESETS = {
 }
 # A local model can take minutes on a broad question; a hung server must still end.
 LLM_TIMEOUT = 300.0
+# And a whole question must end too: twelve slow turns would otherwise hold a worker for an hour.
+ASK_DEADLINE = 600.0
+LOOPBACK = ("localhost", "127.0.0.1", "::1")
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -774,6 +781,7 @@ def backend() -> Backend:
     """The configured backend, or a RuntimeError naming the setting that is missing."""
     name = (_env("ATLAS_LLM") or "anthropic").lower()
     if name == "anthropic":
+        _anthropic_client()  # credentials are configuration: checked before an ask is counted
         return Backend("anthropic", _env("ATLAS_LLM_MODEL") or MODEL)
     if name not in PRESETS:
         choices = ", ".join(["anthropic", *PRESETS])
@@ -788,32 +796,50 @@ def backend() -> Backend:
     if name == "openrouter" and api_key is None:
         raise RuntimeError("ATLAS_LLM=openrouter needs ATLAS_LLM_API_KEY.")
     max_tokens = _env("ATLAS_LLM_MAX_TOKENS")
-    if max_tokens is not None and not (max_tokens.isdigit() and int(max_tokens) > 0):
+    if max_tokens is not None and not (max_tokens.isdecimal() and int(max_tokens) > 0):
         raise RuntimeError("ATLAS_LLM_MAX_TOKENS must be a positive whole number.")
     return Backend(
         name, model, base_url.rstrip("/"), api_key, int(max_tokens) if max_tokens else None
     )
 
 
+def _anthropic_client():
+    import anthropic
+
+    # Ask the SDK rather than the environment: it also resolves an `ant auth login`
+    # profile, which a check on two variables would refuse.
+    client = anthropic.Anthropic()
+    if not (client.api_key or client.auth_token or client.credentials):
+        raise RuntimeError(
+            "No Anthropic credentials. Set ANTHROPIC_API_KEY, or run `ant auth login`."
+        )
+    return client
+
+
 def describe_backend() -> dict[str, str] | None:
-    """Where a question goes, in words for the privacy page; None if misconfigured."""
+    """Where a question goes, in words for the privacy page; None if misconfigured.
+
+    Only a loopback address is "run by the operator": a service name or a remote
+    host may be a proxy to a hosted model, so it is named, not vouched for. A
+    deployer who knows better says so with ATLAS_LLM_LABEL.
+    """
     try:
         b = backend()
     except RuntimeError:
         return None
     host = urlsplit(b.base_url or "").hostname or ""
-    # A bare service name (`ollama`) or loopback is a model on the operator's own machines.
-    on_site = host in ("localhost", "127.0.0.1", "::1") or "." not in host
-    if b.name == "anthropic":
+    if label := _env("ATLAS_LLM_LABEL"):
+        pass
+    elif b.name == "anthropic":
         label = "Anthropic"
     elif b.name == "openrouter":
         label = "OpenRouter, which passes it to the model's provider"
-    elif on_site:
+    elif host in LOOPBACK or host.startswith("127."):
         label = "a model run by the operator of this site"
     elif b.name == "ollama":
-        label = f"an Ollama server at {host}"
+        label = f"an Ollama server at {host}, chosen by the operator of this site"
     else:
-        label = f"the model server at {host}"
+        label = f"a model server at {host}, chosen by the operator of this site"
     return {"provider": b.name, "label": label, "model": b.model}
 
 
@@ -879,13 +905,7 @@ def _ask_anthropic(
     import anthropic
     from anthropic import beta_tool
 
-    # Ask the SDK rather than the environment: it also resolves an `ant auth login`
-    # profile, which a check on two variables would refuse.
-    client = anthropic.Anthropic()
-    if not (client.api_key or client.auth_token or client.credentials):
-        raise RuntimeError(
-            "No Anthropic credentials. Set ANTHROPIC_API_KEY, or run `ant auth login`."
-        )
+    client = _anthropic_client()
 
     @beta_tool
     def describe_store() -> str:
@@ -971,6 +991,39 @@ def _run_tool(name: str | None, arguments: Any, calls: list[ToolCall]) -> str:
     return f"ERROR: there is no tool called {name!r}; use describe_store or query_store."
 
 
+def _complete(client: httpx.Client, body: dict[str, Any]) -> tuple[dict, dict, list[dict]]:
+    """One chat completion, or a RuntimeError a visitor may read.
+
+    The visitor sees a status code at most. httpx's own message carries the full URL,
+    which names the service and would carry any key a deployer put in it; that detail
+    goes to the server log, without the URL.
+    """
+    try:
+        response = client.post("/chat/completions", json=body)
+    except httpx.HTTPError as error:
+        log.warning("model service unreachable: %s", type(error).__name__)
+        raise RuntimeError(
+            "The model call failed: the model service could not be reached."
+        ) from None
+    if response.status_code != 200:
+        log.warning("model service answered HTTP %s", response.status_code)
+        raise RuntimeError(
+            f"The model call failed: the model service answered HTTP {response.status_code}."
+        )
+    try:
+        choice = response.json()["choices"][0]
+        message = choice["message"]
+        tool_calls = message.get("tool_calls") or []
+        if not isinstance(choice, dict) or not all(isinstance(c, dict) for c in tool_calls):
+            raise TypeError("unexpected shape")
+    except (ValueError, KeyError, IndexError, TypeError, AttributeError) as error:
+        log.warning("model service sent an unreadable reply: %s", type(error).__name__)
+        raise RuntimeError(
+            "The model call failed: the model service sent a reply the atlas could not read."
+        ) from None
+    return choice, message, tool_calls
+
+
 def _ask_openai(
     question: str, b: Backend, calls: list[ToolCall], transport: Any
 ) -> tuple[str, str]:
@@ -981,24 +1034,23 @@ def _ask_openai(
     ]
     headers = {"Authorization": f"Bearer {b.api_key}"} if b.api_key else {}
     text = ""
+    deadline = time.monotonic() + ASK_DEADLINE
     with httpx.Client(
         base_url=b.base_url, headers=headers, timeout=LLM_TIMEOUT, transport=transport
     ) as client:
-        for _ in range(MAX_TURNS):
+        for turn in range(MAX_TURNS):
+            if turn and time.monotonic() > deadline:
+                return text, "deadline"
             body: dict[str, Any] = {"model": b.model, "messages": messages, "tools": OPENAI_TOOLS}
             if b.max_tokens:
                 body["max_tokens"] = b.max_tokens
-            try:
-                response = client.post("/chat/completions", json=body)
-                response.raise_for_status()
-                choice = response.json()["choices"][0]
-                message = choice["message"]
-            except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as error:
-                raise RuntimeError(f"The model call failed: {error}") from error
+            choice, message, tool_calls = _complete(client, body)
             text = (message.get("content") or "").strip()
-            tool_calls = message.get("tool_calls") or []
             if not tool_calls:
-                return text, FINISH.get(choice.get("finish_reason") or "stop", "end_turn")
+                # An unknown reason (OpenRouter's "error", say) keeps its own name, so
+                # STOPPED labels it rather than passing narration off as an answer.
+                reason = choice.get("finish_reason") or "stop"
+                return text, FINISH.get(reason, reason)
             messages.append(
                 {"role": "assistant", "content": message.get("content"), "tool_calls": tool_calls}
             )

@@ -80,7 +80,7 @@ function Privacy({ meta }: { meta: Meta | null }) {
         <li><strong>The web server</strong> records each request (address, path, time) in the operator's server logs.</li>
       </ul>
       <h3>Counting questions</h3>
-      <p>To enforce the question allowance the atlas stores, per question, the time and either your ORCID iD or a keyed hash of your IP address. The IP address itself is never stored, and every row is deleted after 24 hours.</p>
+      <p>To enforce the question allowance the atlas stores, per question, the time and either your ORCID iD or a keyed hash of your IP address. The IP address itself is never stored, and every row is deleted once it is a day old.</p>
     </>
   );
 }

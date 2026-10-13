@@ -504,7 +504,7 @@ CI is one nobody read the diff of.
 `/ask` spends an allowance (`atlas/ask_access.py`): Turnstile and 5/hour per IP
 anonymously, 20/day per ORCID iD signed in, 500/day across everyone; effort is
 fixed at `high`. **Missing configuration fails closed** — no Turnstile keys
-means no anonymous asks, not unprotected ones. An IP is only ever stored as an
+means no anonymous asks, not unprotected ones. The usage file stores an IP only as an
 HMAC, for 24 h. The usage file is container-local on purpose (SQLite on NFS
 cannot trust its locks), so a redeploy resets the counts.
 

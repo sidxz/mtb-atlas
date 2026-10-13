@@ -117,15 +117,14 @@ function Conditions({ detail }: { detail: Detail }) {
   const { measured, unmeasured } = detail.tnseq_coverage;
   const total = measured + unmeasured;
   if (!total) {
-    return <span className="absent">not in any annotated screen</span>;
+    return <span className="absent">No annotated screen includes this gene</span>;
   }
   if (!measured) {
     return (
       <>
         <span className="absent">not measurable in any of the {unmeasured} screens</span>
         <div className="note">
-          The gene tolerates no transposon insertions, so no screen had anything to compare.
-          Expected for an essential gene, and not the same as no effect.
+          No transposon insertions were available to estimate fitness in these screens. The effect of each condition is unmeasured.
         </div>
       </>
     );
@@ -136,32 +135,28 @@ function Conditions({ detail }: { detail: Detail }) {
         {detail.conditions.length}
       </span>{" "}
       <span className="dim">
-        of {measured} measurable condition{measured === 1 ? "" : "s"} significant
-        {unmeasured > 0 && ` · ${unmeasured} could not measure it`}
+        condition{detail.conditions.length === 1 ? "" : "s"} with significant effects ({measured} measured)
+        {unmeasured > 0 && ` · ${unmeasured} unmeasured`}
       </span>
       {detail.conditions.length > 0 ? (
         <>
           <ConditionTable hits={detail.conditions} />
           <div className="note">
-            Negative is depleted. Significant is q &lt; 0.05, which is this atlas&rsquo;s cut, not
-            the authors&rsquo;. TRANSIT counts TA sites across the whole ORF, so for a gene that is
-            essential in broth a fold change here can rest on insertions at the gene&rsquo;s ends,
-            where they disrupt least — read it with the essentiality call above.
+            Negative log2FC indicates depletion. The atlas uses q &lt; 0.05 as its significance threshold. TRANSIT counts TA sites across the whole ORF; in essential genes, surviving insertions near the ends may affect the estimate. Interpret these results alongside the essentiality classification.
           </div>
         </>
       ) : (
         <div className="note">
-          Significant is q &lt; 0.05, this atlas&rsquo;s cut rather than the authors&rsquo;.
+          No measured condition met the atlas’s significance threshold of q &lt; 0.05.
           {unmeasured > 0 &&
-            " A screen that could not measure it is not evidence of no effect: the gene took no insertions there."}
+            " Screens without transposon insertions could not estimate an effect."}
         </div>
       )}
       {detail.interactions.length > 0 && (
         <>
           <div className="note" style={{ color: "var(--fg)" }}>
             Also significant in {detail.interactions.length} knockout background
-            {detail.interactions.length === 1 ? "" : "s"}. That is a genetic interaction with the
-            deleted gene, <b>not</b> a condition this gene is required under.
+            {detail.interactions.length === 1 ? "" : "s"}. These results describe genetic interactions with the deleted genes.
           </div>
           <ConditionTable hits={detail.interactions} interaction />
         </>
@@ -355,7 +350,7 @@ function Protein({ detail }: { detail: Detail }) {
   if (!detail.uniprot_acc) {
     return (
       <Row label="Protein">
-        <span className="absent">no protein: this is an RNA gene, or no accession could be resolved</span>
+        <span className="absent">No protein record is available. This may be an RNA gene or a locus without a mapped accession.</span>
       </Row>
     );
   }
@@ -433,11 +428,11 @@ function Evidence({ detail }: { detail: Detail }) {
               {detail.essentiality_label}
             </span>
             <div className="note">
-              {detail.ta_sites ?? "—"} TA sites. One condition: {detail.essentiality_condition}.
+              {detail.ta_sites ?? "—"} TA sites. Growth condition: {detail.essentiality_condition}.
             </div>
           </>
         ) : (
-          <span className="absent">no call in this dataset</span>
+          <span className="absent">No classification recorded</span>
         )}
       </Row>
 
@@ -446,11 +441,9 @@ function Evidence({ detail }: { detail: Detail }) {
           <span className="absent">this locus was not in the screen</span>
         ) : detail.cholesterol_measured === false ? (
           <>
-            <span className="absent">not measurable by transposon screening</span>
+            <span className="absent">Not measured: no transposon insertions</span>
             <div className="note">
-              The gene tolerates no insertions, so there was nothing to compare between
-              carbon sources. That is true of every gene essential in broth, and it is not
-              the same as no effect.
+              No transposon insertions were available to compare fitness between carbon sources. The effect of cholesterol was not measured.
             </div>
           </>
         ) : (
@@ -504,19 +497,16 @@ function Evidence({ detail }: { detail: Detail }) {
                 : ""}
             </span>
             <div className="note">
-              More negative is more vulnerable: how far expression has to fall before fitness
-              suffers, which is the question an inhibitor poses. Essentiality only says whether the
-              gene can be deleted.
+              More negative values indicate greater sensitivity to reduced gene expression. CRISPRi measures the effect of knockdown; the essentiality screen measures the effect of gene disruption.
             </div>
             {!detail.vulnerability_certain && (
               <p className="caveat">
-                This estimate did not meet the study&rsquo;s own criteria for confidence — only ~600
-                genes do. Treat it as indicative.
+                This estimate did not meet Bosch 2021’s confidence criteria.
               </p>
             )}
             {detail.antibacterial && (
               <div className="note" style={{ color: "var(--fg)" }}>
-                Already targeted by <b>{detail.antibacterial}</b>.
+                Bosch 2021 drug annotation: <b>{detail.antibacterial}</b>.
               </div>
             )}
             <ClinicalStrain detail={detail} />
@@ -538,8 +528,8 @@ function Evidence({ detail }: { detail: Detail }) {
             </span>
             <div className="note">
               {detail.close_human_homolog
-                ? "Close enough to be a selectivity liability worth checking early."
-                : "A detectable but distant relative. Below the 30% line this atlas draws for a close homolog — that line is a convention here, not a fact of biology."}
+                ? "Meets the atlas’s 30% identity threshold for a close human homolog. Selectivity requires experimental assessment."
+                : "Below the atlas’s 30% identity threshold for a close human homolog."}
             </div>
           </>
         ) : (
@@ -561,17 +551,15 @@ function Evidence({ detail }: { detail: Detail }) {
               {Math.round((detail.closest_paralog_identity ?? 0) * 100)}% identity
             </span>
             {detail.n_close_paralogs > 1 && (
-              <span className="dim"> · {detail.n_close_paralogs} full-length copies</span>
+              <span className="dim"> · {detail.n_close_paralogs} close paralogs</span>
             )}
             <div className="note">
-              A second copy spans this protein, so inhibiting one may be covered by the
-              other — a compound can look inactive for a reason that is nothing to do with
-              the chemistry.
+              A related Mtb protein meets the threshold of 30% identity over 70% of this protein. Sequence similarity alone does not establish whether it can compensate for inhibition.
             </div>
           </>
         ) : detail.has_paralog ? (
           <>
-            <span className="chip ok">no backup copy</span>{" "}
+            <span className="chip ok">no close paralog</span>{" "}
             <span className="dim">
               nearest relative {detail.nearest_relative_gene} at{" "}
               <span className="mono">
@@ -585,17 +573,14 @@ function Evidence({ detail }: { detail: Detail }) {
             </span>
             <div className="note">
               {detail.n_paralogs} relative{detail.n_paralogs === 1 ? "" : "s"} in the genome,
-              none of them a full-length copy. A shared domain is not a backup: the line here
-              is 30% identity over 70% of the protein, which is this atlas's convention and
-              stricter than the one used for the human homolog above.
+              none meeting both thresholds for a close paralog: 30% identity and 70% query coverage. Functional redundancy has not been assessed.
             </div>
           </>
         ) : (
           <>
             <span className="chip ok">none detected</span>
             <div className="note">
-              No other Mtb protein matches at E ≤ 1e-5, so nothing in the genome is placed to
-              cover for this one.
+              No other Mtb protein matched at E ≤ 1e-5 in the phmmer search.
             </div>
           </>
         )}
@@ -617,7 +602,7 @@ function Evidence({ detail }: { detail: Detail }) {
             </div>
           </>
         ) : (
-          <span className="absent">none of its own</span>
+          <span className="absent">No structure under this accession</span>
         )}
         <Borrowed detail={detail} />
       </Row>
@@ -661,9 +646,7 @@ function Evidence({ detail }: { detail: Detail }) {
             {detail.n_mic_censored > 0 && (
               <p className="note dim" style={{ marginTop: 2 }}>
                 {detail.n_mic_censored} further MIC
-                {detail.n_mic_censored === 1 ? " is" : "s are"} censored — the compound did not
-                inhibit at the highest concentration tested, which is a measured result and not a
-                potency, so it carries no pMIC.
+                {detail.n_mic_censored === 1 ? " is" : "s are"} censored: the MIC was not reached at the highest concentration tested. These results are excluded from pMIC.
               </p>
             )}
             <WholeCellConditions detail={detail} />
@@ -674,15 +657,14 @@ function Evidence({ detail }: { detail: Detail }) {
                 {t.evidence === "orthologue" && (
                   <div>
                     via {t.via_gene ?? t.via_accession} · {t.via_organism} · {t.uniref_cluster},{" "}
-                    {Math.round(Number(t.identity_level) * 100)}% cluster of {t.cluster_size} — a
-                    family-level link, not evidence of a shared binding site.
+                    {Math.round(Number(t.identity_level) * 100)}% cluster of {t.cluster_size} — linked through a UniRef cluster; binding-site similarity has not been assessed.
                   </div>
                 )}
               </div>
             ))}
           </>
         ) : (
-          <span className="absent">no compound in ChEMBL is recorded against this gene</span>
+          <span className="absent">No ChEMBL compound activity is linked to this gene in the dataset</span>
         )}
       </Row>
 
@@ -703,8 +685,8 @@ function Evidence({ detail }: { detail: Detail }) {
         ) : (
           <span className="absent">
             {detail.n_drugs === null
-              ? "the clinical layer is not built in this store — run `atlas clinical`"
-              : "no drug with a TB indication acts on this gene"}
+              ? "Clinical data is unavailable in this dataset"
+              : "No drug with a TB indication is recorded as acting on this protein"}
             {!!detail.n_complex_drugs &&
               ` (${detail.n_complex_drugs} act on a complex it belongs to)`}
           </span>
@@ -722,8 +704,7 @@ function Evidence({ detail }: { detail: Detail }) {
               ))}
             </div>
             <div className="note">
-              {detail.n_variants_mappable} of {detail.n_variants_associated} are residue changes; the
-              rest change the promoter or break the protein, and no structure can show those.
+              {detail.n_variants_mappable} of {detail.n_variants_associated} are residue changes that can be mapped to the structure. Promoter changes and protein-disrupting variants are listed without a structure position.
             </div>
           </>
         ) : (
@@ -760,7 +741,7 @@ function Evidence({ detail }: { detail: Detail }) {
       </Row>
 
       {detail.absences.length > 0 && (
-        <Row label="What the atlas does not know">
+        <Row label="Data coverage">
           {detail.absences.map((text) => (
             <p className="caveat" key={text}>
               {text}
@@ -809,8 +790,7 @@ function ClinicalStrain({ detail }: { detail: Detail }) {
   if (clinical === null || clinical === undefined) {
     return (
       <p className="caveat">
-        Not measured in HN878, so this number holds for H37Rv — a strain in culture since
-        1905 — and is untested in a clinical isolate.
+        No HN878 vulnerability measurement is available for this gene in Bosch 2021.
       </p>
     );
   }
@@ -822,21 +802,20 @@ function ClinicalStrain({ detail }: { detail: Detail }) {
       <b style={{ color: detail.hn878_vi_certain ? "var(--accent)" : "var(--fg-dim)" }}>
         {clinical.toFixed(2)}
       </b>
-      {!detail.hn878_vi_certain && <span className="dim"> (not a confident estimate there)</span>}
+      {!detail.hn878_vi_certain && <span className="dim"> (below the study’s confidence threshold)</span>}
       {delta !== null && direction !== null && (
         <>
           {" — "}
           <b>
             {Math.abs(delta).toFixed(1)} {direction} vulnerable
           </b>{" "}
-          than in H37Rv, by the paper&rsquo;s own differential.
+          than in H37Rv, according to the difference reported by Bosch 2021.
         </>
       )}
       {delta === null && (
         <span className="dim">
           {" "}
-          — Bosch reports no differential for this gene, so compare the two by eye rather than
-          as a tested difference.
+          — Bosch 2021 reports both measurements but no statistical comparison between strains.
         </span>
       )}
     </div>
@@ -854,7 +833,7 @@ function BoundLigands({ detail }: { detail: Detail }) {
         <thead>
           <tr>
             <th>Code</th>
-            <th>What it is</th>
+            <th>Component name</th>
             <th className="n">pChEMBL</th>
             <th>TB phase</th>
           </tr>
@@ -930,7 +909,7 @@ function Borrowed({ detail }: { detail: Detail }) {
         <>
           <span className="chip ok">same sequence elsewhere</span> {detail.n_orthologue_pdb} entr
           {detail.n_orthologue_pdb === 1 ? "y" : "ies"} of an{" "}
-          <b>identical</b> sequence filed under another accession
+          <b>identical</b> sequence deposited under another accession
           {detail.closest_orthologue_organism ? ` (${detail.closest_orthologue_organism})` : ""}.
         </>
       ) : (
@@ -977,7 +956,7 @@ function Precedent({ detail }: { detail: Detail }) {
   const approved = detail.n_precedent_approved;
   const clinical = detail.n_precedent_clinical ?? 0;
   if (approved === null) {
-    return <span className="absent">no Pfam domain annotated, so nothing to look up</span>;
+    return <span className="absent">No Pfam domain annotation is available for this comparison</span>;
   }
   const human = detail.n_precedent_human_target ?? 0;
   const shared = detail.precedent_domain_genes ?? 0;
@@ -994,14 +973,12 @@ function Precedent({ detail }: { detail: Detail }) {
       <>
         <span className="absent">none</span>
         <div className="note" style={{ marginTop: 5 }}>
-          No drug is filed against any other protein carrying this gene&apos;s domains. A measured
-          zero, not an untested one.
+          No approved or clinical-stage drug is recorded against another single protein with these Pfam domains.
           {detail.n_precedent_complex ? (
             <>
               {" "}
               {detail.n_precedent_complex} approved drug
-              {detail.n_precedent_complex === 1 ? " is" : "s are"} filed against a complex or
-              protein family containing one, which says nothing about this fold.
+              {detail.n_precedent_complex === 1 ? " is" : "s are"} recorded against a complex or protein family with a shared domain. These records are excluded from the single-protein count.
             </>
           ) : null}
         </div>
@@ -1033,7 +1010,7 @@ function Precedent({ detail }: { detail: Detail }) {
             {detail.n_precedent_complex} more against a complex or protein family, not counted.
           </>
         ) : null}{" "}
-        <span className="faint">Not a druggability call: no source provides one.</span>
+        <span className="faint">Druggability has not been assessed in this dataset.</span>
       </div>
     </>
   );
@@ -1053,15 +1030,13 @@ function DrugPrecedentTable({ detail }: { detail: Detail }) {
   return (
     <>
       <h4 style={{ margin: "18px 0 0" }}>
-        Drugs on this fold{" "}
+        Drugs targeting proteins with a shared domain{" "}
         <span className="faint" style={{ fontWeight: 400 }}>
-          · not on this protein
+          · other proteins
         </span>
       </h4>
       <p className="note" style={{ margin: "4px 0 0" }}>
-        Every ChEMBL mechanism against another protein that shares a Pfam domain with this gene.
-        This is not a druggability score and nothing public provides one; it is a count of
-        database records, and whether a fold in common means a pocket in common is your call.
+        ChEMBL drug mechanisms recorded against other proteins with a shared Pfam domain. These records provide examples of related drug targets. Binding-site similarity and druggability have not been assessed.
       </p>
       <div className="scroller" style={{ marginTop: 10 }}>
         <table>
@@ -1106,15 +1081,13 @@ function OrthologueStructureTable({ detail }: { detail: Detail }) {
   return (
     <>
       <h4 style={{ margin: "18px 0 0" }}>
-        Structures of a relative{" "}
+        Related-protein structures{" "}
         <span className="faint" style={{ fontWeight: 400 }}>
-          · not of this protein
+          · other accessions
         </span>
       </h4>
       <p className="note" style={{ margin: "4px 0 0" }}>
-        Reached by homology to the mycobacterial proteins that have a PDB entry. These are
-        deliberately kept out of the viewer above: the residue numbering is the neighbour's, so
-        overlaying this gene&apos;s resistance residues on one would place them wrongly.
+        Structures of related mycobacterial proteins, identified by sequence similarity. They use their own residue numbering and are excluded from the resistance-mutation viewer.
       </p>
       <div className="scroller" style={{ marginTop: 10 }}>
         <table>
@@ -1250,8 +1223,7 @@ function WholeCellConditions({ detail }: { detail: Detail }) {
       </table>
       {named.length === 0 && (
         <p className="caveat" style={{ marginTop: 4 }}>
-          No published MIC for this gene's compounds states a growth condition, so nothing is
-          known here about activity outside ordinary aerobic culture.
+          Growth conditions are unspecified for the MIC measurements linked to this gene.
         </p>
       )}
     </div>
@@ -1269,8 +1241,7 @@ function AssayReadiness({ detail }: { detail: Detail }) {
   if (!assays) {
     return (
       <p className="caveat" style={{ marginTop: 0 }}>
-        No published assay against this protein in ChEMBL, so screening it starts with
-        developing one. Whole-cell and orthologue measurements do not supply one.
+        No single-protein assay is recorded in ChEMBL for this target. Whole-cell and orthologue assays are listed separately.
       </p>
     );
   }
@@ -1302,10 +1273,10 @@ function ScreenedIn({ detail, onOpenScreen }: { detail: Detail; onOpenScreen?: (
   if (!own.length) {
     return (
       <p className="caveat">
-        No screening campaign in the atlas was run on this protein alone
+        No campaign in this dataset screened this protein alone
         {complex.length > 0 &&
-          `; ${complex.length} reached it only as part of a complex, which is not a screen of it`}
-        . 71 of 4,031 genes have one.
+          `; ${complex.length} screened a complex containing it`}
+        .
       </p>
     );
   }
@@ -1350,8 +1321,7 @@ function ScreenedIn({ detail, onOpenScreen }: { detail: Detail; onOpenScreen?: (
       </div>
       {complex.length > 0 && (
         <p className="caveat">
-          {complex.length} further campaign{complex.length === 1 ? "" : "s"} reached this gene only
-          as part of a complex. Shown, never counted as its own.
+          {complex.length} further campaign{complex.length === 1 ? "" : "s"} screened a complex containing this protein. These records are excluded from the single-protein campaign count.
         </p>
       )}
     </>
@@ -1397,8 +1367,7 @@ function Chemistry({ detail, onOpen, onOpenScreen }: {
         <AssayReadiness detail={detail} />
         <ScreenedIn detail={detail} onOpenScreen={onOpenScreen} />
         <p className="absent">
-          No ChEMBL activity against this gene. If it is essential and has a structure, that is
-          the interesting kind of nothing.
+          No ChEMBL compound activity is linked to this gene in the dataset.
         </p>
         <DrugPrecedentTable detail={detail} />
       </>
@@ -1513,9 +1482,7 @@ function Resistance({ detail, onFocus }: { detail: Detail; onFocus: (position: n
   if (!detail.variants.length) {
     return (
       <p className="absent">
-        {detail.gene_name ?? detail.rv_id} is not among the WHO catalogue's 65 genes — those with
-        matched phenotypic drug-susceptibility testing — so there are no graded variants to place on
-        a structure.
+        {detail.gene_name ?? detail.rv_id} has no graded variants in the included WHO catalogue records.
       </p>
     );
   }
@@ -1529,7 +1496,7 @@ function Resistance({ detail, onFocus }: { detail: Detail; onFocus: (position: n
     <>
       <p className="note" style={{ marginTop: 0 }}>
         {detail.n_variants_mappable} of {grouped.size} graded variants are residue changes. Click one
-        to swing the structure onto it.
+        to locate it in the structure.
       </p>
       <div className="scroller">
         <table>
@@ -1577,16 +1544,14 @@ function Network({ detail }: { detail: Detail }) {
   if (!detail.partners.length) {
     return (
       <p className="absent">
-        No high-confidence STRING partners. Edges below a combined score of 700 are left out: the
-        full network is mostly low-confidence text mining and would bury the real links.
+        No STRING partner meets the combined-score threshold of 700 used here.
       </p>
     );
   }
   return (
     <>
       <p className="note" style={{ marginTop: 0 }}>
-        STRING functional partners, combined score ≥ 700. A score built only from text mining is a
-        much weaker claim than one with experimental support, so the channels are shown separately.
+        STRING functional associations with a combined score ≥ 700. Scores for experimental evidence, curated databases, co-expression and text mining are shown separately.
       </p>
       <div className="scroller">
         <table>

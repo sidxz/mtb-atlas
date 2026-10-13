@@ -80,7 +80,7 @@ function chemblSource(meta: Meta | null): string {
 function trialSource(meta: Meta | null): string {
   const version = meta?.sources.find((s) => s.name === "ClinicalTrials.gov")?.version;
   // The terms ask for the processing date and a statement of modifications.
-  return `ClinicalTrials.gov${version ? ` · ${version}` : ""} · the atlas selects fields, numbers the phases and leaves out studies solely of nontuberculous mycobacteria; nothing else is rewritten`;
+  return `ClinicalTrials.gov${version ? ` · ${version}` : ""} · Selected trial fields; phases shown numerically. Studies solely of nontuberculous mycobacteria are excluded.`;
 }
 
 function GeneChip({ rv, name, onSelect }: { rv: string; name: string | null; onSelect: (rv: string) => void }) {
@@ -135,8 +135,8 @@ export function ClinicalTab({
       <Section label="Drugs acting on this gene" source={`${chemblSource(meta)} · ${SOURCE.bosch}`}>
         {byDrug.size === 0 ? (
           <span className="absent">
-            no drug with a TB indication in ChEMBL acts on this gene, by ChEMBL&rsquo;s mechanism or
-            Bosch 2021&rsquo;s annotation
+            No drug with a TB indication is linked to this protein by a ChEMBL mechanism or
+            Bosch 2021 annotation
           </span>
         ) : (
           <table>
@@ -179,14 +179,11 @@ export function ClinicalTab({
         )}
         {detail.antibacterial && !acting.some((d) => d.link === "bosch_2021") && (
           <p className="caveat">
-            Bosch 2021 annotates this gene with &ldquo;{detail.antibacterial}&rdquo;, which names no
-            single molecule in ChEMBL&rsquo;s TB indications, so it is not counted here.
+            Bosch 2021 lists &ldquo;{detail.antibacterial}&rdquo; for this gene. This annotation could not be matched to a single ChEMBL molecule with a TB indication and is excluded from the count.
           </p>
         )}
         <div className="note">
-          Phase is the highest ChEMBL records for a tuberculosis indication. Bosch 2021&rsquo;s
-          column names the drug associated with a gene, which is usually its target but can be
-          the enzyme that activates it &mdash; as folC is for PAS.
+          Phase is the highest recorded in ChEMBL for TB. Bosch 2021 drug annotations can identify either a target or an activating enzyme, such as folC for PAS.
         </div>
       </Section>
 
@@ -203,8 +200,8 @@ export function ClinicalTab({
             </div>
           ))}
           <p className="caveat">
-            ChEMBL files these against the whole assembly. That this protein is one of its components
-            is not evidence the drug binds it.
+            ChEMBL records these drugs against the whole complex. Binding to this specific
+            subunit has not been established by these records.
           </p>
         </Section>
       )}
@@ -224,9 +221,8 @@ export function ClinicalTab({
             </div>
           ))}
           <p className="caveat">
-            Modelled on this protein&rsquo;s own chain, which is physical evidence that the two
-            meet. It is not a claim about the mechanism: a repressor like EthR binds many
-            ligands in soaking studies.
+            These ligands are modelled on this protein&rsquo;s chain. A bound ligand supports
+            a physical interaction but does not by itself establish a drug mechanism.
           </p>
         </Section>
       )}
@@ -241,15 +237,16 @@ export function ClinicalTab({
             ))}
           </div>
           <p className="caveat">
-            Variants here are graded as associated with resistance to these drugs. Resistance is not
-            engagement: a resistance gene can activate the drug, pump it out or regulate the target.
+            These variants are associated with resistance to the listed drugs. The gene may
+            encode a drug activator, an efflux protein or a target regulator, so this association
+            alone does not establish binding.
           </p>
         </Section>
       )}
 
       <Section label={`Trials (${detail.trials.length})`} source={trialSource(meta)}>
         {detail.trials.length === 0 ? (
-          <span className="absent">no trial is linked to a drug acting on this gene</span>
+          <span className="absent">No trial is linked to a drug recorded against this protein</span>
         ) : (
           <div className="scroller" style={{ maxHeight: 360 }}>
             <table>
@@ -555,7 +552,7 @@ function CompoundPanel({
       <div className="panel">
         <Section label="Acts on" source="ChEMBL bioactivity · CC BY-SA 3.0">
           {compound.genes.length === 0 ? (
-            <span className="absent">no Mtb protein in the atlas has measured activity for it</span>
+            <span className="absent">No protein-level activity is linked to an Mtb gene in this dataset</span>
           ) : (
             <table>
               <tbody>
@@ -577,8 +574,8 @@ function CompoundPanel({
             </table>
           )}
           <div className="note">
-            Best pChEMBL per gene. An orthologue link is a family-level reach through another
-            mycobacterium, not evidence of a shared binding site.
+            Best pChEMBL per gene. Orthologue measurements come from a related mycobacterial protein;
+            binding-site similarity has not been assessed.
           </div>
         </Section>
 
@@ -594,7 +591,7 @@ function CompoundPanel({
             </>
           )}
           <div className="note">
-            Against the whole organism. It says nothing on its own about which protein is engaged.
+            Measured against the whole organism. This measurement alone does not identify the target protein.
           </div>
         </Section>
 
@@ -603,7 +600,7 @@ function CompoundPanel({
             A row with no call is printed as that, never as inactive. */}
         <Section label="Tested in" source="PubChem BioAssay + ChEMBL campaigns">
           {compound.tested_in.length === 0 ? (
-            <span className="absent">in none of the screening campaigns the atlas holds</span>
+            <span className="absent">No screening result for this compound in the included campaigns</span>
           ) : (
             <>
               <div className="scroller" style={{ maxHeight: 320 }}>
@@ -641,8 +638,8 @@ function CompoundPanel({
                 </table>
               </div>
               <div className="note">
-                A campaign that stated no call says nothing about this compound either way. It is
-                not an inactive result.
+                No reported activity outcome means the source did not classify this result as active,
+                inactive or inconclusive.
               </div>
             </>
           )}
@@ -762,14 +759,13 @@ function DrugPanel({
           )}
           {drug.mechanisms.length > 0 && !mtbMechanism && (
             <p className="caveat">
-              None of these targets is an <i>M. tuberculosis</i> protein in the reference proteome, so
-              ChEMBL&rsquo;s mechanism places this drug on no Mtb gene.
+              These ChEMBL mechanism targets do not match a protein in the <i>M. tuberculosis</i> reference proteome.
             </p>
           )}
         </Section>
 
         <Section label="Genes" source={`${chemblSource(meta)} · ${SOURCE.bosch} · ${SOURCE.who}`}>
-          {drug.genes.length === 0 && <span className="absent">reaches no Mtb gene in any source the atlas holds</span>}
+          {drug.genes.length === 0 && <span className="absent">No Mtb gene association is recorded in the included sources</span>}
           {(["mechanism", "bosch_2021"] as DrugLink[]).map((link) =>
             group(link).length ? (
               <div key={link} style={{ marginBottom: 6 }}>
@@ -785,8 +781,7 @@ function DrugPanel({
           {complex.length > 0 && (
             <div style={{ marginBottom: 6 }}>
               <div className="note">
-                Members of the target complex ({complex.length}) &mdash; one subunit of what the drug acts
-                on, not evidence it binds that subunit
+                Members of the target complex ({complex.length}). Binding to individual subunits is not established by this record.
               </div>
               <div className="chips">
                 {complex.slice(0, 24).map((g) => (
@@ -798,7 +793,7 @@ function DrugPanel({
           )}
           {group("who_resistance").length > 0 && (
             <div>
-              <div className="note">WHO-graded resistance &mdash; not a target claim</div>
+              <div className="note">WHO resistance associations</div>
               <div className="chips">
                 {group("who_resistance").map((g) => (
                   <button key={g.rv_id} type="button" className="chip warn" onClick={() => onSelectGene(g.rv_id)}>
@@ -827,7 +822,7 @@ function DrugPanel({
 
         <Section label={`Trials (${drug.trials.length})`} source={trialSource(meta)}>
           {drug.trials.length === 0 ? (
-            <span className="absent">no interventional TB trial in the store links to this drug</span>
+            <span className="absent">No interventional TB trial is linked to this drug in the atlas</span>
           ) : (
             <div className="scroller" style={{ maxHeight: 340 }}>
               <table>
@@ -914,7 +909,7 @@ function TrialPanel({
         <Section label="Drugs linked" source={chemblSource(meta)}>
           {trial.drugs.length === 0 ? (
             <span className="absent">
-              no intervention matches a ChEMBL TB drug, and ChEMBL cites none for this trial
+              No drug link was found through ChEMBL trial references or matching intervention names
             </span>
           ) : (
             trial.drugs.map((d) => (

@@ -131,7 +131,7 @@ button { font: inherit; }
 
 /* ---- shell ---------------------------------------------------------------- */
 
-.app { --rail-width: 232px; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto auto; height: 100%; min-height: 0; }
+.app { --rail-width: 232px; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto auto; height: 100%; min-height: 0; }
 .app > .sitenotice { grid-row: 4; grid-column: 1; }
 .app > .sitefooter { grid-row: 5; grid-column: 1; }
 .app > .workspace-view > .about { grid-row: 3; grid-column: 1; min-height: 0; }
@@ -143,6 +143,7 @@ button { font: inherit; }
 .body > .detailcol { grid-row: 2; grid-column: 3; }
 
 .topbar {
+  position: relative; z-index: 5;
   display: flex; align-items: center; gap: 16px; flex-wrap: wrap; flex-shrink: 0;
   padding: 0 20px; min-height: 48px; background: var(--surface); border-bottom: 1px solid var(--line);
 }
@@ -157,6 +158,15 @@ button { font: inherit; }
 }
 .iconbtn:hover { border-color: var(--line-strong); color: var(--fg); }
 .iconbtn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.account-actions { position: relative; flex-shrink: 0; }
+.account-actions:empty { display: none; }
+.account-signin { display: inline-flex; align-items: center; min-height: 32px; padding: 5px 10px; text-decoration: none; white-space: nowrap; }
+.account-menu > summary { list-style: none; padding: 5px 10px; min-height: 32px; display: flex; align-items: center; }
+.account-menu > summary::-webkit-details-marker { display: none; }
+.account-popover, .account-error { position: absolute; right: 0; top: calc(100% + 8px); z-index: 30; width: 240px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: 0 8px 24px #0002; font-size: 12px; }
+.account-popover { display: flex; flex-direction: column; gap: 10px; }
+.account-popover a { color: var(--accent); }
+.account-popover button { align-self: flex-start; }
 
 /* Browse wide, or read wide.
  *
@@ -405,13 +415,14 @@ tbody tr[aria-selected="true"] td:first-child { box-shadow: inset 3px 0 var(--ac
 
 /* ---- ask ------------------------------------------------------------------ */
 
-.ask { margin: 0; background: var(--bg); padding: 8px 16px 12px; flex-shrink: 0; }
+.ask { min-width: 0; margin: 0; background: var(--bg); padding: 8px 16px 12px; flex-shrink: 0; }
 .askbar { display: flex; gap: 8px; align-items: center; min-height: 36px; border-bottom: 1px solid var(--line); }
 .askbar .search { flex: 1; min-width: 0; font-family: var(--sans); font-size: 12px; background: transparent; border: 0; padding: 6px 8px; }
-.askaccess { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 0 20px 4px; font-size: 12px; }
+.askaccess { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; padding: 8px 0 0; font-size: 12px; color: var(--fg-dim); }
 .askaccess:empty { display: none; }
 .askaccess-captcha:empty { display: none; }
 .askaccess a { color: var(--accent); }
+.ask-error-signin { display: inline-block; margin-left: 8px; }
 .linkbtn { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; }
 .caveat-inline { color: var(--warn); }
 .askexamples { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
@@ -443,21 +454,24 @@ tbody tr[aria-selected="true"] td:first-child { box-shadow: inset 3px 0 var(--ac
   border: 2px solid var(--line-strong); border-top-color: var(--accent); animation: spin .8s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-.askresult .answer { font-size: 13.5px; line-height: 1.6; min-width: 0; }
+.askresult .answer { font-size: 13.5px; line-height: 1.6; min-width: 0; overflow-wrap: anywhere; }
 .askrefs { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 12px; }
 .askrefs h4 { margin: 0 0 6px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--fg-dim); }
 .askrefs-kind { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; margin-bottom: 6px; }
 .askrefs-label { width: 72px; flex-shrink: 0; color: var(--fg-faint); }
-.askref { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 6px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); }
+.askref { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 6px; max-width: 100%; overflow-wrap: anywhere; min-width: 0; padding: 2px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); }
+.askref strong { min-width: 0; }
 .askref strong { font-weight: 600; }
 .askref a { color: var(--accent); text-decoration: none; }
 .askref a:hover { text-decoration: underline; }
-/* The measure caps the prose, not the answer: a table may use the width. */
+/* Generated prose and tables must fit the available workspace width. */
 .askresult .answer :is(p, ul, ol, blockquote) { text-wrap: pretty; margin: 0 0 10px; }
 .askresult .answer :is(ul, ol) { padding-left: 20px; }
-.askresult .answer table { display: block; width: max-content; max-width: 100%; overflow-x: auto; margin: 0 0 10px; }
+.askresult .answer table { width: 100%; table-layout: fixed; margin: 0 0 10px; }
 .askresult .answer thead { position: static; }
-.askresult .answer td { white-space: normal; }
+.askresult .answer :is(th, td) { white-space: normal; overflow-wrap: anywhere; vertical-align: top; }
+.askresult .answer pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.askresult .answer img { max-width: 100%; height: auto; }
 .askresult .answer code { font-family: var(--mono); font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-radius: 4px; }
 
 /* ---- chemical structures -------------------------------------------------- */
@@ -583,6 +597,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   .viewswitch { min-height: 36px; order: 3; flex-basis: 100%; }
   .brand { margin-right: auto; flex: 1; }
   .theme-toggle { order: 1; }
+  .account-actions { order: 1; }
   .globalsearch { flex: 1 1 100%; order: 2; margin-left: 0; }
   .ask { padding: 8px 12px; }
   .ask-label { font-size: 0; gap: 0; }
@@ -1196,8 +1211,15 @@ pre.sequence { margin: 0; max-height: 220px; overflow: auto; padding: 8px 10px; 
 
 .sitefooter { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; padding: 6px 20px; border-top: 1px solid var(--line); background: var(--surface); font-size: 12px; }
 .sitenotice { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 8px 20px; border-top: 1px solid var(--line); background: var(--surface-2); font-size: 13px; }
-.about { max-width: 78ch; padding: 24px 20px 48px; overflow: auto; }
+.about { width: 100%; min-width: 0; max-width: 88ch; padding: 24px 20px 48px; overflow: auto; overflow-wrap: anywhere; line-height: 1.65; }
 .about h2 { margin-top: 0; }
+.about h3 { margin: 24px 0 8px; }
+.about p { margin: 0 0 14px; }
+.about ul { padding-left: 22px; }
+.about li { margin-bottom: 10px; }
 .about-table th, .about-table td { white-space: normal; }
 .about-table { border-collapse: collapse; margin: 12px 0; font-size: 13px; }
 .about-table th, .about-table td { text-align: left; padding: 4px 12px 4px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+.about-storage-table { table-layout: fixed; }
+.about-storage-table th:first-child { width: 26%; }
+.about-storage-table th:nth-child(2) { width: 29%; }

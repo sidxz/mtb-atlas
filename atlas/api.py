@@ -218,9 +218,7 @@ def _like(term: str) -> str:
 def _require_clinical() -> None:
     """Routes that are only about drugs and trials have no honest empty answer."""
     if not built("drug_genes"):
-        raise HTTPException(
-            503, "The clinical layer is not built in this store. Run `atlas clinical`."
-        )
+        raise HTTPException(503, "Drug and clinical-trial data is unavailable in this dataset.")
 
 
 # --- models ------------------------------------------------------------------
@@ -564,44 +562,36 @@ def meta() -> Meta:
         sources=sources,
         site=_site(),
         caveats=[
-            "Essentiality is one in vitro condition (7H9 broth, DeJesus 2017). "
-            "A gene essential there may not be essential in infection. Griffin 2011 "
-            "adds one more condition -- growth on cholesterol -- but a transposon "
-            "screen cannot measure a gene that tolerates no insertions, so every "
-            "in-vitro-essential gene comes back unmeasured there rather than unaffected.",
-            "The WHO catalogue covers 65 genes with matched phenotypic testing. "
-            "Every other gene has no resistance record, which is an absence of "
-            "evidence rather than evidence of absence.",
-            "Orthologue chemical matter is a family-level link through a UniRef "
-            "cluster, not evidence of a shared binding site.",
-            "Whole-cell potency is attached to a gene only through a compound "
-            "that already has protein-level activity on it.",
-            "No druggability or pocket call is made: no public source provides one.",
-            "Drug precedent is not that call. `n_precedent_approved` counts approved drugs "
-            "ChEMBL files against *another* single protein carrying one of this gene's Pfam "
-            "domains, which is a count of database records. A gene's own protein is excluded, "
-            "complex and family targets are shown but never counted, and a shared domain is "
-            "not a shared binding site -- so the domain, how many Mtb genes carry it, and how "
-            "much of the precedent is against human proteins travel with the number.",
-            "CRISPRi vulnerability is on a negative scale; more negative is more "
-            "vulnerable. Only ~600 genes carry the study's own `certain` flag.",
-            "Human homology is computed here with phmmer against the reviewed human "
-            "proteome, reported as E-value and percent identity. The 30% 'close' "
-            "threshold is this atlas's line, not a fact of biology.",
-            "Drugs are ChEMBL molecules with a tuberculosis indication, unedited: the set "
-            "includes host-directed adjuncts, HIV co-medications and placebo excipients. "
-            "The phase shown is the highest phase for TB, not for any indication.",
-            "A drug counts on a gene only when ChEMBL's mechanism or Bosch 2021 names that "
-            "gene's protein. Membership of a target complex and WHO-graded resistance are "
-            "shown but not counted: resistance is not target engagement.",
-            "Trials are ClinicalTrials.gov interventional studies for the condition "
-            "'tuberculosis'. A trial links to a drug through ChEMBL's own trial reference "
-            "or an exact match of an intervention name; an unlinked trial may still have "
-            "tested one.",
-            "Screens are the campaigns the atlas ingested: PubChem deposits of 10,000+ "
-            "substances and the ChEMBL papers reachable from its activities, not every "
-            "campaign ever run. A result with no outcome means the source stated no call, "
-            "which is not 'inactive', and an actives count is never divided by a screen count.",
+            "Essentiality was measured in 7H9 broth (DeJesus 2017). Griffin 2011 adds "
+            "fitness on cholesterol. Transposon screens cannot estimate fitness effects "
+            "where no insertions are available.",
+            "The included WHO catalogue covers 65 genes with matched phenotypic testing. "
+            "Genes outside that set have no graded resistance record in this source.",
+            "Orthologue compound activity is linked through a UniRef cluster. "
+            "Binding-site similarity has not been assessed.",
+            "Whole-cell potency is linked to a gene only through compounds with "
+            "recorded protein-level activity.",
+            "Druggability and binding pockets have not been assessed in this dataset.",
+            "Drug precedent counts approved drugs recorded against other single proteins "
+            "with a shared Pfam domain. Complex and protein-family records are shown "
+            "separately and excluded from the count. A shared domain alone does not "
+            "establish binding-site similarity.",
+            "More negative CRISPRi vulnerability values indicate greater vulnerability. "
+            "Confidence follows the study's criteria.",
+            "Human homologues are identified with phmmer against the reviewed human "
+            "proteome. The atlas uses 30% identity as its threshold for a close homologue.",
+            "ChEMBL TB indications include host-directed adjuncts, HIV co-medications "
+            "and placebo excipients. The displayed phase is the highest recorded for TB.",
+            "A drug is counted as acting on a gene when a ChEMBL mechanism or Bosch 2021 "
+            "annotation names its protein. Complex membership and resistance associations "
+            "are shown separately and excluded from this count.",
+            "Interventional TB trials from ClinicalTrials.gov are linked to drugs through "
+            "ChEMBL references or exact intervention-name matches. Other naming conventions "
+            "may leave a trial unlinked.",
+            "Screening coverage includes PubChem deposits of at least 10,000 substances "
+            "and ChEMBL papers linked through the included activity records. A missing "
+            "activity outcome means the result was not classified. Active-compound counts "
+            "and campaign counts have different denominators.",
         ],
     )
 
@@ -727,7 +717,7 @@ def protein_assays(rv_id: str) -> list[dict[str, Any]]:
     if not _query(connection, "SELECT rv_id FROM target_summary WHERE rv_id = ?", [rv_id]):
         raise HTTPException(404, f"no gene {rv_id} in the atlas")
     if not built("assay_sizes"):
-        raise HTTPException(503, "Protein assay records are unavailable in this store.")
+        raise HTTPException(503, "Protein assay records are unavailable in this dataset.")
     stages = (
         "SELECT assay_chembl_id, description, document_chembl_id FROM screen_stages"
         if built("screen_stages")
@@ -805,7 +795,7 @@ def sequence(rv_id: str) -> dict[str, Any]:
 def genome_fasta() -> str:
     """The chromosome as FASTA, for the genome browser's reference track."""
     if not built("genome"):
-        raise HTTPException(503, "The genome is not built in this store.")
+        raise HTTPException(503, "Genome sequence data is unavailable.")
     accession, description, seq = (
         _db().execute("SELECT accession, description, sequence FROM genome").fetchone()
     )
@@ -877,7 +867,7 @@ def concept(
     connection = _db()
     if kind == "condition":
         if not (built("conditional_tnseq") and built("tnseq_screens")):
-            raise HTTPException(503, "Conditional TnSeq is unavailable in this store.")
+            raise HTTPException(503, "Conditional TnSeq data is unavailable in this dataset.")
         screen = _query(
             connection,
             "SELECT description FROM tnseq_screens WHERE screen_id = ? AND annotated",
@@ -1140,7 +1130,7 @@ def target(rv_id: str) -> TargetDetail:
 
     absences = []
     if not structures and not orthologue_structures:
-        absences.append("No experimental structure in the PDB for this accession.")
+        absences.append("No PDB structure is linked to this protein accession in the dataset.")
     elif not structures:
         # The absence is real and stays, but on its own it reads as "nothing to
         # work from", which is the misreading this column exists to correct.
@@ -1155,121 +1145,100 @@ def target(rv_id: str) -> TargetDetail:
             f"No experimental structure under this accession, but {claim} "
             f"{best['via_acc']} ({best['via_organism']}): "
             f"{len({row['pdb_id'] for row in orthologue_structures})} entries."
-            + ("" if same else " What that is good for is a judgement, not a fact.")
+            + ("" if same else " Sequence identity and coverage are shown in the structure table.")
         )
     if not activities:
-        absences.append("No ChEMBL activity: no compound in ChEMBL is recorded against this gene.")
+        absences.append("No ChEMBL compound activity is linked to this gene in the dataset.")
     if not record.get("n_protein_assays"):
         absences.append(
-            "No published assay against this protein in ChEMBL, so screening it means "
-            "developing the assay first. Orthologue and whole-cell measurements, where "
-            "they exist, do not supply one."
+            "No single-protein assay is recorded in ChEMBL for this target. "
+            "Whole-cell and orthologue assays are listed separately."
         )
     if not screening:
-        absences.append(
-            "The screening layer is not built in this store, so nothing is known here "
-            "about screening campaigns."
-        )
+        absences.append("Screening campaign data is unavailable in this dataset.")
     elif not any(row["own"] for row in screened_in):
         complex_only = sum(row["via_complex"] for row in screened_in)
         absences.append(
-            "No screening campaign in the atlas was run on this protein alone"
+            "No campaign in this dataset screened this protein alone"
             + (
-                f"; {complex_only} reached it only as part of a complex or a multi-protein "
-                "deposit, which is not a screen of this protein."
+                f"; {complex_only} included it as part of a complex or multi-protein target."
                 if complex_only
                 else "."
             )
-            + " The atlas holds the campaigns it ingested (PubChem deposits of 10,000+ "
-            "substances, and ChEMBL papers reachable from its activities), not every one "
-            "ever run."
+            + " Coverage includes PubChem deposits of at least 10,000 substances and "
+            "ChEMBL papers linked through the included activity records."
         )
     if not variants:
         absences.append(
-            "Not in the WHO catalogue, which covers only the 65 genes with matched "
-            "phenotypic drug-susceptibility testing."
+            "No graded resistance variants are available for this gene in the included "
+            "WHO catalogue records."
         )
     if not tnseq["measured"] and tnseq["unmeasured"]:
         absences.append(
-            f"Took no transposon insertions in any of the {tnseq['unmeasured']} conditional "
-            "TnSeq screens that cover it, so none of them could measure it. That is the "
-            "expected result for an essential gene, and it is not 'no effect'."
+            f"There were no transposon insertions available for this gene in "
+            f"{tnseq['unmeasured']} conditional TnSeq screens. Fitness effects could not "
+            "be estimated."
         )
     elif not conditions and tnseq["measured"]:
         n = tnseq["measured"]
         absences.append(
-            f"Measurable in {n} conditional TnSeq screen{'s' if n > 1 else ''} and "
-            f"significant in none of them (q < 0.05), so no condition tested here changes "
-            "this gene's fitness."
+            f"None of the {n} measured conditional TnSeq screen{'s' if n > 1 else ''} "
+            "met the atlas's significance threshold of q < 0.05."
         )
     if record.get("vulnerability_index") is None:
         absences.append("No CRISPRi vulnerability measurement for this gene.")
     elif not record.get("vulnerability_certain"):
         absences.append(
-            "A vulnerability index exists but did not meet the study's own criteria "
-            "for a confident estimate, so treat it as indicative only."
+            "The CRISPRi vulnerability estimate did not meet Bosch 2021's confidence criteria."
         )
     if record.get("hn878_vulnerability_index") is None:
         absences.append(
-            "Not measured in HN878, so this gene's vulnerability is known only in the "
-            "lab strain. Whether it holds in a clinical isolate is untested."
+            "No HN878 vulnerability measurement is available for this gene in Bosch 2021."
         )
     elif not record.get("hn878_differential_reported"):
         absences.append(
-            "Measured in both strains, but Bosch 2021 reports no differential for this "
-            "gene, so the two indices should be compared by eye rather than treated as "
-            "a tested difference."
+            "Bosch 2021 reports vulnerability measurements for H37Rv and HN878, "
+            "but no statistical comparison between strains for this gene."
         )
     if not clinical:
-        absences.append(
-            "The clinical layer is not built in this store, so nothing is known here about "
-            "drugs or trials. Run `atlas clinical`."
-        )
+        absences.append("Drug and clinical-trial data is unavailable in this dataset.")
     elif not any(d["link"] in TARGET_LINKS for d in drugs):
         absences.append(
-            "No drug with a TB indication in ChEMBL acts on this gene by ChEMBL's mechanism "
-            "or Bosch 2021's annotation."
+            "No drug with a TB indication is linked to this protein by a ChEMBL "
+            "mechanism or Bosch 2021 annotation."
         )
     # The one open question in docs/data-sources.md that no source closes. The
     # precedent counts are the nearest sourced thing to it and are deliberately
     # worded as what they are: records in a database, not a pocket.
-    pocket = "No druggability or pocket call: no public source provides one."
+    pocket = "Druggability and binding pockets have not been assessed in this dataset."
     approved = record.get("n_precedent_approved")
     shared = record.get("precedent_domain_genes") or 0
     carry = f"{shared} Mtb gene{'s carry' if shared != 1 else ' carries'} that domain"
     if approved:
         human = record.get("n_precedent_human_target") or 0
-        warning = ", which is as much a selectivity warning as a precedent"
         whose = (
-            (
-                ", against a human protein"
-                if approved == 1
-                else ", all of them against human proteins"
-            )
-            + warning
-            if human == approved
-            else f", {human} of them against a human protein"
-            if human
-            else ", none of them against a human protein"
+            f"{human} of these drugs have a recorded human target."
+            if human != 1
+            else "1 of these drugs has a recorded human target."
         )
         pocket += (
-            f" What is sourced is precedent for the fold: {approved} approved "
-            f"drug{'s are' if approved != 1 else ' is'} filed against another protein "
-            f"carrying {record.get('precedent_pfam_name')} "
-            f"({record.get('precedent_pfam')}){whose}. {carry}, and a shared domain is not "
-            f"a shared binding site."
+            f" ChEMBL records {approved} approved "
+            f"drug{'s' if approved != 1 else ''} against other proteins with the "
+            f"{record.get('precedent_pfam_name')} domain "
+            f"({record.get('precedent_pfam')}). {whose} {carry}. "
+            "Binding-site similarity has not been assessed."
         )
     elif approved == 0:
         pocket += (
-            " No approved drug is filed against any other protein carrying this gene's "
-            "Pfam domains either, which is a measured zero rather than an untested one."
+            " No approved drug is recorded in ChEMBL against another single protein "
+            "with this gene's Pfam domains."
         )
         if record.get("n_precedent_complex"):
             pocket += (
-                f" {record['n_precedent_complex']} "
-                f"{'is' if record['n_precedent_complex'] == 1 else 'are'} filed against a "
-                f"complex or protein family that contains one, which is not evidence about "
-                f"this fold."
+                f" {record['n_precedent_complex']} approved "
+                f"drug{'s are' if record['n_precedent_complex'] != 1 else ' is'} recorded "
+                "against complexes or protein families with a shared domain. "
+                "These records are excluded from the single-protein count."
             )
     absences.append(pocket)
 
@@ -1731,9 +1700,7 @@ NOT_INGESTED = (
 
 def _require_screens() -> None:
     if not built("screen_results"):
-        raise HTTPException(
-            503, "The screening layer is not built in this store. Run `atlas build`."
-        )
+        raise HTTPException(503, "Screening campaign data is unavailable in this dataset.")
 
 
 @app.get("/screens")
@@ -2455,7 +2422,7 @@ def _admit(request: Request) -> None:
             )
         token = request.headers.get("X-Turnstile-Token")
         if not access.verify_turnstile(token, _client_ip(request)):
-            raise HTTPException(403, "The human check did not pass. Try again.")
+            raise HTTPException(403, "The browser check failed. Please try again.")
     verdict = access.admit(key, limit, window)
     if not verdict.admitted:
         wait = max(1, math.ceil(verdict.retry_after))

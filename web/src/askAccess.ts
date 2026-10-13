@@ -5,8 +5,10 @@
 import type { Me, Meta } from "./api";
 
 export function allowanceLabel(me: Me): string | null {
-  if (!me.limits || me.remaining === null) return null;
-  return `${me.remaining} of ${me.limit} left ${me.window === "1h" ? "this hour" : "today"}`;
+  if (!me.limits) return null;
+  if (me.global_remaining === 0) return "The atlas has reached its daily question limit. Please try again later.";
+  if (me.remaining !== 0) return null;
+  return `You’ve reached your question limit ${me.window === "1h" ? "for this hour" : "for today"}.`;
 }
 
 const clock = (at: Date) => at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -23,29 +25,29 @@ export function refusalMessage(detail: unknown, now: Date, me: Me | null): strin
   const a = me?.allowances;
   switch (d.limit) {
     case "global":
-      return `The atlas has answered ${a ? `its ${a.global_per_day} questions` : "all the questions it takes"} for today, across everyone. The next is admitted at ${when}.`;
+      return `The daily limit${a ? ` of ${a.global_per_day} questions` : ""} across all visitors has been reached. Try again at ${when}.`;
     case "orcid":
-      return `You have used ${a ? `your ${a.signed_in_per_day} questions` : "your questions"} for today. The next is admitted at ${when}.`;
+      return `You have used ${a ? `your ${a.signed_in_per_day} questions` : "your questions"} for today. Try again at ${when}.`;
     case "ip": {
       const offer = me?.signin_available ? `, or ${signInOffer(me).replace("Sign in", "sign in")}` : "";
-      return `You have used the ${a ? `${a.anonymous_per_hour} questions an hour` : "questions"} allowed without signing in. The next is admitted at ${when}${offer}.`;
+      return `You have reached the limit${a ? ` of ${a.anonymous_per_hour} questions an hour` : ""} without signing in. Try again at ${when}${offer}.`;
     }
     default:
-      return "The question was not admitted. Try again shortly.";
+      return "Your question could not be submitted. Try again shortly.";
   }
 }
 
 export function signInOffer(me: Me | null): string {
-  return me?.allowances ? `Sign in with ORCID for ${me.allowances.signed_in_per_day} a day` : "Sign in with ORCID";
+  return me?.allowances ? `Sign in with ORCID for ${me.allowances.signed_in_per_day} questions a day` : "Sign in with ORCID";
 }
 
 /** Where a question goes, as the deployer configured it; for the privacy page and notice. */
 export function questionDestination(meta: Meta | null): string {
-  return meta?.site.llm?.label ?? "the model service this site is configured with";
+  return meta?.site.llm?.label ?? "this site’s configured model service";
 }
 
 export function captchaUnavailableMessage(signinAvailable: boolean): string {
   const base =
-    "The human check could not load, so questions cannot be asked anonymously from this browser. A privacy extension blocking challenges.cloudflare.com is the usual cause.";
+    "The browser check could not load. Check your connection or allow challenges.cloudflare.com in your browser, then try again.";
   return signinAvailable ? `${base} Signing in with ORCID skips the check.` : base;
 }

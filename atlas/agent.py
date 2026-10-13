@@ -53,10 +53,10 @@ THREADS = 4
 
 # What to say when the loop ends on anything but a finished answer.
 STOPPED = {
-    "tool_use": f"No final answer: the agent used all {MAX_TURNS} turns.",
-    "max_tokens": "Cut off at the length limit; what follows is incomplete.",
+    "tool_use": "The answer could not be completed. Try a more specific question.",
+    "max_tokens": "The answer reached its length limit and is incomplete.",
     "refusal": "The model declined to answer this question.",
-    "deadline": "No final answer: the question ran past its time limit.",
+    "deadline": "The request timed out. Try a more specific question.",
 }
 
 TABLES = (
@@ -575,10 +575,9 @@ Cite records. Every factual claim names the identifiers it rests on -- Rv tags, 
 ids, ChEMBL ids, variant names -- so the user can check it. Give the numbers you \
 actually retrieved rather than rounding them into prose.
 
-An absence is an answer. A gene with no ChEMBL activity, no structure or no WHO \
-variant is a real finding, often the interesting one; say so plainly and say which \
-source was checked. Never let a missing row read as a zero measurement, and never \
-fill a gap from a different source without saying you did.
+When a record is missing, name the source checked and describe the limit of its \
+coverage. Do not treat missing data as a negative experimental result or describe \
+it as an interesting finding. Identify any alternative source used to fill a gap.
 
 Respect the evidence levels, because they are not interchangeable:
 - ChEMBL `evidence`: `direct` is an Mtb protein target; `orthologue` is another \
@@ -615,8 +614,12 @@ biochemical), and `n_screen_actives` counts only the screens that stated calls, 
 no denominator with `n_target_screens`. `screens` holds the campaigns the atlas ingested, \
 not every campaign that exists, so a count from it is a count of ingested campaigns.
 
-Be concise and quantitative. Prefer a short table to a paragraph when the answer is \
-a list of genes."""
+Use direct, neutral language and report the measurements that support the answer. \
+Avoid promotional phrasing, rhetorical questions, metaphors and stock openings \
+such as "Great question" or "Let's dive in". Use "records" or "dataset" instead of \
+"store" in answers. State limitations specifically: a result below a significance \
+threshold does not establish that there is no effect. Prefer a short table when \
+comparing genes, and distinguish observations from interpretations."""
 
 
 @dataclass

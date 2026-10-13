@@ -156,7 +156,7 @@ def test_describe_names_the_traps() -> None:
 def test_system_prompt_states_the_evidence_rules() -> None:
     """These rules are the difference between an answer and a confident guess."""
     for phrase in (
-        "absence is an answer",
+        "Do not treat missing data as a negative experimental result",
         "orthologue",
         "whole_cell",
         "65 genes",

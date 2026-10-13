@@ -7,7 +7,7 @@
 import { AboutPage, SiteFooter, SiteNotice } from "./About";
 import { FilterRail } from "./FilterRail";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, type Meta, type TargetDetail, type TargetSummary } from "./api";
+import { api, BASE, type Me, type Meta, type TargetDetail, type TargetSummary } from "./api";
 import { CATEGORIES, GenomeCanvas, RINGS, colourOf, type ColourBy } from "./GenomeCanvas";
 import { TargetDetailPanel } from "./TargetDetail";
 import { Ask } from "./Ask";
@@ -255,7 +255,7 @@ function cell(gene: TargetSummary, key: string): React.ReactNode {
       return gene.n_precedent_approved ? (
         <span
           title={
-            `${gene.n_precedent_approved} approved drug(s) filed against another protein ` +
+            `${gene.n_precedent_approved} approved drug(s) recorded against other proteins ` +
             `carrying ${gene.precedent_pfam_name} (${gene.precedent_pfam}), e.g. ` +
             `${gene.precedent_example}. ${gene.n_precedent_human_target} on a human protein. ` +
             `${gene.precedent_domain_genes} Mtb genes carry that domain, and a shared domain ` +
@@ -264,7 +264,7 @@ function cell(gene: TargetSummary, key: string): React.ReactNode {
         >
           {gene.n_precedent_approved}
           {gene.n_precedent_human_target === gene.n_precedent_approved && (
-            <span className="chip" style={{ marginLeft: 4 }} title="all of it on human proteins">
+            <span className="chip" style={{ marginLeft: 4 }} title="All recorded targets are human proteins">
               hs
             </span>
           )}
@@ -397,6 +397,20 @@ export function App() {
   const [meta, setMeta] = useState<Meta | null>(null);
   const [all, setAll] = useState<TargetSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [me, setMe] = useState<Me | null>(null);
+  const [accountError, setAccountError] = useState<string | null>(null);
+  const refreshMe = useCallback(() => api.me().then(setMe).catch(() => setMe(null)), []);
+  useEffect(() => { void refreshMe(); }, [refreshMe]);
+  const signOut = async () => {
+    try {
+      const response = await fetch(`${BASE}/auth/logout`, { method: "POST" });
+      if (!response.ok) throw new Error("logout");
+      setAccountError(null);
+      await refreshMe();
+    } catch {
+      setAccountError("Could not sign out. Please try again.");
+    }
+  };
 
   const [essentiality, setEssentiality] = useState<Set<string>>(new Set());
   const [category, setCategory] = useState<Set<string>>(new Set());
@@ -424,6 +438,11 @@ export function App() {
   // remembers its own last path, so a view kept mounted while hidden keeps what it
   // had open, and its nav link goes back to it.
   const location = useLocation();
+  const nextParams = new URLSearchParams(location.search);
+  const signinFailed = nextParams.get("signin") === "failed";
+  nextParams.delete("signin");
+  const nextSearch = nextParams.toString();
+  const signInHref = `${BASE}/auth/orcid/login?next=${encodeURIComponent(location.pathname + (nextSearch ? `?${nextSearch}` : ""))}`;
   const navigate = useNavigate();
   const route = parseRoute(location.pathname);
   const view = route.view;
@@ -593,11 +612,10 @@ export function App() {
   if (error) {
     return (
       <div className="errbox">
-        <b>Could not reach the API.</b>
+        <b>Could not load the atlas.</b>
         <p>{error}</p>
         <p className="dim">
-          Start it with <code>make api</code>, then reload. The frontend reads only the API, and the
-          API reads only the built store — so <code>make build</code> has to have run at least once.
+          Check your connection and reload the page. If the problem continues, the service may be unavailable.
         </p>
       </div>
     );
@@ -643,10 +661,29 @@ export function App() {
         <button className="iconbtn theme-toggle" type="button" onClick={toggle} title="Toggle color theme">
           <InterfaceIcon name="theme" /><span className="sr-only">Theme</span>
         </button>
+        <div className="account-actions">
+          {me?.orcid ? (
+            <details className="account-menu">
+              <summary className="iconbtn">Account</summary>
+              <div className="account-popover">
+                <span className="faint">Signed in with ORCID</span>
+                <a href={`https://orcid.org/${me.orcid}`} target="_blank" rel="noreferrer">{me.orcid}</a>
+                <button type="button" className="iconbtn" onClick={() => void signOut()}>Sign out</button>
+                {accountError && <span role="alert">{accountError}</span>}
+              </div>
+            </details>
+          ) : me?.signin_available ? (
+            <a className="iconbtn account-signin" href={signInHref} aria-label="Sign in with ORCID" title="Sign in with ORCID">Sign in</a>
+          ) : null}
+          {signinFailed && <span className="account-error" role="alert">ORCID sign-in did not complete. Please try again.</span>}
+        </div>
       </header>
 
       <Ask
-        base={import.meta.env.VITE_API_BASE ?? "/api"}
+        base={BASE}
+        me={me}
+        refreshMe={refreshMe}
+        signInHref={signInHref}
         onGeneScreens={(rv) => { setScreenGene({ rv }); setScreenFocus(null); }}
       />
 
@@ -1027,8 +1064,7 @@ function GenomeOverlay({
             ))}
           </div>
           <p className="ringkey">
-            Counts are genes matching the current filters that reach that stage. A gene draws
-            nothing on a ring it does not reach, so the narrowing outward is the funnel.
+            Each ring shows genes with that type of evidence. Counts reflect the current filters; gaps indicate no matching record.
           </p>
         </div>
         <button className="closedetail" type="button" aria-label="Close" onClick={onClose}>

@@ -8,16 +8,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Link, useLocation } from "react-router";
+import { Link } from "react-router";
 import { InterfaceIcon } from "./InterfaceIcon";
-import { api, type Hit, type Me, type SearchResults } from "./api";
+import { type Hit, type Me, type SearchResults } from "./api";
 import { allowanceLabel, captchaUnavailableMessage, refusalMessage, signInOffer } from "./askAccess";
 
 const EXAMPLES = [
   "Which essential genes have a structure, no ligands, and no close human homolog?",
   "What is known about Rv0206c, and what is missing?",
-  "Which genes are most vulnerable by CRISPRi but have no chemical matter at all?",
-  "Compare dprE1 and inhA on every kind of evidence the atlas holds.",
+  "Which genes have the strongest CRISPRi vulnerability and no recorded compound activity?",
+  "Compare the genetic, structural and chemical evidence for dprE1 and inhA.",
   "Which essential, confidently vulnerable genes have no TB drug or candidate acting on them?",
   "Which phase 2 or 3 trials test a drug that acts on dprE1 or mmpL3, and are they recruiting?",
 ];
@@ -98,13 +98,20 @@ function loadTurnstile(): Promise<void> {
   return turnstileScript;
 }
 
-export function Ask({ base, onGeneScreens }: { base: string; onGeneScreens: (rv: string) => void }) {
+export function Ask({ base, me, refreshMe, signInHref, onGeneScreens }: {
+  base: string;
+  me: Me | null;
+  refreshMe: () => Promise<void>;
+  signInHref: string;
+  onGeneScreens: (rv: string) => void;
+}) {
   const [question, setQuestion] = useState("");
   // The question the panel answers; the input may have moved on since.
   const [asked, setAsked] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
   const [state, setState] = useState<"idle" | "asking" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
+  const [errorOffersSignIn, setErrorOffersSignIn] = useState(false);
   const [open, setOpen] = useState(true);
   const [seconds, setSeconds] = useState(0);
   const inflight = useRef<AbortController | null>(null);
@@ -112,17 +119,14 @@ export function Ask({ base, onGeneScreens }: { base: string; onGeneScreens: (rv:
   // forever, which on a laptop is three rows of the gene table.
   const [focused, setFocused] = useState(false);
 
-  const location = useLocation();
-  const [me, setMe] = useState<Me | null>(null);
   const [captchaFailed, setCaptchaFailed] = useState(false);
   const widgetHost = useRef<HTMLDivElement | null>(null);
   const widget = useRef<string | null>(null);
   const token = useRef<string | null>(null);
 
-  const refreshMe = useCallback(() => api.me().then(setMe).catch(() => setMe(null)), []);
-  useEffect(() => { void refreshMe(); }, [refreshMe]);
-
   const needsCaptcha = Boolean(me?.limits && !me.orcid && me.turnstile_site_key);
+  const limitMessage = me ? allowanceLabel(me) : null;
+  const canSignInForMore = Boolean(me?.signin_available && !me.orcid && me.global_remaining !== 0);
 
   const startCaptcha = useCallback(() => {
     if (!needsCaptcha || widget.current || !widgetHost.current) return;
@@ -145,17 +149,6 @@ export function Ask({ base, onGeneScreens }: { base: string; onGeneScreens: (rv:
   // A first-focus race: focus can precede /auth/me, and /auth/me can fail and arrive later.
   useEffect(() => { if (focused) startCaptcha(); }, [focused, startCaptcha]);
 
-  // `next` must not carry signin=failed, or a successful retry lands on a page still saying it failed.
-  const nextParams = new URLSearchParams(location.search);
-  const signinFailed = nextParams.get("signin") === "failed";
-  nextParams.delete("signin");
-  const nextSearch = nextParams.toString();
-  const signInHref = `${base}/auth/orcid/login?next=${encodeURIComponent(location.pathname + (nextSearch ? `?${nextSearch}` : ""))}`;
-  const signOut = async () => {
-    await fetch(`${base}/auth/logout`, { method: "POST" });
-    void refreshMe();
-  };
-
   // A broad question runs for a minute of model turns; a static "querying" line
   // for that long reads as a hang. Frozen when the answer lands, so it doubles as
   // the time taken.
@@ -176,10 +169,12 @@ export function Ask({ base, onGeneScreens }: { base: string; onGeneScreens: (rv:
     setState("asking");
     setResult(null);
     setError(null);
+    setErrorOffersSignIn(false);
     let sent = false;
     try {
       if (needsCaptcha && !token.current) {
-        throw new Error(captchaFailed ? captchaUnavailableMessage(Boolean(me?.signin_available)) : "One moment: the human check is still running. Ask again in a few seconds.");
+        setErrorOffersSignIn(captchaFailed);
+        throw new Error(captchaFailed ? captchaUnavailableMessage(Boolean(me?.signin_available)) : "The browser check is still running. Try again in a few seconds.");
       }
       sent = true;
       const response = await fetch(`${base}/ask`, {
@@ -198,6 +193,7 @@ export function Ask({ base, onGeneScreens }: { base: string; onGeneScreens: (rv:
         throw new Error(`The atlas could not answer (HTTP ${response.status}). Try again shortly.`);
       }
       if (!response.ok) {
+        setErrorOffersSignIn(response.status === 429 && typeof body.detail === "object" && body.detail !== null && "limit" in body.detail && body.detail.limit === "ip");
         throw new Error(response.status === 429 ? refusalMessage(body.detail, new Date(), me) : (typeof body.detail === "string" ? body.detail : `${response.status}`));
       }
       setResult(body as Result);
@@ -251,22 +247,12 @@ export function Ask({ base, onGeneScreens }: { base: string; onGeneScreens: (rv:
         </button>
       </form>
 
-      {me && (needsCaptcha || allowanceLabel(me) || me.orcid || me.signin_available || signinFailed) && (
-      <div className="askaccess">
-        {needsCaptcha && <div ref={widgetHost} className="askaccess-captcha" />}
-        {me && allowanceLabel(me) && <span className="faint">{allowanceLabel(me)}</span>}
-        {me?.orcid ? (
-          <>
-            <a href={`https://orcid.org/${me.orcid}`} target="_blank" rel="noreferrer">{me.orcid}</a>
-            <button type="button" className="linkbtn" onClick={() => void signOut()}>Sign out</button>
-          </>
-        ) : me?.signin_available ? (
-          <a href={signInHref}>{signInOffer(me)}</a>
-        ) : null}
-        {signinFailed && (
-          <span className="caveat-inline">ORCID sign-in did not complete.</span>
-        )}
-      </div>
+      {needsCaptcha && <div ref={widgetHost} className="askaccess-captcha" />}
+      {limitMessage && !error && (
+        <div className="askaccess" role="status">
+          <span>{limitMessage}</span>
+          {canSignInForMore && <a href={signInHref}>{signInOffer(me)}</a>}
+        </div>
       )}
 
       {focused && !result && state === "idle" && !error && (
@@ -315,15 +301,15 @@ export function Ask({ base, onGeneScreens }: { base: string; onGeneScreens: (rv:
                 <div className="askloading">
                   <span className="spinner" aria-hidden="true" />
                   <div>
-                    <span role="status">Querying the store</span>
+                    <span role="status">Searching the atlas</span>
                     <span aria-hidden="true"> · {seconds} s</span>
-                    <p className="note">Broad questions take up to a minute.</p>
+                    <p className="note">This may take a minute or longer.</p>
                   </div>
                 </div>
               )}
 
               {error && (
-                <div className="caveat">{error}</div>
+                <div className="caveat" role="alert">{error}{errorOffersSignIn && canSignInForMore && <a className="ask-error-signin" href={signInHref}>Sign in with ORCID</a>}</div>
               )}
 
               {result && (

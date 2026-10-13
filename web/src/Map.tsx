@@ -22,7 +22,7 @@ interface MapNode {
   sub?: string | null;
   /** The claim on the line into this node. */
   edge?: string;
-  /** Shown, not counted: drawn dashed. */
+  /** Association excluded from target counts: drawn dashed. */
   weak?: boolean;
   children?: MapNode[];
   open?: boolean;
@@ -58,7 +58,7 @@ const LINK_LABEL: Record<DrugLink, string> = {
   bosch_2021: "Bosch 2021",
   mechanism_complex: "complex member",
   structure: "bound in a structure",
-  who_resistance: "WHO resistance, not a target claim",
+  who_resistance: "WHO resistance association",
 };
 const COUNTED: DrugLink[] = ["mechanism", "bosch_2021"];
 
@@ -114,7 +114,7 @@ async function neighbours(kind: EntityKind, id: string, byName: Map<string, stri
         edge: t.evidence === "direct" ? "direct" : `orthologue · ${t.via_organism ?? "?"}${t.identity_level ? ` · ${t.identity_level}` : ""}`,
         weak: t.evidence !== "direct",
       })), "ChEMBL targets on this protein, or on an orthologue where there is no direct target."),
-      group("Drugs", drugItems(d.drugs), "Solid: a source says the drug acts on this protein. Dashed: complex membership, a bound ligand or WHO resistance, shown and never counted."),
+      group("Drugs", drugItems(d.drugs), "Solid lines show a recorded drug–target relationship. Dashed lines show complex membership, bound ligands or resistance associations; these are excluded from the drug count."),
       group("Compounds", d.compounds.map(c => {
         const p = potency.get(c.molecule_chembl_id);
         return {
@@ -131,8 +131,8 @@ async function neighbours(kind: EntityKind, id: string, byName: Map<string, stri
       })), "Campaigns with a stage on this protein. Dashed: the stage is on a complex it belongs to."),
       group("STRING partners", d.partners.map(p => ({
         kind: "gene", id: p.rv_id, label: p.gene_name ?? p.rv_id, edge: `STRING ${(p.combined_score / 1000).toFixed(2)}`,
-      })), "STRING functional association, combined score. Association is not physical binding."),
-      group("Homologues", related, "Shared accession, closest paralogue (30% identity over 70% of the query), nearest relative at any coverage (dashed, not redundancy), and the closest human protein."),
+      })), "STRING functional associations, with combined scores. These can include indirect relationships."),
+      group("Homologues", related, "Related proteins: shared accession, closest paralogue (30% identity over 70% of the query), nearest relative at any coverage, and closest human homologue. Dashed links do not establish functional redundancy."),
       group("Structures", d.structures.map(s => ({
         kind: "structure", id: s.pdb_id, label: s.pdb_id,
         sub: [s.resolution == null ? null : `${s.resolution.toFixed(2)} Å`, s.method].filter(Boolean).join(" · "),
@@ -141,14 +141,14 @@ async function neighbours(kind: EntityKind, id: string, byName: Map<string, stri
         kind: "structure", id: o.pdb_id, label: o.pdb_id, sub: o.via_organism,
         edge: o.relation === "same_sequence" ? "same sequence, other accession" : `${o.via_gene ?? o.via_acc} · ${pct(o.identity)} over ${pct(o.coverage)}`,
         weak: o.relation !== "same_sequence",
-      })), "Structures of another accession. Same sequence is this protein; an orthologue is a relative, never one of the gene's own."),
-      group("Pfam domains", d.pfam_ids.map(p => ({ kind: "pfam", id: p, label: p, edge: "UniProt" })), "Sharing a domain is not sharing a binding site."),
+      })), "Structures under other accessions, labelled as identical sequences or orthologues. These are excluded from the gene’s own structure count."),
+      group("Pfam domains", d.pfam_ids.map(p => ({ kind: "pfam", id: p, label: p, edge: "UniProt" })), "Shared Pfam domains; binding-site similarity has not been assessed."),
       group("GO terms", [...d.go_process, ...d.go_function].map(g => ({ kind: "go", id: g, label: g, edge: "UniProt GO" })), "Biological process and molecular function, as UniProt annotates them."),
       group("Pathways", d.pathways.map(p => ({ kind: "pathway", id: p, label: p, edge: "UniProt" })), "UniProt pathway annotation."),
       group("TnSeq conditions", d.conditions.map(c => ({
         kind: "condition", id: c.screen_id, label: c.description ?? c.screen_id, sub: c.study,
         edge: `log2FC ${c.log2fc?.toFixed(2) ?? "?"}${c.cross_study ? " · cross-study control" : ""}`,
-      })), "Measured and significant at q < 0.05 (this atlas's cut) in an annotated MtbTnDB screen."),
+      })), "Conditions with a measured effect at q < 0.05 in MtbTnDB. This significance threshold is set by the atlas."),
     ];
   }
   if (kind === "drug") {
@@ -163,7 +163,7 @@ async function neighbours(kind: EntityKind, id: string, byName: Map<string, stri
       group("Genes", [...genes].map(([rv, g]) => ({
         kind: "gene" as const, id: rv, label: g.name, sub: rv,
         edge: [...g.links].map(l => LINK_LABEL[l]).join(" · "), weak: ![...g.links].some(l => COUNTED.includes(l)),
-      })).sort((a, b) => Number(a.weak) - Number(b.weak)), "Solid: the drug acts on this gene's protein. Dashed: shown, not counted."),
+      })).sort((a, b) => Number(a.weak) - Number(b.weak)), "Solid lines show recorded targets. Dashed lines show other associations excluded from the target count."),
       group("Trials", d.trials.map(t => ({
         kind: "trial", id: t.nct_id, label: t.nct_id, sub: t.brief_title,
         edge: [t.phase_max == null ? null : `phase ${t.phase_max}`, t.status?.toLowerCase().replaceAll("_", " ")].filter(Boolean).join(" · "),
@@ -179,11 +179,11 @@ async function neighbours(kind: EntityKind, id: string, byName: Map<string, stri
         sub: g.best_pchembl == null ? g.rv_id : `best pChEMBL ${g.best_pchembl.toFixed(2)}`,
         edge: g.evidence === "direct" ? "direct" : `orthologue · ${g.via_organism ?? "?"}`, weak: g.evidence !== "direct",
       })), "Protein-level activity on the gene, or on an orthologue where it has no direct target."),
-      group("Drug", d.drug ? [{ kind: "drug", id: d.drug.molecule_chembl_id, label: d.drug.pref_name ?? d.drug.molecule_chembl_id, edge: "same molecule" }] : [], "The compound is itself a TB-indication drug in ChEMBL."),
+      group("Drug", d.drug ? [{ kind: "drug", id: d.drug.molecule_chembl_id, label: d.drug.pref_name ?? d.drug.molecule_chembl_id, edge: "same molecule" }] : [], "This compound has a TB indication in ChEMBL."),
       group("Screens", [...screens.values()].map(t => ({
         kind: "screen", id: t.screen_id, label: t.screen_title ?? t.screen_id,
         sub: [t.screen_source, t.year].filter(Boolean).join(" · "), edge: "tested in",
-      })), "Every campaign that tested it. Being tested is not being a hit."),
+      })), "Included campaigns that tested this compound. Open a campaign to check its reported activity outcome."),
     ];
   }
   if (kind === "screen") {
@@ -191,7 +191,7 @@ async function neighbours(kind: EntityKind, id: string, byName: Map<string, stri
     return [group("Genes", d.genes.map(g => ({
       kind: "gene", id: g.rv_id, label: g.gene_name ?? g.rv_id, sub: g.rv_id,
       edge: g.own ? "stage on this protein" : "stage on a complex", weak: !g.own,
-    })), "Genes a stage of this campaign is run on. A phenotypic screen reaches none.")];
+    })), "Genes linked to this campaign’s target-based assays. Phenotypic assays alone do not identify a target gene.")];
   }
   const d = await api.concept(kind, id);
   return [group("Genes", d.genes.map(g => ({
@@ -353,7 +353,7 @@ export function AtlasMap({ all, root: rootGene, onPick, onOpen }: {
       const groups = (await neighbours("gene", rv, resolveName)).map(i => keyed(i, node.key, path));
       const find = (label: string) => groups.find(g => g.label === label);
       let deepest = node.key;
-      let note = "No drug, compound, ChEMBL target or screen reaches this protein itself, so nothing is opened. Dashed links, such as an orthologue's, never choose the path.";
+      let note = "No direct drug, compound, ChEMBL target or screen record is available for this protein. Expand the groups to explore other associations.";
       // Only a drug a source says acts on the protein picks the path; resistance
       // and complex links are drawn but never chosen. Drugs arrive phase-first.
       const drugs = find("Drugs");
@@ -378,7 +378,7 @@ export function AtlasMap({ all, root: rootGene, onPick, onOpen }: {
         deepest = loaded[0].leaf?.key ?? drugs.key;
         const names = tops.map(t => t.label);
         const list = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names[0];
-        note = `Opened along ${list}, ${tops[0].sub ?? "no TB phase recorded"}: the furthest record on this protein${names.length > 1 ? ", tied" : ""}.`;
+        note = `Opened ${list} (${tops[0].sub ?? "no TB phase recorded"}), the linked drug${names.length > 1 ? "s" : ""} with the highest recorded TB phase.`;
       } else {
         // A group made only of dashed links (an orthologue target, a complex's
         // screen) is not a record on this protein, so it does not open.
@@ -386,7 +386,7 @@ export function AtlasMap({ all, root: rootGene, onPick, onOpen }: {
         if (next) {
           next.open = true;
           deepest = next.key;
-          note = `No drug acts on this protein; opened ${next.label}, the furthest record on it.`;
+          note = `No direct drug–target relationship is recorded. Opened the available ${next.label.toLowerCase()} records.`;
         }
       }
       if (token !== current.current) return;
@@ -491,8 +491,8 @@ export function AtlasMap({ all, root: rootGene, onPick, onOpen }: {
         {opened && <div className="group map-opened" role="status"><span className="lab">Why this path?</span><p>{opened}</p><button type="button" className="map-text-button" onClick={returnToStart}>Return to starting path →</button></div>}
         <div className="group map-legend">
           <p className="lab">Reading the map</p>
-          <p><svg width="28" height="8" aria-hidden="true"><path d="M0 4h28" className="map-link" /></svg>A source joins the two</p>
-          <p><svg width="28" height="8" aria-hidden="true"><path d="M0 4h28" className="map-link weak" /></svg>Shown, not counted</p>
+          <p><svg width="28" height="8" aria-hidden="true"><path d="M0 4h28" className="map-link" /></svg>Recorded relationship</p>
+          <p><svg width="28" height="8" aria-hidden="true"><path d="M0 4h28" className="map-link weak" /></svg>Association excluded from target counts</p>
           <p>Each card names its relationship. Expand a card to follow it; ↗ opens its details. A group with 0 means no record in the atlas.</p>
         </div>
       </FilterRail>
@@ -572,7 +572,7 @@ export function AtlasMap({ all, root: rootGene, onPick, onOpen }: {
             </div>
           </div>}
         </div>
-        {root && !root.loading && !root.error && <div className="map-footer"><span><strong>{placed.filter(p => p.node.kind !== "group" && p.node.kind !== "more").length}</strong> objects on map</span><span>Scroll or drag to move · + to expand · ↗ for details</span></div>}
+        {root && !root.loading && !root.error && <div className="map-footer"><span><strong>{placed.filter(p => p.node.kind !== "group" && p.node.kind !== "more").length}</strong> records on map</span><span>Scroll or drag to move · + to expand · ↗ for details</span></div>}
       </main>
     </div>
   );

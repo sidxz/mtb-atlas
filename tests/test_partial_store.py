@@ -67,7 +67,7 @@ def test_the_gene_page_says_the_layer_is_not_built(client: TestClient) -> None:
     assert page.status_code == 200
     body = page.json()
     assert body["drugs"] == []
-    assert any("not built" in text for text in body["absences"])
+    assert any("unavailable in this dataset" in text for text in body["absences"])
     # Never the sentence that means "we looked and found none".
     assert not any("No drug with a TB indication" in text for text in body["absences"])
 
@@ -77,7 +77,7 @@ def test_the_clinical_routes_say_so_rather_than_answering_empty(client: TestClie
     for path in ("/drugs", "/trials", "/drugs/CHEMBL64", "/trials/NCT02333799"):
         response = client.get(path)
         assert response.status_code == 503, path
-        assert "atlas clinical" in response.json()["detail"]
+        assert "unavailable in this dataset" in response.json()["detail"]
 
 
 def test_rebuilding_the_summary_does_not_need_the_network(evidence_only_store: Path) -> None:

@@ -59,10 +59,10 @@ function FormattingEditor({ columns, formatting, saved, onApply, onClose, record
   }
   function apply() {
     if (rules.some(r => !r.value.trim() || !Number.isFinite(Number(r.value)) || (r.operator === "between" && (!r.upper.trim() || !Number.isFinite(Number(r.upper)) || Number(r.upper) < Number(r.value))))) {
-      setError("Enter a finite value for every rule. For a range, the upper value must be at least the lower value."); return;
+      setError("Enter a valid number for each rule. A range’s upper value must be greater than or equal to its lower value."); return;
     }
     if (scales.some(s => (s.minimum.trim() || s.maximum.trim()) && (!s.minimum.trim() || !s.maximum.trim() || !Number.isFinite(Number(s.minimum)) || !Number.isFinite(Number(s.maximum)) || Number(s.minimum) >= Number(s.maximum)))) {
-      setError("Set both scale bounds with minimum below maximum, or leave both blank for automatic scaling."); return;
+      setError("Enter a minimum and maximum, with the minimum lower than the maximum. Leave both blank to use the data range."); return;
     }
     if (new Set(scales.map(s => s.column)).size !== scales.length) { setError("Use only one color scale or data bar per column."); return; }
     onApply({
@@ -74,7 +74,7 @@ function FormattingEditor({ columns, formatting, saved, onApply, onClose, record
   const options = numeric.map(([key, label]) => <option key={key} value={key}>{label}</option>);
   return <SettingsDialog title="Conditional formatting" onClose={onClose}>
     <div className="settings-body">
-      <p className="settings-help">Keep the values visible while highlighting patterns with rules, color scales or data bars.</p>
+      <p className="settings-help">Highlight cells or rows with rules, color scales or data bars.</p>
       {rules.map((rule, index) => <fieldset className="format-card" key={rule.id}>
         <legend>Rule {index + 1}</legend>
         <div className="format-card-tools">
@@ -113,7 +113,7 @@ function FormattingEditor({ columns, formatting, saved, onApply, onClose, record
       <p className="settings-help">Missing values never trigger a rule or scale. Cell rules override scales; scales override row rules. The first matching rule wins. Formatting does not change the data.</p>
       {error && <p className="format-error" role="alert">{error}</p>}
     </div>
-    <div className="settings-footer"><span>{saved ? "Saved in this browser" : "Applies to this visit; storage unavailable"}</span><button className="minibtn" type="button" onClick={onClose}>Cancel</button><button className="minibtn settings-apply" type="button" onClick={apply}>Apply formatting</button></div>
+    <div className="settings-footer"><span>{saved ? "Saved in this browser" : "Browser storage is unavailable; settings will not be saved"}</span><button className="minibtn" type="button" onClick={onClose}>Cancel</button><button className="minibtn settings-apply" type="button" onClick={apply}>Apply formatting</button></div>
   </SettingsDialog>;
 }
 
@@ -144,7 +144,7 @@ export function TableControls({ columns, groups, visible, preferences, saved, on
         {!groups.some(g => columns.some(c => g.keys.includes(c[0]) && `${g.label} ${c[1]}`.toLowerCase().includes(search.toLowerCase()))) && <p className="settings-help">No matching columns.</p>}
       </div>
       <div className="settings-footer"><button className="minibtn" type="button" onClick={() => onChange({ ...preferences, visible: columns.map(c => c[0]) })}>Show all</button><button className="minibtn" type="button" onClick={() => onChange({ ...preferences, visible: null })}>Reset default</button><button className="minibtn settings-apply" type="button" onClick={() => setOpen(null)}>Done</button></div>
-      <p className="settings-storage">{saved ? `Saved in this browser. ${columns.find(c => c[0] === identity)?.[1] ?? "Identity"} always stays visible.` : "Applies to this visit; browser storage unavailable."} {defaultNote}</p>
+      <p className="settings-storage">{saved ? `Saved in this browser. ${columns.find(c => c[0] === identity)?.[1] ?? "Identity"} always stays visible.` : "Browser storage is unavailable; settings will not be saved."} {defaultNote}</p>
     </SettingsDialog>}
     {open === "formatting" && <FormattingEditor recordLabel={recordLabel} columns={columns} formatting={preferences} saved={saved} onApply={formatting => onChange({ ...preferences, ...formatting })} onClose={() => setOpen(null)} />}
   </div>;

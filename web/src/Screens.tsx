@@ -171,7 +171,7 @@ function CampaignDetail({ id, onClose, onSelectGene, onProfile, onCompound, expa
           </div>
           {detail.library_size_stated !== null && <p className="note">Reported library size: <strong>{count(detail.library_size_stated)} compounds</strong></p>}
           <h3>Targets</h3>
-          {detail.genes.length ? <div className="target-links">{detail.genes.map(g => <button type="button" className="target-link" key={g.rv_id} onClick={() => onSelectGene?.(g.rv_id)}><strong>{g.gene_name ?? g.rv_id}</strong><span>{g.rv_id}{!g.own && " · complex subunit"}</span>{g.product && <small>{g.product}</small>}</button>)}</div> : <p className="note">No gene-level target mapped.</p>}
+          {detail.genes.length ? <div className="target-links">{detail.genes.map(g => <button type="button" className="target-link" key={g.rv_id} onClick={() => onSelectGene?.(g.rv_id)}><strong>{g.gene_name ?? g.rv_id}</strong><span>{g.rv_id}{!g.own && " · complex subunit"}</span>{g.product && <small>{g.product}</small>}</button>)}</div> : <p className="note">No target gene identified in this dataset.</p>}
           {detail.unplaced_targets.map(t => <p className="note" key={t.accession ?? t.name}>{t.name} {t.accession} · Unmapped protein</p>)}
           <h3>Source</h3><p className="note">{detail.depositor ?? "Depositor not stated"}</p><Source row={detail} />
           <div className="source-links">{detail.document_chembl_id && <ChemblLink kind="document" id={detail.document_chembl_id} />}{detail.pubmed_id && <a href={`https://pubmed.ncbi.nlm.nih.gov/${detail.pubmed_id}/`} target="_blank" rel="noreferrer">PubMed ↗</a>}{detail.aid && <a href={`https://pubchem.ncbi.nlm.nih.gov/bioassay/${detail.aid}`} target="_blank" rel="noreferrer">PubChem assay ↗</a>}</div>
@@ -276,8 +276,8 @@ export function Screens({ onSelectGene, focus, onFocus, onProfile, onCompound, g
       <FilterSelect label="Target mapping" value={reach} onChange={setReach}><option value="">All campaigns</option><option value="own">Gene’s own protein</option><option value="unplaced">Unmapped protein</option></FilterSelect>
       <FilterSelect label="Activity calls" value={outcome} onChange={setOutcome}><option value="">All campaigns</option><option value="stated">Stated</option><option value="unstated">Not stated</option></FilterSelect>
       {filters.length > 0 && <button type="button" className="clear-filters" onClick={clear}>Clear filters</button>}
-      {request.data && <div className="coverage-note"><strong>{count(request.data.n_own_genes)} / {count(request.data.n_genes)}</strong><span>genes with an own-protein campaign</span></div>}
-      <details className="group filtergroup"><summary>Dataset coverage</summary><p className="note">Ingested PubChem and ChEMBL campaigns.</p><p className="note">Not included: {request.data?.not_ingested.join("; ") ?? "—"}.</p></details>
+      {request.data && <div className="coverage-note"><strong>{count(request.data.n_own_genes)} / {count(request.data.n_genes)}</strong><span>genes with a campaign targeting their protein</span></div>}
+      <details className="group filtergroup"><summary>Dataset coverage</summary><p className="note">Screening campaigns included from PubChem and ChEMBL.</p><p className="note">Not included: {request.data?.not_ingested.join("; ") ?? "—"}.</p></details>
     </FilterRail>
     <main className={`col canvascol workspace-list${maximized === "table" ? " is-maximized" : ""}`} onKeyDown={e => { if (e.key === "Escape" && maximized === "table") { e.stopPropagation(); setMaximized(null); } }}>
       <div className="workspace-toolbar"><SearchBox value={search} onChange={setSearch} label="Search campaigns" placeholder="Search campaigns, depositors or IDs…" />{(!open || maximized === "table") && <TableControls columns={SCREEN_COLUMNS} groups={SCREEN_GROUPS} visible={visible} preferences={settings.preferences} saved={settings.saved} onChange={settings.change} identity="screen_id" recordLabel="campaigns" defaultNote="" />}<MaximizeButton expanded={maximized === "table"} onToggle={() => setMaximized(maximized === "table" ? null : "table")} label="campaigns table" /></div>
@@ -307,7 +307,7 @@ const HIT_GROUPS = [
   { label: "Literature", keys: ["n_papers", "first_year", "latest_year"] },
   { label: "Reported outcomes", keys: ["selectivity_median", "n_active_campaigns"] },
 ];
-const COVERAGE = [["", "All compounds"], ["beyond_potency", "Beyond potency"], ["potency_only", "Potency only"], ["elsewhere_only", "Only elsewhere"]];
+const COVERAGE = [["", "All compounds"], ["beyond_potency", "Beyond potency"], ["potency_only", "Potency only"], ["elsewhere_only", "No Mtb potency data"]];
 function selectivity(hit: HitProfile) {
   if (hit.n_selectivity == null) return hit.n_selectivity_censored ? "Bounds only" : "—";
   return hit.selectivity_median?.toLocaleString(undefined, { maximumFractionDigits: 1 }) ?? "—";
@@ -334,7 +334,7 @@ function HitDetail({ id, initial, category: initialCategory, onClose, onCampaign
     <div className="workspace-detail-body">
       <div className="compound-overview">
         {(hit?.smiles ?? compound.data?.smiles) ? <Structure smiles={hit?.smiles ?? compound.data?.smiles ?? null} width={220} height={130} title={hit?.pref_name ?? id} /> : <span className="structure-absent">Structure unavailable</span>}
-        <div><h3>Literature coverage</h3><RequestState {...profile} />{hit && <><p><strong>{count(hit.n_papers)}</strong> papers</p><p className="note">{hit.first_year ?? "—"}–{hit.latest_year ?? "—"}</p></>}{!profile.loading && !profile.error && !hit && <p className="note">No literature profile in this dataset.</p>}{hit?.n_call_campaigns != null && <p className="note">Active in {count(hit.n_active_campaigns)} of {count(hit.n_call_campaigns)} campaigns with calls.</p>}</div>
+        <div><h3>Literature coverage</h3><RequestState {...profile} />{hit && <><p><strong>{count(hit.n_papers)}</strong> papers</p><p className="note">{hit.first_year ?? "—"}–{hit.latest_year ?? "—"}</p></>}{!profile.loading && !profile.error && !hit && <p className="note">No literature profile in this dataset.</p>}{hit?.n_call_campaigns != null && <p className="note">Active in {count(hit.n_active_campaigns)} of {count(hit.n_call_campaigns)} campaigns with reported activity outcomes.</p>}</div>
       </div>
       {compound.error && <div className="note" role="status">Compound metadata unavailable. <button type="button" className="row-open" onClick={compound.retry}>Retry</button></div>}
       {compound.data?.genes.length ? <div className="chips">{compound.data.genes.map(g => <button type="button" className="chip accent" key={g.rv_id} onClick={() => onGene?.(g.rv_id)}>{g.gene_name ?? g.rv_id}{g.evidence === "orthologue" && " · orthologue"}</button>)}</div> : null}
@@ -407,7 +407,7 @@ export function HitProfiling({ screen, onClearScreen, focus, onFocus, onCampaign
       <div className="group"><p className="lab">Coverage</p><div className="seg">{COVERAGE.map(([key, label]) => <button type="button" key={key} aria-pressed={coverage === key} onClick={() => setCoverage(key)}><span className="name">{label}</span></button>)}</div></div>
       <fieldset className="evidence-filters"><legend>Has measurements</legend>{[...EVIDENCE.map(([key, label]) => [key, label]), ["n_selectivity", "Reported selectivity"]].map(([key, label]) => <label key={key}><input type="checkbox" checked={has.includes(key)} onChange={() => setHas(has.includes(key) ? has.filter(h => h !== key) : [...has, key])} />{label}</label>)}<p className="note">Matches every selected type.</p></fieldset>
       {filters.length > 0 && <button type="button" className="clear-filters" onClick={clear}>Clear filters</button>}
-      {screen && <div className="campaign-scope"><span className="lab">From campaign</span><button type="button" className="row-open" onClick={() => onCampaign?.(screen.id)}>{screen.title ?? screen.id}</button><p className="note">Showing each compound’s full literature profile.</p><button type="button" className="row-open" onClick={onClearScreen}>Clear campaign</button></div>}
+      {screen && <div className="campaign-scope"><span className="lab">From campaign</span><button type="button" className="row-open" onClick={() => onCampaign?.(screen.id)}>{screen.title ?? screen.id}</button><p className="note">Includes each compound’s measurements across all campaigns.</p><button type="button" className="row-open" onClick={onClearScreen}>Clear campaign</button></div>}
       <details className="group filtergroup"><summary>About these counts</summary><p className="note">Counts are distinct assays. — means no recorded measurement.</p><p className="note">Potency only: Mtb potency without cytotoxicity, ADME or animal data. Other assays may be present.</p><p className="note">Selectivity: reported ratios; bounds excluded from the median.</p></details>
     </FilterRail>
     <main className={`col canvascol workspace-list${maximized === "table" ? " is-maximized" : ""}`} onKeyDown={e => { if (e.key === "Escape" && maximized === "table") { e.stopPropagation(); setMaximized(null); } }}>

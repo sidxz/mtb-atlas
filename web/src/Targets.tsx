@@ -24,7 +24,7 @@ const STATUS_LABEL: Record<ValidationStatus, string> = {
   annotated_target: "Annotated target",
   screened: "Screened only",
   genetically_nominated: "Genetically nominated",
-  not_interrogated: "Not interrogated",
+  not_interrogated: "No recorded evidence",
 };
 
 const STATUS_BASIS: Record<ValidationStatus, string> = {
@@ -32,9 +32,9 @@ const STATUS_BASIS: Record<ValidationStatus, string> = {
   clinical_stage: "A compound in clinical development is recorded against this protein.",
   biochemically_interrogated: "A ChEMBL assay is recorded against this protein as a single-protein target.",
   annotated_target: "A ChEMBL target exists for this protein, with no assay recorded against it.",
-  screened: "A screening campaign reaches this protein, with no assay recorded against it.",
+  screened: "A screening campaign targets this protein, with no single-protein ChEMBL assay recorded.",
   genetically_nominated: "Essential or confidently vulnerable, with no chemical record.",
-  not_interrogated: "No chemical or genetic record in these sources reaches this locus.",
+  not_interrogated: "No chemical or genetic evidence is linked to this gene in the included sources.",
 };
 
 type Verdict = "y" | "n" | "r";
@@ -111,7 +111,7 @@ const CRITERIA: Criterion[] = [
   {
     id: "screen",
     label: "Screening campaign",
-    hint: "A campaign with a stage on this protein's own single-protein target. Unbuilt layer reads as no record.",
+    hint: "A campaign includes an assay on this protein alone. If screening data is unavailable, this reads as no record.",
     verdict: r => (r.n_target_screens == null ? "r" : r.n_target_screens > 0 ? "y" : "n"),
   },
   {
@@ -316,7 +316,7 @@ function Profile({ row, onOpenGene, onOpenScreens, onOpenDrug, picks, statusFilt
       <Dimension
         title="Target engagement"
         criteria={["assay", "chembl", "who"]}
-        basis="ChEMBL assays recorded against this protein as a single-protein target; assays filed against complexes containing it are reported separately. Resistance variants are those graded as associated with resistance in the WHO mutation catalogue, 2nd edition."
+        basis="ChEMBL assays recorded against this protein as a single-protein target; assays recorded against complexes containing it are reported separately. Resistance variants are those graded as associated with resistance in the WHO mutation catalogue, 2nd edition."
       >
         <Row label="ChEMBL targets" criterion="chembl" value={n0(row.n_chembl_targets)} />
         <Row label="Evidence class" value={row.chembl_evidence} />
@@ -328,7 +328,7 @@ function Profile({ row, onOpenGene, onOpenScreens, onOpenDrug, picks, statusFilt
       </Dimension>
 
       <Dimension
-        title="Structural tractability"
+        title="Structural evidence"
         criteria={["structure", "orthologue"]}
         basis="Experimental structures deposited under this protein's own accession, and structures of mycobacterial orthologues reported with sequence identity and coverage. Orthologue residue numbering follows the orthologue, not this protein."
       >

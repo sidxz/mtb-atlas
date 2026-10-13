@@ -115,10 +115,9 @@ export function Genome({ rvId }: { rvId: string }) {
   return (
     <>
       <p className="note">
-        {seq.dna?.accession ?? "NC_000962.3"}:{seq.start.toLocaleString()}–{seq.stop.toLocaleString()} ({seq.strand}).
-        Click a neighbouring gene to open it. Operons are not drawn: no source here states one.
+        {seq.dna?.accession ?? "NC_000962.3"}:{seq.start.toLocaleString()}–{seq.stop.toLocaleString()} ({seq.strand}). Select a neighbouring gene to open it. Operon annotations are not available in this dataset.
       </p>
-      {seq.dna ? <Browser seq={seq} /> : <p className="absent">The genome is not built in this store.</p>}
+      {seq.dna ? <Browser seq={seq} /> : <p className="absent">Genome sequence data is unavailable.</p>}
       {seq.dna && (
         <SequenceBlock
           title="DNA"
@@ -136,7 +135,7 @@ export function Genome({ rvId }: { rvId: string }) {
         />
       ) : (
         <p className="absent">
-          {seq.feature === "CDS" ? "No UniProt protein for this locus." : `An ${seq.feature} gene: no protein.`}
+          {seq.feature === "CDS" ? "No UniProt protein for this locus." : `Non-protein-coding feature (${seq.feature}).`}
         </p>
       )}
     </>

@@ -900,7 +900,8 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .detail-head-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .maximize-button { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; flex-shrink: 0; }
 .maximize-button .ui-icon { width: 14px; height: 14px; }
-.body:has(> .is-maximized) { grid-template-columns: minmax(0, 1fr); }
+/* .body.body.body (0,4,0): out-rank every per-view `.body.X.detail-open` column template */
+.body.body.body:has(> .is-maximized) { grid-template-columns: minmax(0, 1fr); }
 .body:has(> .is-maximized) > .col:not(.is-maximized) { display: none; }
 .body > .is-maximized { display: flex; grid-column: 1; margin: 0 16px 16px; border-radius: 8px; }
 .app:has(> .workspace-view:not([hidden]) .is-maximized), .app:has(> .body > .is-maximized) { --rail-width: 16px; }

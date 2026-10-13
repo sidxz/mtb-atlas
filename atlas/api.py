@@ -8,6 +8,7 @@ answer can name the release it came from.
 from __future__ import annotations
 
 import atexit
+import math
 import re
 import shutil
 import tempfile
@@ -16,11 +17,12 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import duckdb
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
+from . import ask_access as access
 from .clinical import TARGET_LINK_SQL, TARGET_LINKS
 from .sources.genome import dna
 from .store import STORE, built, provenance
@@ -2229,7 +2231,8 @@ def _query(
 
 class Question(BaseModel):
     question: str = Field(min_length=3, max_length=2000)
-    effort: Literal["low", "medium", "high", "xhigh"] = "high"
+    # No `effort`: it is fixed at "high" on the server, so a caller cannot buy a
+    # dearer answer. An `effort` in the body is ignored, not refused.
 
 
 class AgentAnswer(BaseModel):
@@ -2337,12 +2340,86 @@ def references(text: str, limit: int = 20) -> dict[str, list[Hit]]:
     return found
 
 
+class AuthMe(BaseModel):
+    orcid: str | None
+    limits: bool
+    remaining: int | None
+    limit: int
+    window: Literal["1h", "24h"]
+    global_remaining: int | None
+    turnstile_site_key: str | None
+    signin_available: bool
+
+
+def _client_ip(request: Request) -> str:
+    # The visitor only if uvicorn trusts the proxy in front (FORWARDED_ALLOW_IPS);
+    # otherwise every visitor is the proxy and shares one allowance.
+    return request.client.host if request.client else ""
+
+
+def _allowance(request: Request) -> tuple[str, str | None, tuple[int, float]]:
+    """(usage key, signed-in iD or None, (limit, window)) for this caller."""
+    orcid = access.read_session(request.cookies.get(access.SESSION_COOKIE))
+    if orcid:
+        return access.orcid_key(orcid), orcid, access.SIGNED_IN
+    return access.ip_key(_client_ip(request)), None, access.ANONYMOUS
+
+
+def _admit(request: Request) -> None:
+    """Spend one of this caller's asks, or refuse with the reason. Fails closed."""
+    if not access.limits_on():
+        return
+    if not access.secret_configured():
+        raise HTTPException(503, "Questions are switched off: this site has no ATLAS_SECRET.")
+    key, orcid, (limit, window) = _allowance(request)
+    if orcid is None:
+        if not access.turnstile_configured():
+            raise HTTPException(
+                503, "Anonymous questions are switched off: this site has no Turnstile keys."
+            )
+        token = request.headers.get("X-Turnstile-Token")
+        if not access.verify_turnstile(token, _client_ip(request)):
+            raise HTTPException(403, "The human check did not pass. Try again.")
+    verdict = access.admit(key, limit, window)
+    if not verdict.admitted:
+        wait = max(1, math.ceil(verdict.retry_after))
+        raise HTTPException(
+            429,
+            detail={"limit": verdict.limit, "retry_after": wait},
+            headers={"Retry-After": str(wait)},
+        )
+
+
+@app.get("/auth/me", response_model=AuthMe)
+def auth_me(request: Request) -> AuthMe:
+    """What this caller may still ask, and what the page needs to let them."""
+    limits = access.limits_on()
+    orcid = access.read_session(request.cookies.get(access.SESSION_COOKIE))
+    limit, window = access.SIGNED_IN if orcid else access.ANONYMOUS
+    remaining = global_remaining = None
+    if limits and access.secret_configured():
+        key, _, _ = _allowance(request)
+        peek = access.admit(key, limit, window, record=False)
+        remaining, global_remaining = peek.remaining, peek.global_remaining
+    return AuthMe(
+        orcid=orcid,
+        limits=limits,
+        remaining=remaining,
+        limit=limit,
+        window="24h" if orcid else "1h",
+        global_remaining=global_remaining,
+        turnstile_site_key=(access.turnstile_site_key() if limits else None),
+        signin_available=access.signin_available(),
+    )
+
+
 @app.post("/ask", response_model=AgentAnswer)
-def ask(body: Question) -> AgentAnswer:
+def ask(body: Question, request: Request) -> AgentAnswer:
     from . import agent
 
+    _admit(request)
     try:
-        result = agent.ask(body.question, effort=body.effort)
+        result = agent.ask(body.question, effort="high")
     except RuntimeError as error:
         # No credentials configured: a 503 rather than a 500, because the rest of
         # the API is fine and this one route simply is not available.

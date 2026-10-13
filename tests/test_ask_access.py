@@ -280,3 +280,140 @@ def test_orcid_exchange_returns_the_id(keys: None, monkeypatch) -> None:
 def test_an_ip_digest_is_not_a_session_signature(secret: None) -> None:
     assert access.ip_key("x") != "ip:" + access._sign("session", "x")
     assert access.ip_key("x") != "ip:" + access._sign("state", "x")
+
+
+# --- the gate on /ask and /auth/me ------------------------------------------------
+
+
+@pytest.fixture
+def asking(evidence_store: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> TestClient:
+    """The API with limits on, Turnstile faked (token "good" passes) and the model faked."""
+    for module in (api, store, summary):
+        monkeypatch.setattr(module, "STORE", evidence_store)
+    monkeypatch.setenv("ATLAS_SECRET", "test-secret")
+    monkeypatch.setenv("TURNSTILE_SITE_KEY", "site-key")
+    monkeypatch.setenv("TURNSTILE_SECRET_KEY", "secret-key")
+    monkeypatch.setenv("ATLAS_USAGE_DB", str(tmp_path / "usage.sqlite"))
+    for name in ("ATLAS_ASK_LIMITS", "ORCID_CLIENT_ID", "ORCID_CLIENT_SECRET", "ATLAS_PUBLIC_URL"):
+        monkeypatch.delenv(name, raising=False)
+    efforts: list[str] = []
+
+    def fake_ask(question: str, *, model: str = agent.MODEL, effort: str = "high"):
+        efforts.append(effort)
+        return agent.Answer(text="dprE1 is Rv3790.")
+
+    monkeypatch.setattr(agent, "ask", fake_ask)
+    monkeypatch.setattr(access, "verify_turnstile", lambda token, ip: token == "good")
+    client = TestClient(api.app, base_url="https://testserver")
+    client.efforts = efforts  # type: ignore[attr-defined]
+    return client
+
+
+def _ask(client: TestClient, token: str | None = "good", **body):
+    headers = {"X-Turnstile-Token": token} if token else {}
+    return client.post("/ask", json={"question": "What is dprE1?", **body}, headers=headers)
+
+
+def test_anonymous_gets_five_then_a_429_that_says_when(asking: TestClient) -> None:
+    for _ in range(5):
+        assert _ask(asking).status_code == 200
+    refused = _ask(asking)
+    assert refused.status_code == 429
+    assert refused.json()["detail"]["limit"] == "ip"
+    assert int(refused.headers["Retry-After"]) == refused.json()["detail"]["retry_after"] > 0
+
+
+def test_a_failed_captcha_is_403_and_costs_nothing(asking: TestClient) -> None:
+    assert _ask(asking, token="bad").status_code == 403
+    assert _ask(asking, token=None).status_code == 403
+    for _ in range(5):
+        assert _ask(asking).status_code == 200
+
+
+def test_missing_turnstile_config_refuses_rather_than_running_open(
+    asking: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("TURNSTILE_SECRET_KEY")
+    assert _ask(asking).status_code == 503
+
+
+def test_missing_secret_refuses_every_ask(
+    asking: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("ATLAS_SECRET")
+    assert _ask(asking).status_code == 503
+
+
+def test_effort_is_fixed_at_high_whatever_the_body_says(asking: TestClient) -> None:
+    assert _ask(asking, effort="xhigh").status_code == 200
+    assert asking.efforts == ["high"]  # type: ignore[attr-defined]
+
+
+def test_the_usage_file_holds_no_ip_in_clear(asking: TestClient, tmp_path: Path) -> None:
+    _ask(asking)
+    with sqlite3.connect(tmp_path / "usage.sqlite") as connection:
+        keys = [k for (k,) in connection.execute("SELECT key FROM asks")]
+    assert keys and all("testclient" not in k for k in keys)
+
+
+def test_limits_off_admits_without_touching_the_usage_file(
+    asking: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("ATLAS_ASK_LIMITS", "off")
+    monkeypatch.delenv("ATLAS_SECRET")
+    for _ in range(7):
+        assert _ask(asking, token=None).status_code == 200
+    assert not (tmp_path / "usage.sqlite").exists()
+
+
+def test_signed_in_gets_twenty_a_day_and_no_captcha(asking: TestClient) -> None:
+    asking.cookies.set(access.SESSION_COOKIE, access.make_session(IRIS))
+    for _ in range(20):
+        assert _ask(asking, token=None).status_code == 200
+    refused = _ask(asking, token=None)
+    assert refused.status_code == 429
+    assert refused.json()["detail"]["limit"] == "orcid"
+
+
+def test_a_tampered_session_is_anonymous(asking: TestClient) -> None:
+    forged = access.make_session(IRIS).replace(IRIS, "0000-0001-5109-3700")
+    asking.cookies.set(access.SESSION_COOKIE, forged)
+    assert _ask(asking, token=None).status_code == 403
+
+
+def test_the_global_ceiling_refuses_a_signed_in_user_too(
+    asking: TestClient, tmp_path: Path
+) -> None:
+    _ask(asking)  # creates the usage file
+    now = time.time()
+    with sqlite3.connect(tmp_path / "usage.sqlite") as connection:
+        connection.executemany(
+            "INSERT INTO asks VALUES (?, ?)",
+            [(f"orcid:{i}", now - 60) for i in range(access.GLOBAL_LIMIT)],
+        )
+    asking.cookies.set(access.SESSION_COOKIE, access.make_session(IRIS))
+    refused = _ask(asking, token=None)
+    assert refused.status_code == 429
+    assert refused.json()["detail"]["limit"] == "global"
+
+
+def test_me_reports_the_allowance_without_spending_it(asking: TestClient) -> None:
+    me = asking.get("/auth/me").json()
+    assert me == {
+        "orcid": None,
+        "limits": True,
+        "remaining": 5,
+        "limit": 5,
+        "window": "1h",
+        "global_remaining": access.GLOBAL_LIMIT,
+        "turnstile_site_key": "site-key",
+        "signin_available": False,
+    }
+    _ask(asking)
+    assert asking.get("/auth/me").json()["remaining"] == 4
+
+
+def test_me_signed_in(asking: TestClient) -> None:
+    asking.cookies.set(access.SESSION_COOKIE, access.make_session(IRIS))
+    me = asking.get("/auth/me").json()
+    assert (me["orcid"], me["limit"], me["window"], me["remaining"]) == (IRIS, 20, "24h", 20)

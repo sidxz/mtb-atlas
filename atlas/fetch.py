@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 import threading
 import time
@@ -28,7 +29,8 @@ USER_AGENT = "mtb-target-atlas/0.1 (+https://github.com/sidxz/mtb-target-atlas)"
 
 ROOT = Path(__file__).resolve().parent.parent
 RAW = ROOT / "data" / "raw"
-STORE = ROOT / "data" / "store"
+# The pipeline writes here; a deployed API reads a store mounted elsewhere.
+STORE = Path(os.environ.get("ATLAS_STORE") or ROOT / "data" / "store")
 
 _last_request: dict[str, float] = {}
 _throttle_lock = threading.Lock()

@@ -134,7 +134,7 @@ button { font: inherit; }
 .app { --rail-width: 232px; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto auto; height: 100%; min-height: 0; }
 .app > .sitenotice { grid-row: 4; grid-column: 1; }
 .app > .sitefooter { grid-row: 5; grid-column: 1; }
-.app > .workspace-view > .about { grid-row: 2 / 4; grid-column: 1; min-height: 0; }
+.app > .workspace-view > .about { grid-row: 3; grid-column: 1; min-height: 0; }
 .app > .topbar { grid-row: 1; grid-column: 1; }
 .app > .ask { grid-row: 2; grid-column: 1; margin-left: var(--rail-width); z-index: 1; }
 .app > .body { grid-row: 2 / 4; grid-column: 1; grid-template-rows: subgrid; }
@@ -1198,5 +1198,6 @@ pre.sequence { margin: 0; max-height: 220px; overflow: auto; padding: 8px 10px; 
 .sitenotice { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 8px 20px; border-top: 1px solid var(--line); background: var(--surface-2); font-size: 13px; }
 .about { max-width: 78ch; padding: 24px 20px 48px; overflow: auto; }
 .about h2 { margin-top: 0; }
+.about-table th, .about-table td { white-space: normal; }
 .about-table { border-collapse: collapse; margin: 12px 0; font-size: 13px; }
 .about-table th, .about-table td { text-align: left; padding: 4px 12px 4px 0; border-bottom: 1px solid var(--line); vertical-align: top; }

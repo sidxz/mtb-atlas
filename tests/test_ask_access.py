@@ -8,10 +8,14 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import time
 from pathlib import Path
 
+import httpx
 import pytest
+from fastapi.testclient import TestClient
 
+from atlas import agent, api, store, summary
 from atlas import ask_access as access
 
 T0 = 1_800_000_000.0  # a fixed clock; nothing here sleeps
@@ -196,3 +200,83 @@ def test_the_authorize_url_names_this_site_and_only_authenticate(
     assert "client_id=APP-TEST" in url and "state=n1" in url
     assert "scope=%2Fauthenticate" in url
     assert "redirect_uri=https%3A%2F%2Fatlas.example.org%2Fapi%2Fauth%2Forcid%2Fcallback" in url
+
+
+# --- hardening: every failure of Turnstile / ORCID is a refusal -----------------
+
+
+class _Reply:
+    def __init__(self, status: int = 200, body: object = None, bad_json: bool = False) -> None:
+        self.status_code, self._body, self._bad = status, body, bad_json
+
+    def json(self) -> object:
+        if self._bad:
+            raise ValueError("not json")
+        return self._body
+
+
+def _post(monkeypatch: pytest.MonkeyPatch, reply: _Reply | Exception) -> None:
+    def fake(*args, **kwargs):
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+
+    monkeypatch.setattr(httpx, "post", fake)
+
+
+@pytest.fixture
+def keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TURNSTILE_SECRET_KEY", "secret")
+    monkeypatch.setenv("ORCID_CLIENT_ID", "id")
+    monkeypatch.setenv("ORCID_CLIENT_SECRET", "s")
+    monkeypatch.setenv("ATLAS_PUBLIC_URL", "https://x.example")
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        httpx.ConnectError("down"),
+        httpx.InvalidURL("bad"),
+        _Reply(500, {"success": True}),
+        _Reply(200, {"success": False}),
+        _Reply(200, ["success"]),
+        _Reply(200, "yes"),
+        _Reply(200, bad_json=True),
+    ],
+)
+def test_turnstile_is_false_on_any_failure(keys: None, monkeypatch, reply) -> None:
+    _post(monkeypatch, reply)
+    assert access.verify_turnstile("tok", "1.2.3.4") is False
+
+
+def test_turnstile_is_true_only_on_a_clear_yes(keys: None, monkeypatch) -> None:
+    _post(monkeypatch, _Reply(200, {"success": True}))
+    assert access.verify_turnstile("tok", "1.2.3.4") is True
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        httpx.ConnectError("down"),
+        httpx.InvalidURL("bad"),
+        _Reply(401, {"orcid": IRIS}),
+        _Reply(200, [IRIS]),
+        _Reply(200, {}),
+        _Reply(200, {"orcid": "not-an-id"}),
+        _Reply(200, {"orcid": 5}),
+        _Reply(200, bad_json=True),
+    ],
+)
+def test_orcid_exchange_is_none_on_any_failure(keys: None, monkeypatch, reply) -> None:
+    _post(monkeypatch, reply)
+    assert access.exchange_code("code") is None
+
+
+def test_orcid_exchange_returns_the_id(keys: None, monkeypatch) -> None:
+    _post(monkeypatch, _Reply(200, {"orcid": IRIS, "name": "x", "access_token": "t"}))
+    assert access.exchange_code("code") == IRIS
+
+
+def test_an_ip_digest_is_not_a_session_signature(secret: None) -> None:
+    assert access.ip_key("x") != "ip:" + access._sign("session", "x")
+    assert access.ip_key("x") != "ip:" + access._sign("state", "x")

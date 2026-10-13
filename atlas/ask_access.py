@@ -152,19 +152,21 @@ def signin_available() -> bool:
 # --- signing -------------------------------------------------------------------
 
 
-def _sign(payload: str) -> str:
+def _sign(purpose: str, payload: str) -> str:
+    # The purpose is signed too, so a digest made for one use (an IP key) can never
+    # equal a signature made for another (a session or state cookie).
     secret = _env("ATLAS_SECRET")
     if secret is None:
         raise RuntimeError("ATLAS_SECRET is not set")
-    return hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return hmac.new(secret.encode(), f"{purpose}|{payload}".encode(), hashlib.sha256).hexdigest()
 
 
-def _signed(*fields: str) -> str:
+def _signed(purpose: str, *fields: str) -> str:
     payload = "|".join(fields)
-    return f"{payload}|{_sign(payload)}"
+    return f"{payload}|{_sign(purpose, payload)}"
 
 
-def _unsigned(value: str | None, n: int) -> list[str] | None:
+def _unsigned(purpose: str, value: str | None, n: int) -> list[str] | None:
     """The n fields of a value signed here, or None for anything tampered or foreign."""
     if not value or not secret_configured():
         return None
@@ -172,14 +174,14 @@ def _unsigned(value: str | None, n: int) -> list[str] | None:
     if len(parts) != n + 1:
         return None
     # compare_digest raises on non-ASCII str, so compare the bytes.
-    expected = _sign("|".join(parts[:-1])).encode()
+    expected = _sign(purpose, "|".join(parts[:-1])).encode()
     if not hmac.compare_digest(expected, parts[-1].encode()):
         return None
     return parts[:-1]
 
 
 def ip_key(ip: str) -> str:
-    return f"ip:{_sign(ip)}"
+    return f"ip:{_sign('ip', ip)}"
 
 
 def orcid_key(orcid: str) -> str:
@@ -188,12 +190,12 @@ def orcid_key(orcid: str) -> str:
 
 def make_session(orcid: str, now: float | None = None) -> str:
     now = time.time() if now is None else now
-    return _signed(orcid, str(int(now + SESSION_SECONDS)))
+    return _signed("session", orcid, str(int(now + SESSION_SECONDS)))
 
 
 def read_session(cookie: str | None, now: float | None = None) -> str | None:
     """The signed-in ORCID iD, or None: a bad cookie is no cookie, never an error."""
-    fields = _unsigned(cookie, 2)
+    fields = _unsigned("session", cookie, 2)
     if fields is None:
         return None
     orcid, expiry = fields
@@ -219,11 +221,11 @@ def safe_next(path: str | None) -> str:
 
 def make_state(nonce: str, next_path: str, now: float | None = None) -> str:
     now = time.time() if now is None else now
-    return _signed(nonce, safe_next(next_path), str(int(now + STATE_SECONDS)))
+    return _signed("state", nonce, safe_next(next_path), str(int(now + STATE_SECONDS)))
 
 
 def read_state(cookie: str | None, now: float | None = None) -> tuple[str, str] | None:
-    fields = _unsigned(cookie, 3)
+    fields = _unsigned("state", cookie, 3)
     if fields is None:
         return None
     nonce, next_path, expiry = fields
@@ -247,8 +249,11 @@ def verify_turnstile(token: str | None, ip: str) -> bool:
             data={"secret": secret, "response": token, "remoteip": ip},
             timeout=5.0,
         )
-        return response.status_code == 200 and response.json().get("success") is True
-    except (httpx.HTTPError, ValueError):
+        body = response.json()
+        return (
+            response.status_code == 200 and isinstance(body, dict) and body.get("success") is True
+        )
+    except Exception:  # noqa: BLE001 - anything but a clear yes is no
         return False
 
 
@@ -293,7 +298,10 @@ def exchange_code(code: str) -> str | None:
             headers={"Accept": "application/json"},
             timeout=10.0,
         )
-        orcid = response.json().get("orcid") if response.status_code == 200 else None
-    except (httpx.HTTPError, ValueError):
+        body = response.json()
+        orcid = (
+            body.get("orcid") if response.status_code == 200 and isinstance(body, dict) else None
+        )
+    except Exception:  # noqa: BLE001 - any failure is no sign-in
         return None
     return orcid if isinstance(orcid, str) and ORCID_ID.fullmatch(orcid) else None

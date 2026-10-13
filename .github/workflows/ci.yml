@@ -13,9 +13,9 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
-      - run: uv pip install --system -e '.[dev]'
-      - run: ruff check .
-      - run: ruff format --check .
+      - run: uv venv && uv pip install -e '.[dev]'
+      - run: .venv/bin/ruff check .
+      - run: .venv/bin/ruff format --check .
       # Fixtures only: CI never reaches an upstream data source, so a service
       # being down or re-released can't turn into a red build.
-      - run: pytest -q
+      - run: .venv/bin/pytest -q

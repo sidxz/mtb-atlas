@@ -13,11 +13,17 @@ return is kept but the ORCID iD.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import os
+import re
 import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlencode
+
+import httpx
 
 from .fetch import ROOT
 
@@ -26,6 +32,12 @@ DAY = 86400.0
 ANONYMOUS = (5, HOUR)
 SIGNED_IN = (20, DAY)
 GLOBAL_LIMIT = 500
+SESSION_COOKIE = "atlas_session"
+STATE_COOKIE = "atlas_oauth_state"
+SESSION_SECONDS = 30 * DAY
+STATE_SECONDS = 600.0
+TURNSTILE_VERIFY = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+ORCID_ID = re.compile(r"[0-9]{4}-[0-9]{4}-[0-9]{4}-[0-9]{3}[0-9X]")
 
 
 def _env(name: str) -> str | None:
@@ -118,3 +130,170 @@ def admit(
         raise
     finally:
         connection.close()
+
+
+def secret_configured() -> bool:
+    return _env("ATLAS_SECRET") is not None
+
+
+def turnstile_configured() -> bool:
+    return bool(_env("TURNSTILE_SITE_KEY") and _env("TURNSTILE_SECRET_KEY"))
+
+
+def turnstile_site_key() -> str | None:
+    return _env("TURNSTILE_SITE_KEY")
+
+
+def signin_available() -> bool:
+    names = ("ATLAS_SECRET", "ORCID_CLIENT_ID", "ORCID_CLIENT_SECRET", "ATLAS_PUBLIC_URL")
+    return limits_on() and all(_env(name) for name in names)
+
+
+# --- signing -------------------------------------------------------------------
+
+
+def _sign(payload: str) -> str:
+    secret = _env("ATLAS_SECRET")
+    if secret is None:
+        raise RuntimeError("ATLAS_SECRET is not set")
+    return hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
+
+
+def _signed(*fields: str) -> str:
+    payload = "|".join(fields)
+    return f"{payload}|{_sign(payload)}"
+
+
+def _unsigned(value: str | None, n: int) -> list[str] | None:
+    """The n fields of a value signed here, or None for anything tampered or foreign."""
+    if not value or not secret_configured():
+        return None
+    parts = value.split("|")
+    if len(parts) != n + 1:
+        return None
+    # compare_digest raises on non-ASCII str, so compare the bytes.
+    expected = _sign("|".join(parts[:-1])).encode()
+    if not hmac.compare_digest(expected, parts[-1].encode()):
+        return None
+    return parts[:-1]
+
+
+def ip_key(ip: str) -> str:
+    return f"ip:{_sign(ip)}"
+
+
+def orcid_key(orcid: str) -> str:
+    return f"orcid:{orcid}"
+
+
+def make_session(orcid: str, now: float | None = None) -> str:
+    now = time.time() if now is None else now
+    return _signed(orcid, str(int(now + SESSION_SECONDS)))
+
+
+def read_session(cookie: str | None, now: float | None = None) -> str | None:
+    """The signed-in ORCID iD, or None: a bad cookie is no cookie, never an error."""
+    fields = _unsigned(cookie, 2)
+    if fields is None:
+        return None
+    orcid, expiry = fields
+    now = time.time() if now is None else now
+    if not ORCID_ID.fullmatch(orcid) or not expiry.isdigit() or int(expiry) <= now:
+        return None
+    return orcid
+
+
+def safe_next(path: str | None) -> str:
+    """A path on this site to come back to after sign-in, or `/`: never an open redirect."""
+    if (
+        not path
+        or not path.startswith("/")
+        or path.startswith("//")
+        or len(path) > 500
+        or any(c in path for c in "\\|")
+        or any(c.isspace() or not c.isprintable() for c in path)
+    ):
+        return "/"
+    return path
+
+
+def make_state(nonce: str, next_path: str, now: float | None = None) -> str:
+    now = time.time() if now is None else now
+    return _signed(nonce, safe_next(next_path), str(int(now + STATE_SECONDS)))
+
+
+def read_state(cookie: str | None, now: float | None = None) -> tuple[str, str] | None:
+    fields = _unsigned(cookie, 3)
+    if fields is None:
+        return None
+    nonce, next_path, expiry = fields
+    now = time.time() if now is None else now
+    if not expiry.isdigit() or int(expiry) <= now:
+        return None
+    return nonce, next_path
+
+
+# --- Turnstile and ORCID ---------------------------------------------------------
+
+
+def verify_turnstile(token: str | None, ip: str) -> bool:
+    """Cloudflare's verdict on one single-use token. Anything but a clear yes is no."""
+    secret = _env("TURNSTILE_SECRET_KEY")
+    if not token or secret is None:
+        return False
+    try:
+        response = httpx.post(
+            TURNSTILE_VERIFY,
+            data={"secret": secret, "response": token, "remoteip": ip},
+            timeout=5.0,
+        )
+        return response.status_code == 200 and response.json().get("success") is True
+    except (httpx.HTTPError, ValueError):
+        return False
+
+
+def public_url() -> str:
+    return (_env("ATLAS_PUBLIC_URL") or "").rstrip("/")
+
+
+def _orcid_base() -> str:
+    return (_env("ORCID_BASE") or "https://orcid.org").rstrip("/")
+
+
+def _redirect_uri() -> str:
+    return f"{public_url()}/api/auth/orcid/callback"
+
+
+def authorize_url(nonce: str) -> str:
+    query = urlencode(
+        {
+            "client_id": _env("ORCID_CLIENT_ID") or "",
+            "response_type": "code",
+            # /authenticate reads the iD and nothing else, and can never write to a record.
+            "scope": "/authenticate",
+            "redirect_uri": _redirect_uri(),
+            "state": nonce,
+        }
+    )
+    return f"{_orcid_base()}/oauth/authorize?{query}"
+
+
+def exchange_code(code: str) -> str | None:
+    """The iD ORCID vouches for, or None. The access token and the name are discarded."""
+    try:
+        response = httpx.post(
+            f"{_orcid_base()}/oauth/token",
+            data={
+                "client_id": _env("ORCID_CLIENT_ID") or "",
+                "client_secret": _env("ORCID_CLIENT_SECRET") or "",
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": _redirect_uri(),
+            },
+            headers={"Accept": "application/json"},
+            timeout=10.0,
+        )
+        orcid = response.json().get("orcid") if response.status_code == 200 else None
+    except (httpx.HTTPError, ValueError):
+        return None
+    return orcid if isinstance(orcid, str) and ORCID_ID.fullmatch(orcid) else None

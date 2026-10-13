@@ -8,7 +8,9 @@ answer can name the release it came from.
 from __future__ import annotations
 
 import atexit
+import json
 import math
+import os
 import re
 import secrets
 import shutil
@@ -231,10 +233,44 @@ class Source(BaseModel):
     retrieved: str
 
 
+class FooterLink(BaseModel):
+    label: str
+    url: str
+
+
+class Site(BaseModel):
+    """Who runs this instance: set per deployment, so the image names nobody."""
+
+    operator: str | None
+    contact: str | None
+    footer_links: list[FooterLink]
+
+
+def _site() -> Site:
+    try:
+        raw = json.loads(os.environ.get("ATLAS_FOOTER_LINKS") or "[]")
+    except ValueError:
+        raw = []
+    links = [
+        FooterLink(label=item["label"], url=item["url"])
+        for item in (raw if isinstance(raw, list) else [])
+        if isinstance(item, dict)
+        and isinstance(item.get("label"), str)
+        and isinstance(item.get("url"), str)
+        and item["url"].startswith(("https://", "http://"))
+    ]
+    return Site(
+        operator=os.environ.get("ATLAS_OPERATOR") or None,
+        contact=os.environ.get("ATLAS_CONTACT") or None,
+        footer_links=links,
+    )
+
+
 class Meta(BaseModel):
     counts: dict[str, int]
     sources: list[Source]
     caveats: list[str]
+    site: Site
 
 
 class TargetSummary(BaseModel):
@@ -508,6 +544,7 @@ def meta() -> Meta:
     return Meta(
         counts=numbers,
         sources=sources,
+        site=_site(),
         caveats=[
             "Essentiality is one in vitro condition (7H9 broth, DeJesus 2017). "
             "A gene essential there may not be essential in infection. Griffin 2011 "

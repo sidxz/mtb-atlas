@@ -4,6 +4,7 @@
  * away, the same layout for TB drugs and the trials testing them.
  */
 
+import { AboutPage, SiteFooter, SiteNotice } from "./About";
 import { FilterRail } from "./FilterRail";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type Meta, type TargetDetail, type TargetSummary } from "./api";
@@ -356,14 +357,14 @@ function useTheme() {
   return { theme, toggle };
 }
 
-type View = "genome" | "targets" | "screens" | "hits" | "clinical" | "map";
-const VIEWS: View[] = ["genome", "targets", "screens", "hits", "clinical", "map"];
+type View = "genome" | "targets" | "screens" | "hits" | "clinical" | "map" | "about";
+const VIEWS: View[] = ["genome", "targets", "screens", "hits", "clinical", "map", "about"];
 const FOCUS_KINDS = ["drug", "trial", "compound"] as const;
 
 /**
  * The view and the one object open in it, from the path:
  * `/genome/Rv3790`, `/targets/Rv1484`, `/screens/pubchem:1671178`, `/hits/CHEMBL64`,
- * `/clinical/drug/CHEMBL64`, `/map/Rv0206c`. `/` is the genome with nothing open.
+ * `/clinical/drug/CHEMBL64`, `/map/Rv0206c`, `/about/privacy`. `/` is the genome with nothing open.
  */
 function parseRoute(pathname: string): { view: View; id: string | null; focus: Focus } {
   const clinical = matchPath("/clinical/:kind/:id", pathname);
@@ -684,7 +685,9 @@ export function App() {
           else { setProfileScreen(null); setHitFocus(id); }
         }} />
       </div>}
-      {view === "clinical" ? (
+      {view === "about" ? (
+        <div className="workspace-view"><AboutPage page={route.id} meta={meta} /></div>
+      ) : view === "clinical" ? (
         <DrugsAndTrials meta={meta} focus={focus} onFocus={setFocus} onSelectGene={openGene} />
       ) : view === "genome" ? (
         <div className={`body${selected ? " detail-open" : ""}`}>
@@ -958,6 +961,8 @@ export function App() {
           onClose={() => setZoomed(false)}
         />
       )}
+      <SiteFooter meta={meta} />
+      <SiteNotice />
     </div>
   );
 }

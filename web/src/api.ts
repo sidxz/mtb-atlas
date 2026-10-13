@@ -736,6 +736,7 @@ export interface Meta {
   counts: Record<string, number>;
   sources: { name: string; version: string; licence: string; retrieved: string }[];
   caveats: string[];
+  site: { operator: string | null; contact: string | null; footer_links: { label: string; url: string }[] };
 }
 
 /** What this visitor may still ask (`/auth/me`). `remaining` is null when limits are off. */

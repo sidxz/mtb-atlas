@@ -549,3 +549,28 @@ def test_the_state_cookie_is_cleared_on_return(signing_in: TestClient) -> None:
     )
     attrs = _cookie_attributes(back, access.STATE_COOKIE)
     assert attrs["max-age"] == "0"
+
+
+def test_meta_says_who_runs_the_site_and_keeps_only_real_links(
+    asking: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ATLAS_OPERATOR", "Example Lab")
+    monkeypatch.setenv("ATLAS_CONTACT", "atlas@example.org")
+    monkeypatch.setenv(
+        "ATLAS_FOOTER_LINKS",
+        '[{"label": "Site policies", "url": "https://example.org/p"},'
+        ' {"label": "Bad", "url": "javascript:alert(1)"}, {"url": "https://no-label"}]',
+    )
+    site = asking.get("/meta").json()["site"]
+    assert site == {
+        "operator": "Example Lab",
+        "contact": "atlas@example.org",
+        "footer_links": [{"label": "Site policies", "url": "https://example.org/p"}],
+    }
+
+
+def test_malformed_footer_links_are_none_not_an_error(
+    asking: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ATLAS_FOOTER_LINKS", "not json")
+    assert asking.get("/meta").json()["site"]["footer_links"] == []

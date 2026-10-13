@@ -131,7 +131,9 @@ button { font: inherit; }
 
 /* ---- shell ---------------------------------------------------------------- */
 
-.app { --rail-width: 232px; display: grid; grid-template-rows: auto auto minmax(0, 1fr); height: 100%; min-height: 0; }
+.app { --rail-width: 232px; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; height: 100%; min-height: 0; }
+.app > .sitefooter { grid-row: 4; grid-column: 1; }
+.app > .workspace-view > .about { grid-row: 2 / 4; grid-column: 1; min-height: 0; }
 .app > .topbar { grid-row: 1; grid-column: 1; }
 .app > .ask { grid-row: 2; grid-column: 1; margin-left: var(--rail-width); z-index: 1; }
 .app > .body { grid-row: 2 / 4; grid-column: 1; grid-template-rows: subgrid; }
@@ -1190,3 +1192,10 @@ a.rowbtn { display: inline-block; text-decoration: none; }
 .sequence-head .minibtn { margin-left: auto; }
 /* A sequence is the one place a fixed-width face earns its keep: columns of bases. */
 pre.sequence { margin: 0; max-height: 220px; overflow: auto; padding: 8px 10px; background: var(--surface-2); border-radius: 6px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-all; }
+
+.sitefooter { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; padding: 6px 20px; border-top: 1px solid var(--line); background: var(--surface); font-size: 12px; }
+.sitenotice { position: fixed; left: 16px; right: 16px; bottom: 40px; z-index: 20; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; max-width: 78ch; margin: 0 auto; padding: 10px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); box-shadow: 0 4px 16px rgb(0 0 0 / 0.12); font-size: 13px; }
+.about { max-width: 78ch; padding: 24px 20px 48px; overflow: auto; }
+.about h2 { margin-top: 0; }
+.about-table { border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+.about-table th, .about-table td { text-align: left; padding: 4px 12px 4px 0; border-bottom: 1px solid var(--line); vertical-align: top; }

@@ -20,6 +20,7 @@ make lint             # ruff check + ruff format --check
 make fmt              # ruff format
 make api / make web   # FastAPI on :8099, the app on :5173
 uv run atlas clinical # rebuild just the clinical stage (drugs, trials, links) and the roll-up
+docker compose -f docker-compose.prod.yml up -d   # the public image against ./data/store
 
 make check                    # has anything released upstream? nine requests, seconds
 make refresh SOURCE=chembl    # re-download one source, rebuild only what it feeds
@@ -490,6 +491,28 @@ was its own instance allowed 80% of RAM, and eight concurrent `/hits` held
 8.67 GB; now they take 0.63 GB. Both instances run on 4 DuckDB threads, because
 working memory is per thread: on 18 the profile needed 448-512 MB of the 512. Do not go back to `duckdb.connect()` per request, and do not move an
 aggregate over `screen_results` into a route's per-request SQL.
+
+## Hosting it
+
+One image, no data, no host name. `atlas/serve.py` mounts the API at `/api` and
+`web/dist` at `/`; development still runs `make api` + `make web`. Everything
+site-specific is an environment variable (`.env.example`), and the store is
+mounted read-only at `ATLAS_STORE`, **never baked into the image**: a public
+image with the store inside would publish the whole store, and a store built in
+CI is one nobody read the diff of.
+
+`/ask` spends an allowance (`atlas/ask_access.py`): Turnstile and 5/hour per IP
+anonymously, 20/day per ORCID iD signed in, 500/day across everyone; effort is
+fixed at `high`. **Missing configuration fails closed** — no Turnstile keys
+means no anonymous asks, not unprotected ones. An IP is only ever stored as an
+HMAC, for 24 h. The usage file is container-local on purpose (SQLite on NFS
+cannot trust its locks), so a redeploy resets the counts.
+
+The site owes its visitors three pages (`/about/sources`, `/about/privacy`,
+`/about/terms`) and a notice, **not a consent banner**: the only cookies are
+strictly necessary. Adding analytics or any non-essential cookie changes that,
+and the privacy page with it. The typeface is self-hosted (`@fontsource/inter`):
+a font link to Google would send every visitor's IP there.
 
 ## Querying it
 

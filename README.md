@@ -160,6 +160,22 @@ See [`docs/data-sources.md`](docs/data-sources.md) for every endpoint, format,
 licence and verification date, and [`CLAUDE.md`](CLAUDE.md) for the rules this
 codebase is held to.
 
+## Running it publicly
+
+One image, `ghcr.io/sidxz/mtb-atlas`, serves the API at `/api` and the page at
+`/`. It holds no data and names no host: build the store (`make build`), mount
+it read-only, and configure everything else with environment variables — see
+`.env.example` and `docker-compose.prod.yml`.
+
+- **Behind a reverse proxy, set `FORWARDED_ALLOW_IPS`** to the proxy's address or
+  subnet. Without it every visitor is the proxy, and they all share one `/ask`
+  allowance of 5 an hour.
+- `/ask` is the only route that costs money. Anonymous askers pass Cloudflare
+  Turnstile and get 5 an hour per IP; ORCID sign-in gives 20 a day; 500 a day
+  across everyone. Missing keys switch `/ask` off rather than leaving it open.
+- A data refresh never needs a new image: `atlas refresh`, read `atlas diff`,
+  copy the store to where the container mounts it, restart.
+
 ## Licence
 
 Code: MIT. Each data source keeps its own licence, tracked per source in

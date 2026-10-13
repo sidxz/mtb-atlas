@@ -11,6 +11,7 @@
     "test": "node --experimental-strip-types --test tests/*.test.mjs"
   },
   "dependencies": {
+    "@fontsource/inter": "5.3.0",
     "@rdkit/rdkit": "2026.9.1",
     "igv": "3.8.9",
     "molstar": "4.9.0",

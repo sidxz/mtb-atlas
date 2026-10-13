@@ -405,6 +405,12 @@ tbody tr[aria-selected="true"] td:first-child { box-shadow: inset 3px 0 var(--ac
 .ask { margin: 0; background: var(--bg); padding: 8px 16px 12px; flex-shrink: 0; }
 .askbar { display: flex; gap: 8px; align-items: center; min-height: 36px; border-bottom: 1px solid var(--line); }
 .askbar .search { flex: 1; min-width: 0; font-family: var(--sans); font-size: 12px; background: transparent; border: 0; padding: 6px 8px; }
+.askaccess { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 0 20px 4px; font-size: 12px; }
+.askaccess:empty { display: none; }
+.askaccess-captcha:empty { display: none; }
+.askaccess a { color: var(--accent); }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; }
+.caveat-inline { color: var(--warn); }
 .askexamples { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .askexamples button {
   background: var(--surface-2); border: 1px solid var(--line); color: var(--fg-dim);

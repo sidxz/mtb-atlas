@@ -738,6 +738,18 @@ export interface Meta {
   caveats: string[];
 }
 
+/** What this visitor may still ask (`/auth/me`). `remaining` is null when limits are off. */
+export interface Me {
+  orcid: string | null;
+  limits: boolean;
+  remaining: number | null;
+  limit: number;
+  window: "1h" | "24h";
+  global_remaining: number | null;
+  turnstile_site_key: string | null;
+  signin_available: boolean;
+}
+
 export interface TargetQuery {
   q?: string;
   validation_status?: string[];
@@ -978,6 +990,7 @@ export interface GenomeFeature {
 
 export const api = {
   meta: () => get<Meta>("/meta"),
+  me: () => get<Me>("/auth/me"),
   screens: (query: Record<string, unknown> = {}) => get<ScreenPage>("/screens", { limit: 1000, ...query }),
   screen: (id: string) => get<ScreenDetail>(`/screens/${encodeURIComponent(id)}`),
   screenResults: (id: string, query: Record<string, unknown> = {}) =>

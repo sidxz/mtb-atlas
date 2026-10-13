@@ -5,12 +5,13 @@
  * /ask (`queries`) and is not drawn here.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import { InterfaceIcon } from "./InterfaceIcon";
-import type { Hit, SearchResults } from "./api";
+import { api, type Hit, type Me, type SearchResults } from "./api";
+import { allowanceLabel, captchaUnavailableMessage, refusalMessage } from "./askAccess";
 
 const EXAMPLES = [
   "Which essential genes have a structure, no ligands, and no close human homolog?",
@@ -69,6 +70,34 @@ function References({ refs, onGeneScreens, onFollow }: {
   );
 }
 
+declare global {
+  interface Window {
+    turnstile?: {
+      render(element: HTMLElement, options: Record<string, unknown>): string;
+      reset(widget?: string): void;
+      remove(widget?: string): void;
+    };
+  }
+}
+
+// Loaded on the first focus of the Ask input, never in index.html: nobody who
+// does not ask sends anything to Cloudflare. A failed load can be retried.
+let turnstileScript: Promise<void> | null = null;
+function loadTurnstile(): Promise<void> {
+  turnstileScript ??= new Promise<void>((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => {
+      turnstileScript = null;
+      reject(new Error("turnstile"));
+    };
+    document.head.appendChild(script);
+  });
+  return turnstileScript;
+}
+
 export function Ask({ base, onGeneScreens }: { base: string; onGeneScreens: (rv: string) => void }) {
   const [question, setQuestion] = useState("");
   // The question the panel answers; the input may have moved on since.
@@ -82,6 +111,41 @@ export function Ask({ base, onGeneScreens }: { base: string; onGeneScreens: (rv:
   // The examples are onboarding. Shown always they cost 85px of every session
   // forever, which on a laptop is three rows of the gene table.
   const [focused, setFocused] = useState(false);
+
+  const location = useLocation();
+  const [me, setMe] = useState<Me | null>(null);
+  const [captchaFailed, setCaptchaFailed] = useState(false);
+  const widgetHost = useRef<HTMLDivElement | null>(null);
+  const widget = useRef<string | null>(null);
+  const token = useRef<string | null>(null);
+
+  const refreshMe = useCallback(() => api.me().then(setMe).catch(() => setMe(null)), []);
+  useEffect(() => { void refreshMe(); }, [refreshMe]);
+
+  const needsCaptcha = Boolean(me?.limits && !me.orcid && me.turnstile_site_key);
+
+  const startCaptcha = useCallback(() => {
+    if (!needsCaptcha || widget.current || !widgetHost.current) return;
+    loadTurnstile()
+      .then(() => {
+        if (!window.turnstile || !widgetHost.current || widget.current) return;
+        widget.current = window.turnstile.render(widgetHost.current, {
+          sitekey: me!.turnstile_site_key,
+          // Shown only when Cloudflare needs the visitor to do something.
+          appearance: "interaction-only",
+          callback: (value: string) => { token.current = value; },
+          "expired-callback": () => { token.current = null; },
+          "error-callback": () => { token.current = null; },
+        });
+      })
+      .catch(() => setCaptchaFailed(true));
+  }, [needsCaptcha, me]);
+
+  const signInHref = `${base}/auth/orcid/login?next=${encodeURIComponent(location.pathname + location.search)}`;
+  const signOut = async () => {
+    await fetch(`${base}/auth/logout`, { method: "POST" });
+    void refreshMe();
+  };
 
   // A broad question runs for a minute of model turns; a static "querying" line
   // for that long reads as a hang. Frozen when the answer lands, so it doubles as
@@ -104,20 +168,33 @@ export function Ask({ base, onGeneScreens }: { base: string; onGeneScreens: (rv:
     setResult(null);
     setError(null);
     try {
+      if (needsCaptcha && !token.current) {
+        throw new Error(captchaFailed ? captchaUnavailableMessage(Boolean(me?.signin_available)) : "One moment: the human check is still running. Ask again in a few seconds.");
+      }
       const response = await fetch(`${base}/ask`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token.current ? { "X-Turnstile-Token": token.current } : {}),
+        },
         body: JSON.stringify({ question: text }),
         signal: controller.signal,
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(body.detail ?? `${response.status}`);
+      if (!response.ok) {
+        throw new Error(response.status === 429 ? refusalMessage(body.detail, new Date()) : (typeof body.detail === "string" ? body.detail : `${response.status}`));
+      }
       setResult(body as Result);
       setState("idle");
     } catch (caught: unknown) {
       if (controller.signal.aborted) return;
       setError(String(caught instanceof Error ? caught.message : caught));
       setState("error");
+    } finally {
+      // A token is single-use: whatever happened, the next ask needs a fresh one.
+      token.current = null;
+      if (widget.current) window.turnstile?.reset(widget.current);
+      void refreshMe();
     }
   };
 
@@ -148,13 +225,29 @@ export function Ask({ base, onGeneScreens }: { base: string; onGeneScreens: (rv:
           value={question}
           placeholder="Ask a research question · answers link to evidence"
           onChange={(event) => setQuestion(event.target.value)}
-          onFocus={() => setFocused(true)}
+          onFocus={() => { setFocused(true); startCaptcha(); }}
           onBlur={() => setFocused(false)}
         />
         <button className="iconbtn" type="submit" disabled={state === "asking"}>
           {state === "asking" ? "Asking…" : "Ask"}
         </button>
       </form>
+
+      <div className="askaccess">
+        <div ref={widgetHost} className="askaccess-captcha" />
+        {me && allowanceLabel(me) && <span className="faint">{allowanceLabel(me)}</span>}
+        {me?.orcid ? (
+          <>
+            <a href={`https://orcid.org/${me.orcid}`} target="_blank" rel="noreferrer">{me.orcid}</a>
+            <button type="button" className="linkbtn" onClick={() => void signOut()}>Sign out</button>
+          </>
+        ) : me?.signin_available ? (
+          <a href={signInHref}>Sign in with ORCID for 20 a day</a>
+        ) : null}
+        {new URLSearchParams(location.search).get("signin") === "failed" && (
+          <span className="caveat-inline">ORCID sign-in did not complete.</span>
+        )}
+      </div>
 
       {focused && !result && state === "idle" && !error && (
         <div className="askexamples">

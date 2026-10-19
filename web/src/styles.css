@@ -320,6 +320,10 @@ th + th::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 1
 th[aria-sort] { color: var(--counter); background: color-mix(in srgb, var(--counter) 5%, transparent); }
 th.n, td.n { text-align: right; font-variant-numeric: tabular-nums; }
 td.id { font-family: var(--mono); font-weight: 600; color: var(--counter); }
+td.id a { color: inherit; }
+.bound .bound-ids { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+.bound .bound-entries { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; max-width: 260px; }
+.bound .chip { margin-bottom: 3px; }
 .sortbutton { display: inline-flex; align-items: center; gap: 6px; border: 0; padding: 4px 0; min-height: 24px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
 .sortbutton:hover { color: var(--accent); }
 .sorticon { opacity: 0.5; font-size: 12px; }

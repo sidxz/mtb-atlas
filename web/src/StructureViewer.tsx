@@ -15,6 +15,7 @@ import { DefaultPluginUISpec } from "molstar/lib/mol-plugin-ui/spec";
 import type { PluginUIContext } from "molstar/lib/mol-plugin-ui/context";
 import { MolScriptBuilder as MS } from "molstar/lib/mol-script/language/builder";
 import { Script } from "molstar/lib/mol-script/script";
+import type { Expression } from "molstar/lib/mol-script/language/expression";
 import { StructureSelection } from "molstar/lib/mol-model/structure";
 import { Loci } from "molstar/lib/mol-model/loci";
 import { PLDDTConfidenceColorThemeProvider } from "molstar/lib/extensions/model-archive/quality-assessment/color/plddt";
@@ -73,7 +74,37 @@ interface Props {
   showLigands: boolean;
   showResistance: boolean;
   focusResidue: number | null;
+  /** A bound component (`TCU`) to put the camera on once the entry has loaded. */
+  focusLigand: string | null;
 }
+
+/** Camera onto the atoms passing `test` in the loaded structure; false if none do.
+ * `first` keeps one copy: inhA is a tetramer, and framing all four TCUs is the
+ * whole protein rather than a pocket. */
+function focusOn(
+  context: PluginUIContext,
+  test: (Q: typeof MS) => Expression,
+  first = false,
+): boolean {
+  const data = context.managers.structure.hierarchy.current.structures[0]?.cell.obj?.data;
+  if (!data) return false;
+  const selection = Script.getStructureSelection(
+    (Q) => {
+      const groups = Q.struct.generator.atomGroups({ "residue-test": test(Q) });
+      return first ? Q.struct.filter.first([groups]) : groups;
+    },
+    data,
+  );
+  const loci = StructureSelection.toLociWithSourceUnits(selection);
+  if (Loci.isEmpty(loci)) return false;
+  // A ligand framed alone fills the stage; the pocket around it is the point.
+  context.managers.camera.focusLoci(loci, first ? { extraRadius: 14 } : undefined);
+  context.managers.interactivity.lociHighlights.highlightOnly({ loci });
+  return true;
+}
+
+const ligandTest = (comp: string) => (Q: typeof MS) =>
+  Q.core.rel.eq([Q.struct.atomProperty.macromolecular.label_comp_id(), comp]);
 
 export function StructureViewer({
   source,
@@ -81,6 +112,7 @@ export function StructureViewer({
   showLigands,
   showResistance,
   focusResidue,
+  focusLigand,
 }: Props) {
   const host = useRef<HTMLDivElement | null>(null);
   const plugin = useRef<PluginUIContext | null>(null);
@@ -88,6 +120,10 @@ export function StructureViewer({
   // The plugin is created asynchronously. Without this the load effect runs
   // once against a null plugin and never again, and the stage stays empty.
   const [ready, setReady] = useState(false);
+  // Read when a load finishes, so a ligand picked with its entry is focused on
+  // that entry rather than on whatever was loaded before it.
+  const ligand = useRef(focusLigand);
+  ligand.current = focusLigand;
 
   // One plugin for the life of the component; structures are swapped inside it.
   useEffect(() => {
@@ -213,8 +249,10 @@ export function StructureViewer({
 
       // The builder path does not move the camera; only the preset helpers do.
       // Without this the structure loads correctly and sits off-screen.
-      context.managers.camera.reset();
-      context.canvas3d?.requestCameraReset();
+      if (!(ligand.current && focusOn(context, ligandTest(ligand.current), true))) {
+        context.managers.camera.reset();
+        context.canvas3d?.requestCameraReset();
+      }
       if (!cancelled) setStatus(null);
     })().catch((error: unknown) => {
       if (!cancelled) setStatus(`Could not load ${source.id}: ${String(error)}`);
@@ -247,23 +285,17 @@ export function StructureViewer({
   useEffect(() => {
     const context = plugin.current;
     if (!ready || !context || focusResidue === null) return;
-    const data = context.managers.structure.hierarchy.current.structures[0]?.cell.obj?.data;
-    if (!data) return;
-    const selection = Script.getStructureSelection(
-      (Q) =>
-        Q.struct.generator.atomGroups({
-          "residue-test": Q.core.rel.eq([
-            Q.struct.atomProperty.macromolecular.auth_seq_id(),
-            focusResidue,
-          ]),
-        }),
-      data,
+    focusOn(context, (Q) =>
+      Q.core.rel.eq([Q.struct.atomProperty.macromolecular.auth_seq_id(), focusResidue]),
     );
-    const loci = StructureSelection.toLociWithSourceUnits(selection);
-    if (Loci.isEmpty(loci)) return;
-    context.managers.camera.focusLoci(loci);
-    context.managers.interactivity.lociHighlights.highlightOnly({ loci });
   }, [ready, focusResidue]);
+
+  // Another ligand in the entry already open; a new entry focuses when it loads.
+  useEffect(() => {
+    const context = plugin.current;
+    if (!ready || !context || !focusLigand) return;
+    focusOn(context, ligandTest(focusLigand), true);
+  }, [ready, focusLigand]);
 
   return (
     <div className="stage">

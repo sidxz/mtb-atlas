@@ -7,7 +7,7 @@
  * this app exists to produce and a zero has to be trustworthy.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import {
   conditionLabel,
@@ -183,25 +183,39 @@ export function TargetDetailPanel({
   onMaximize: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("evidence");
-  const [structureIndex, setStructureIndex] = useState(0);
+  // By id, not position: a ligand can sit in any of inhA's 135 entries, and
+  // only the first eight have a button.
+  const [structureId, setStructureId] = useState<string | null>(null);
+  const [focusLigand, setFocusLigand] = useState<string | null>(null);
+  const stage = useRef<HTMLDivElement | null>(null);
   const [showLigands, setShowLigands] = useState(true);
   const [showResistance, setShowResistance] = useState(true);
   const [focusResidue, setFocusResidue] = useState<number | null>(null);
 
   useEffect(() => {
-    setStructureIndex(0);
+    setStructureId(null);
+    setFocusLigand(null);
     setFocusResidue(null);
   }, [detail.rv_id]);
 
   const sources: ViewerSource[] = useMemo(() => {
-    const list = detail.structures
-      .slice(0, 12)
-      .map((s) => pdbSource(s.pdb_id, s.title));
+    const list = detail.structures.map((s) => pdbSource(s.pdb_id, s.title));
     if (detail.alphafold?.cif_url && detail.alphafold.entry_id) {
       list.push(alphafoldSource(detail.alphafold.cif_url, detail.alphafold.entry_id));
     }
     return list;
   }, [detail]);
+
+  const current = sources.find((s) => s.id === structureId) ?? sources[0];
+  const buttons = sources.slice(0, 8);
+  if (current && !buttons.includes(current)) buttons.push(current);
+  const viewLigand = (pdbId: string, comp: string) => {
+    setStructureId(pdbId);
+    setFocusLigand(comp);
+    setFocusResidue(null);
+    setShowLigands(true);
+    stage.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  };
 
   const mappable = detail.variants.filter((v) => v.residue_position !== null);
 
@@ -265,25 +279,31 @@ export function TargetDetailPanel({
             ) : (
               <>
                 <div className="viewerbar">
-                  {sources.slice(0, 8).map((s, i) => (
+                  {buttons.map((s) => (
                     <button
                       key={s.id}
                       type="button"
                       className="minibtn"
-                      aria-pressed={i === structureIndex}
-                      onClick={() => setStructureIndex(i)}
+                      aria-pressed={s === current}
+                      onClick={() => {
+                        setStructureId(s.id);
+                        setFocusLigand(null);
+                      }}
                     >
                       {s.id}
                     </button>
                   ))}
                 </div>
-                <StructureViewer
-                  source={sources[structureIndex] ?? null}
-                  variants={detail.variants}
-                  showLigands={showLigands}
-                  showResistance={showResistance}
-                  focusResidue={focusResidue}
-                />
+                <div ref={stage}>
+                  <StructureViewer
+                    source={current ?? null}
+                    variants={detail.variants}
+                    showLigands={showLigands}
+                    showResistance={showResistance}
+                    focusResidue={focusResidue}
+                    focusLigand={focusLigand}
+                  />
+                </div>
                 <div className="viewerbar">
                   <button
                     type="button"
@@ -305,7 +325,7 @@ export function TargetDetailPanel({
                 <div className="vkey">
                   <div>
                     <i className="sw" style={{ background: "#5b7fb5" }} />
-                    {sources[structureIndex]?.predicted ? "pLDDT confidence" : "backbone"}
+                    {current?.predicted ? "pLDDT confidence" : "backbone"}
                   </div>
                   <div>
                     <i className="sw" style={{ background: "#2fae99" }} />
@@ -318,7 +338,12 @@ export function TargetDetailPanel({
                     </div>
                   )}
                 </div>
-                <BoundLigands detail={detail} />
+                <BoundLigands
+                  detail={detail}
+                  viewing={{ pdbId: current?.id ?? null, comp: focusLigand }}
+                  onView={viewLigand}
+                  onOpen={onOpen}
+                />
                 <StructureTable detail={detail} />
                 <OrthologueStructureTable detail={detail} />
               </>
@@ -335,6 +360,7 @@ export function TargetDetailPanel({
         {tab === "resistance" && (
           <Resistance detail={detail} onFocus={(position) => {
             setTab("structure");
+            setFocusLigand(null);
             setFocusResidue(position);
           }} />
         )}
@@ -822,37 +848,126 @@ function ClinicalStrain({ detail }: { detail: Detail }) {
   );
 }
 
-function BoundLigands({ detail }: { detail: Detail }) {
+function BoundLigands({
+  detail,
+  viewing,
+  onView,
+  onOpen,
+}: {
+  detail: Detail;
+  viewing: { pdbId: string | null; comp: string | null };
+  onView: (pdbId: string, comp: string) => void;
+  onOpen: (focus: Focus) => void;
+}) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   // Defaulted, not asserted: an older API is a degraded page, not a blank one.
   const ligands = detail.bound_ligands ?? [];
+  // Which of this protein's own entries hold each ligand, best resolved first:
+  // the one a click opens. Half are in a single entry; one is in 34.
+  const entries = useMemo(() => {
+    const byComp = new Map<string, Detail["structures"]>();
+    const ranked = [...detail.structures].sort(
+      (a, b) => (a.resolution ?? Infinity) - (b.resolution ?? Infinity),
+    );
+    for (const s of ranked) {
+      for (const comp of s.ligand_ids) byComp.set(comp, [...(byComp.get(comp) ?? []), s]);
+    }
+    return byComp;
+  }, [detail.structures]);
   if (!ligands.length) return null;
   return (
     <div className="scroller" style={{ marginTop: 12 }}>
       <p className="lab">Bound on this protein&rsquo;s chains</p>
-      <table>
+      <table className="bound">
         <thead>
           <tr>
-            <th>Code</th>
-            <th>Component name</th>
-            <th className="n">pChEMBL</th>
-            <th>TB phase</th>
+            <th aria-label="Structure" />
+            <th>Ligand</th>
+            <th title="This protein's entries with the ligand on its chains, best resolved first">
+              Seen in
+            </th>
+            <th className="n" title="Best pChEMBL measured on this protein, not on any target">
+              pChEMBL
+            </th>
           </tr>
         </thead>
         <tbody>
-          {ligands.map((l) => (
-            <tr key={l.comp_id} title={l.name ?? ""}>
-              <td className="id">{l.comp_id}</td>
-              <td className="prodcell">
-                {l.drug_name ? <span className="chip accent">{l.drug_name}</span> : null}{" "}
-                {l.molecule_chembl_id && !l.drug_name ? (
-                  <span className="mono dim">{l.molecule_chembl_id}</span>
-                ) : null}{" "}
-                {l.name ?? <span className="absent">unnamed component</span>}
-              </td>
-              <td className="n">{number(l.best_pchembl)}</td>
-              <td className="dim">{l.max_phase_tb === null ? "—" : phaseLabel(l.max_phase_tb)}</td>
-            </tr>
-          ))}
+          {ligands.map((l) => {
+            const seen = entries.get(l.comp_id) ?? [];
+            const open = expanded.has(l.comp_id);
+            const shown = open ? seen : seen.slice(0, 3);
+            const on = viewing.comp === l.comp_id;
+            return (
+              <tr key={l.comp_id} aria-selected={on}>
+                <td>
+                  <Structure smiles={l.smiles} width={112} height={60} title={l.name ?? l.comp_id} />
+                </td>
+                <td>
+                  {l.drug_name && l.molecule_chembl_id && (
+                    <button
+                      type="button"
+                      className="chip accent"
+                      onClick={() => onOpen({ kind: "drug", id: l.molecule_chembl_id as string })}
+                    >
+                      {l.drug_name} · {phaseLabel(l.max_phase_tb)}
+                    </button>
+                  )}
+                  <div className="prodcell" title={l.name ?? ""}>
+                    {l.name ?? <span className="absent">unnamed component</span>}
+                  </div>
+                  <div className="bound-ids">
+                    {seen[0] ? (
+                      <button
+                        type="button"
+                        className="minibtn"
+                        aria-pressed={on}
+                        title={`Show ${l.comp_id} in ${seen[0].pdb_id}`}
+                        onClick={() => onView(seen[0].pdb_id, l.comp_id)}
+                      >
+                        {l.comp_id} ▸ view
+                      </button>
+                    ) : (
+                      <span className="id">{l.comp_id}</span>
+                    )}
+                    {l.molecule_chembl_id && <ChemblLink kind="compound" id={l.molecule_chembl_id} />}
+                  </div>
+                </td>
+                <td>
+                  <div className="bound-entries">
+                    {shown.map((s) => (
+                      <button
+                        key={s.pdb_id}
+                        type="button"
+                        className="minibtn"
+                        aria-pressed={on && viewing.pdbId === s.pdb_id}
+                        onClick={() => onView(s.pdb_id, l.comp_id)}
+                      >
+                        {s.pdb_id}
+                        {s.resolution ? ` ${number(s.resolution, 2)} Å` : ""}
+                      </button>
+                    ))}
+                    {seen.length > 3 && (
+                      <button
+                        type="button"
+                        className="linkbtn"
+                        onClick={() =>
+                          setExpanded((prev) => {
+                            const next = new Set(prev);
+                            if (open) next.delete(l.comp_id);
+                            else next.add(l.comp_id);
+                            return next;
+                          })
+                        }
+                      >
+                        {open ? "fewer" : `+${seen.length - 3} more`}
+                      </button>
+                    )}
+                  </div>
+                </td>
+                <td className="n">{number(l.best_pchembl)}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -1109,7 +1224,11 @@ function OrthologueStructureTable({ detail }: { detail: Detail }) {
           <tbody>
             {rows.map((s) => (
               <tr key={`${s.via_acc}-${s.pdb_id}`}>
-                <td className="id">{s.pdb_id}</td>
+                <td className="id">
+                <a href={`https://www.rcsb.org/structure/${s.pdb_id}`} target="_blank" rel="noreferrer">
+                  {s.pdb_id}
+                </a>
+              </td>
                 <td>
                   {s.via_gene ?? s.via_acc}
                   {s.relation === "same_sequence" && (
@@ -1152,7 +1271,11 @@ function StructureTable({ detail }: { detail: Detail }) {
         <tbody>
           {detail.structures.map((s) => (
             <tr key={s.pdb_id}>
-              <td className="id">{s.pdb_id}</td>
+              <td className="id">
+                <a href={`https://www.rcsb.org/structure/${s.pdb_id}`} target="_blank" rel="noreferrer">
+                  {s.pdb_id}
+                </a>
+              </td>
               <td className="dim">{(s.method ?? "").toLowerCase()}</td>
               <td className="n">{s.resolution ? number(s.resolution, 2) : "—"}</td>
               <td className="mono dim">{s.released}</td>

@@ -2370,7 +2370,7 @@ def references(text: str, limit: int = 20) -> dict[str, list[Hit]]:
 
 
 class Allowances(BaseModel):
-    anonymous_per_hour: int
+    anonymous_per_day: int
     signed_in_per_day: int
     global_per_day: int
 
@@ -2380,7 +2380,7 @@ class AuthMe(BaseModel):
     limits: bool
     remaining: int | None
     limit: int
-    window: Literal["1h", "24h"]
+    window: Literal["24h"]
     global_remaining: int | None
     turnstile_site_key: str | None
     signin_available: bool
@@ -2391,7 +2391,7 @@ def _allowances() -> Allowances:
     """The deployer's three numbers; a malformed one switches questions off (503)."""
     try:
         return Allowances(
-            anonymous_per_hour=access.anonymous()[0],
+            anonymous_per_day=access.anonymous()[0],
             signed_in_per_day=access.signed_in()[0],
             global_per_day=access.global_limit(),
         )
@@ -2456,7 +2456,7 @@ def auth_me(request: Request) -> AuthMe:
         limits=limits,
         remaining=remaining,
         limit=limit,
-        window="24h" if orcid else "1h",
+        window="24h",
         global_remaining=global_remaining,
         turnstile_site_key=(access.turnstile_site_key() if limits else None),
         signin_available=access.signin_available(),

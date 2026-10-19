@@ -18,14 +18,16 @@ from fastapi.testclient import TestClient
 from atlas import agent, api, store, summary
 from atlas import ask_access as access
 
+HOUR = 3600.0  # any window; these tests exercise the rolling mechanics, not a tier
+
 T0 = 1_800_000_000.0  # a fixed clock; nothing here sleeps
 
 
 def test_five_an_hour_then_refused_with_the_moment_it_reopens(tmp_path: Path) -> None:
     db = tmp_path / "usage.sqlite"
     for i in range(5):
-        assert access.admit("ip:a", 5, access.HOUR, now=T0 + i, path=db).admitted
-    refused = access.admit("ip:a", 5, access.HOUR, now=T0 + 10, path=db)
+        assert access.admit("ip:a", 5, HOUR, now=T0 + i, path=db).admitted
+    refused = access.admit("ip:a", 5, HOUR, now=T0 + 10, path=db)
     assert not refused.admitted
     assert refused.limit == "ip"
     # The oldest counted ask (T0) leaves the window at T0 + 3600.
@@ -35,15 +37,15 @@ def test_five_an_hour_then_refused_with_the_moment_it_reopens(tmp_path: Path) ->
 def test_the_window_rolls_at_exactly_one_window(tmp_path: Path) -> None:
     db = tmp_path / "usage.sqlite"
     for i in range(5):
-        access.admit("ip:a", 5, access.HOUR, now=T0 + i, path=db)
-    assert not access.admit("ip:a", 5, access.HOUR, now=T0 + 3599, path=db).admitted
-    assert access.admit("ip:a", 5, access.HOUR, now=T0 + 3600, path=db).admitted
+        access.admit("ip:a", 5, HOUR, now=T0 + i, path=db)
+    assert not access.admit("ip:a", 5, HOUR, now=T0 + 3599, path=db).admitted
+    assert access.admit("ip:a", 5, HOUR, now=T0 + 3600, path=db).admitted
 
 
 def test_a_refusal_is_not_counted(tmp_path: Path) -> None:
     db = tmp_path / "usage.sqlite"
     for i in range(7):
-        access.admit("ip:a", 5, access.HOUR, now=T0 + i, path=db)
+        access.admit("ip:a", 5, HOUR, now=T0 + i, path=db)
     with sqlite3.connect(db) as connection:
         assert connection.execute("SELECT count(*) FROM asks").fetchone()[0] == 5
 
@@ -51,13 +53,13 @@ def test_a_refusal_is_not_counted(tmp_path: Path) -> None:
 def test_keys_do_not_share_an_allowance(tmp_path: Path) -> None:
     db = tmp_path / "usage.sqlite"
     for i in range(5):
-        access.admit("ip:a", 5, access.HOUR, now=T0 + i, path=db)
-    assert access.admit("ip:b", 5, access.HOUR, now=T0 + 6, path=db).admitted
+        access.admit("ip:a", 5, HOUR, now=T0 + i, path=db)
+    assert access.admit("ip:b", 5, HOUR, now=T0 + 6, path=db).admitted
 
 
 def test_the_global_ceiling_refuses_everyone(tmp_path: Path) -> None:
     db = tmp_path / "usage.sqlite"
-    access.admit("ip:seed", 5, access.HOUR, now=T0, path=db)  # creates the table
+    access.admit("ip:seed", 5, HOUR, now=T0, path=db)  # creates the table
     with sqlite3.connect(db) as connection:
         connection.executemany(
             "INSERT INTO asks VALUES (?, ?)",
@@ -71,21 +73,21 @@ def test_the_global_ceiling_refuses_everyone(tmp_path: Path) -> None:
 
 def test_peeking_does_not_count(tmp_path: Path) -> None:
     db = tmp_path / "usage.sqlite"
-    peek = access.admit("ip:a", 5, access.HOUR, now=T0, path=db, record=False)
+    peek = access.admit("ip:a", 5, HOUR, now=T0, path=db, record=False)
     assert peek.admitted and peek.remaining == 5
-    assert access.admit("ip:a", 5, access.HOUR, now=T0, path=db).remaining == 4
+    assert access.admit("ip:a", 5, HOUR, now=T0, path=db).remaining == 4
 
 
 def test_two_racers_for_the_last_slot_get_exactly_one(tmp_path: Path) -> None:
     db = tmp_path / "usage.sqlite"
     for i in range(4):
-        access.admit("ip:a", 5, access.HOUR, now=T0 + i, path=db)
+        access.admit("ip:a", 5, HOUR, now=T0 + i, path=db)
     barrier = threading.Barrier(2)
     results: list[bool] = []
 
     def race() -> None:
         barrier.wait()
-        results.append(access.admit("ip:a", 5, access.HOUR, now=T0 + 10, path=db).admitted)
+        results.append(access.admit("ip:a", 5, HOUR, now=T0 + 10, path=db).admitted)
 
     threads = [threading.Thread(target=race) for _ in range(2)]
     for thread in threads:
@@ -97,8 +99,8 @@ def test_two_racers_for_the_last_slot_get_exactly_one(tmp_path: Path) -> None:
 
 def test_rows_older_than_a_day_are_deleted(tmp_path: Path) -> None:
     db = tmp_path / "usage.sqlite"
-    access.admit("ip:a", 5, access.HOUR, now=T0, path=db)
-    access.admit("ip:b", 5, access.HOUR, now=T0 + access.DAY + 1, path=db)
+    access.admit("ip:a", 5, HOUR, now=T0, path=db)
+    access.admit("ip:b", 5, HOUR, now=T0 + access.DAY + 1, path=db)
     with sqlite3.connect(db) as connection:
         assert connection.execute("SELECT key FROM asks").fetchall() == [("ip:b",)]
 
@@ -286,7 +288,7 @@ def test_an_ip_digest_is_not_a_session_signature(secret: None) -> None:
 
 
 ALLOWANCE_VARS = (
-    "ATLAS_ASK_ANON_PER_HOUR",
+    "ATLAS_ASK_ANON_PER_DAY",
     "ATLAS_ASK_SIGNED_IN_PER_DAY",
     "ATLAS_ASK_GLOBAL_PER_DAY",
 )
@@ -420,11 +422,11 @@ def test_me_reports_the_allowance_without_spending_it(asking: TestClient) -> Non
         "limits": True,
         "remaining": 5,
         "limit": 5,
-        "window": "1h",
+        "window": "24h",
         "global_remaining": 500,
         "turnstile_site_key": "site-key",
         "signin_available": False,
-        "allowances": {"anonymous_per_hour": 5, "signed_in_per_day": 20, "global_per_day": 500},
+        "allowances": {"anonymous_per_day": 5, "signed_in_per_day": 20, "global_per_day": 500},
     }
     _ask(asking)
     assert asking.get("/auth/me").json()["remaining"] == 4
@@ -600,12 +602,12 @@ def test_malformed_footer_links_are_none_not_an_error(
 def test_the_deployer_sets_the_allowances(
     asking: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("ATLAS_ASK_ANON_PER_HOUR", "2")
+    monkeypatch.setenv("ATLAS_ASK_ANON_PER_DAY", "2")
     monkeypatch.setenv("ATLAS_ASK_SIGNED_IN_PER_DAY", "3")
     monkeypatch.setenv("ATLAS_ASK_GLOBAL_PER_DAY", "50")
     me = asking.get("/auth/me").json()
     assert me["allowances"] == {
-        "anonymous_per_hour": 2,
+        "anonymous_per_day": 2,
         "signed_in_per_day": 3,
         "global_per_day": 50,
     }
@@ -627,9 +629,9 @@ def test_a_global_allowance_of_one_refuses_the_second_asker(
 def test_a_malformed_allowance_switches_questions_off(
     asking: TestClient, monkeypatch: pytest.MonkeyPatch, value: str
 ) -> None:
-    monkeypatch.setenv("ATLAS_ASK_ANON_PER_HOUR", value)
+    monkeypatch.setenv("ATLAS_ASK_ANON_PER_DAY", value)
     refused = _ask(asking)
-    assert refused.status_code == 503 and "ATLAS_ASK_ANON_PER_HOUR" in refused.json()["detail"]
+    assert refused.status_code == 503 and "ATLAS_ASK_ANON_PER_DAY" in refused.json()["detail"]
     assert asking.get("/auth/me").status_code == 503
 
 

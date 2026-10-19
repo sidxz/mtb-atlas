@@ -519,7 +519,7 @@ mounted read-only at `ATLAS_STORE`, **never baked into the image**: a public
 image with the store inside would publish the whole store, and a store built in
 CI is one nobody read the diff of.
 
-`/ask` spends an allowance (`atlas/ask_access.py`): Turnstile and 5/hour per IP
+`/ask` spends an allowance (`atlas/ask_access.py`): Turnstile and 5/day per IP
 anonymously, 20/day per ORCID iD signed in, 500/day across everyone, all three
 the deployer's to change (`ATLAS_ASK_*`) because cost per question depends on
 the model; effort is fixed at `high`. **Missing configuration fails closed** — no Turnstile keys

@@ -751,12 +751,12 @@ export interface Me {
   limits: boolean;
   remaining: number | null;
   limit: number;
-  window: "1h" | "24h";
+  window: "24h";
   global_remaining: number | null;
   turnstile_site_key: string | null;
   signin_available: boolean;
   /** The deployer's three numbers, so every sentence quotes this site's own. */
-  allowances: { anonymous_per_hour: number; signed_in_per_day: number; global_per_day: number };
+  allowances: { anonymous_per_day: number; signed_in_per_day: number; global_per_day: number };
 }
 
 export interface TargetQuery {

@@ -1,9 +1,9 @@
 """Who may ask, and how often: the one route that spends money gets an allowance.
 
-Anonymous askers pass a Cloudflare Turnstile check and get 5 an hour per IP; an
+Anonymous askers pass a Cloudflare Turnstile check and get 5 a day per IP; an
 ORCID sign-in gets 20 a day per iD; everyone together gets 500 a day. The deployer
 can change all three, because what a question costs depends on the model they
-chose (ATLAS_ASK_ANON_PER_HOUR, _SIGNED_IN_PER_DAY, _GLOBAL_PER_DAY). The counts
+chose (ATLAS_ASK_ANON_PER_DAY, _SIGNED_IN_PER_DAY, _GLOBAL_PER_DAY). The counts
 live in a small SQLite file, not the Parquet store, and the pipeline never
 touches it. An IP is never written down: only its HMAC under ATLAS_SECRET, and
 every row is gone after 24 h.
@@ -29,11 +29,10 @@ import httpx
 
 from .fetch import ROOT
 
-HOUR = 3600.0
 DAY = 86400.0
 # Defaults for the deployer's three allowances, sized for the cheapest Claude model.
 ALLOWANCES = {
-    "ATLAS_ASK_ANON_PER_HOUR": 5,
+    "ATLAS_ASK_ANON_PER_DAY": 5,
     "ATLAS_ASK_SIGNED_IN_PER_DAY": 20,
     "ATLAS_ASK_GLOBAL_PER_DAY": 500,
 }
@@ -64,7 +63,7 @@ def _allowance(name: str) -> int:
 
 
 def anonymous() -> tuple[int, float]:
-    return _allowance("ATLAS_ASK_ANON_PER_HOUR"), HOUR
+    return _allowance("ATLAS_ASK_ANON_PER_DAY"), DAY
 
 
 def signed_in() -> tuple[int, float]:

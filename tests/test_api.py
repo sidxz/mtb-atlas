@@ -359,6 +359,28 @@ def test_a_bound_ligand_is_named_and_tied_to_its_drug(client: TestClient) -> Non
     assert ligand["max_phase_tb"] == 4
 
 
+def test_a_bound_ligands_potency_is_on_this_protein(
+    evidence_store: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Rifampicin has an IC50 on InhA in the live store; rpoB showed it as its own."""
+    copy = tmp_path / "store"
+    shutil.copytree(evidence_store, copy)
+    path = copy / "activities.parquet"
+    connection = duckdb.connect()
+    connection.execute(f"CREATE TABLE a AS SELECT * FROM '{path}'")
+    for target, pchembl in (("CHEMBL1849", 7.52), ("CHEMBL2006", 6.1)):  # InhA, then rpoB
+        connection.execute(
+            "INSERT INTO a BY NAME SELECT 'CHEMBL374478' AS molecule_chembl_id,"
+            " ? AS target_chembl_id, 'direct' AS evidence, ? AS pchembl_value",
+            [target, pchembl],
+        )
+        connection.execute(f"COPY a TO '{path}' (FORMAT parquet)")
+        for module in (api, store, summary):
+            monkeypatch.setattr(module, "STORE", copy)
+        (ligand,) = TestClient(api.app).get("/targets/Rv0667").json()["bound_ligands"]
+        assert ligand["best_pchembl"] == (None if target == "CHEMBL1849" else 6.1)
+
+
 def test_a_bound_ligand_that_is_no_known_drug_is_still_named(client: TestClient) -> None:
     (ligand,) = client.get("/targets/Rv1484").json()["bound_ligands"]  # InhA, 1ZID
     assert ligand["comp_id"] == "ZID"

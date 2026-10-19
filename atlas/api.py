@@ -1055,23 +1055,29 @@ def target(rv_id: str) -> TargetDetail:
     )
 
     # What is actually bound in this protein's own chains, named, and tied back
-    # to the compound and the drug where the same molecule is one.
+    # to the compound and the drug where the same molecule is one. The potency is
+    # measured on this protein too: a compound's best anywhere put rifampicin's
+    # 7.52 beside rpoB, and that is an IC50 on InhA. 13 of 119 potencies were on
+    # another protein.
     bound_ligands = _query(
         connection,
         "WITH bound AS ("
-        "  SELECT DISTINCT unnest(ligand_ids) AS comp_id FROM structures WHERE uniprot_acc = ?)"
+        "  SELECT DISTINCT unnest(ligand_ids) AS comp_id FROM structures WHERE uniprot_acc = ?),"
+        " own AS ("
+        "  SELECT t.target_id FROM crosswalk w, UNNEST(w.chembl_targets) AS u(t)"
+        "  WHERE w.rv_id = ? AND t.evidence = 'direct' AND t.target_type = 'SINGLE PROTEIN')"
         " SELECT b.comp_id, l.name, l.formula_weight, l.inchikey, l.smiles,"
         "   coalesce(l.chembl_id, c.molecule_chembl_id) AS molecule_chembl_id,"
         "   d.pref_name AS drug_name, d.max_phase_tb,"
         "   (SELECT max(a.pchembl_value) FROM activities a"
         "     WHERE a.molecule_chembl_id = coalesce(l.chembl_id, c.molecule_chembl_id)"
-        "       AND a.evidence <> 'whole_cell') AS best_pchembl"
+        "       AND a.target_chembl_id IN (SELECT target_id FROM own)) AS best_pchembl"
         " FROM bound b"
         " LEFT JOIN ligands l USING (comp_id)"
         " LEFT JOIN compounds c ON c.molecule_chembl_id = l.chembl_id OR c.inchi_key = l.inchikey"
         " LEFT JOIN drugs d ON d.molecule_chembl_id = l.chembl_id OR d.inchi_key = l.inchikey"
         " ORDER BY d.max_phase_tb DESC NULLS LAST, best_pchembl DESC NULLS LAST, b.comp_id",
-        [accession],
+        [accession, rv_id],
     )
 
     # Conditional TnSeq. Only annotated screens: an unannotated screen's

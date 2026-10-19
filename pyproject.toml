@@ -1,6 +1,6 @@
 [project]
 name = "mtb-target-atlas"
-version = "0.1.1"
+version = "0.2.0"
 description = "Every M. tuberculosis H37Rv gene as a navigable object, built only from public data"
 readme = "README.md"
 license = { text = "MIT" }

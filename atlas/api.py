@@ -150,7 +150,7 @@ SORTABLE = {
 
 app = FastAPI(
     title="Mtb Target Atlas",
-    version="0.1.1",
+    version="0.2.0",
     summary="Public-data target evidence for every M. tuberculosis H37Rv gene.",
 )
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET"], allow_headers=["*"])
